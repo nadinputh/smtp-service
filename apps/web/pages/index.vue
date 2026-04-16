@@ -375,6 +375,7 @@ import type {
 } from "~/composables/useApi";
 
 definePageMeta({ layout: "default" });
+useHead({ title: "Dashboard" });
 
 const api = useApi();
 

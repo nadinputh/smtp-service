@@ -11,12 +11,9 @@
           Manage programmatic access keys for CI/CD and integrations
         </p>
       </div>
-      <button
-        @click="showCreateModal = true"
-        class="flex items-center gap-1 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
-      >
+      <UBtn size="sm" @click="showCreateModal = true">
         <Icon name="lucide:plus" class="w-4 h-4" /> Create Key
-      </button>
+      </UBtn>
     </header>
 
     <div class="flex-1 overflow-y-auto p-6">
@@ -91,12 +88,13 @@
                   {{ key.expiresAt ? formatDate(key.expiresAt) : "—" }}
                 </td>
                 <td class="px-4 py-3 text-right whitespace-nowrap">
-                  <button
+                  <UBtn
+                    variant="danger"
+                    size="xs"
                     @click="handleDelete(key.id)"
-                    class="px-3 py-1.5 text-xs text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
                   >
                     Revoke
-                  </button>
+                  </UBtn>
                 </td>
               </tr>
             </tbody>
@@ -136,12 +134,7 @@
             </button>
           </div>
           <div class="flex justify-end mt-4">
-            <button
-              @click="newKey = null"
-              class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700"
-            >
-              Done
-            </button>
+            <UBtn @click="newKey = null"> Done </UBtn>
           </div>
         </div>
       </div>
@@ -178,22 +171,36 @@
             </div>
             <div>
               <label
-                class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
                 >Scopes</label
               >
-              <div class="flex flex-wrap gap-3">
+              <div class="space-y-2">
                 <label
                   v-for="s in allScopes"
-                  :key="s"
-                  class="flex items-center gap-1.5 text-sm"
+                  :key="s.value"
+                  class="flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors"
+                  :class="
+                    form.scopes.includes(s.value)
+                      ? 'border-indigo-300 dark:border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20'
+                      : 'border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                  "
                 >
                   <input
                     v-model="form.scopes"
                     type="checkbox"
-                    :value="s"
-                    class="rounded border-gray-300 text-indigo-600"
+                    :value="s.value"
+                    class="mt-0.5 rounded border-gray-300 dark:border-gray-500 text-indigo-600 focus:ring-indigo-500"
                   />
-                  {{ s }}
+                  <div>
+                    <p
+                      class="text-sm font-medium text-gray-800 dark:text-gray-100"
+                    >
+                      {{ s.label }}
+                    </p>
+                    <p class="text-xs text-gray-400 dark:text-gray-500">
+                      {{ s.description }}
+                    </p>
+                  </div>
                 </label>
               </div>
             </div>
@@ -212,20 +219,16 @@
               {{ createError }}
             </p>
             <div class="flex justify-end gap-2">
-              <button
+              <UBtn
                 type="button"
+                variant="ghost"
                 @click="showCreateModal = false"
-                class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
               >
                 Cancel
-              </button>
-              <button
-                type="submit"
-                :disabled="creating || !form.scopes.length"
-                class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-              >
+              </UBtn>
+              <UBtn type="submit" :disabled="creating || !form.scopes.length">
                 {{ creating ? "Creating..." : "Create" }}
-              </button>
+              </UBtn>
             </div>
           </form>
         </div>
@@ -236,6 +239,7 @@
 
 <script setup lang="ts">
 definePageMeta({ layout: "default" });
+useHead({ title: "API Keys" });
 
 const api = useApi();
 const keys = ref<Awaited<ReturnType<typeof api.getApiKeys>>>([]);
@@ -244,7 +248,23 @@ const showCreateModal = ref(false);
 const creating = ref(false);
 const createError = ref("");
 const newKey = ref<string | null>(null);
-const allScopes = ["send", "read", "delete"];
+const allScopes = [
+  {
+    value: "send",
+    label: "Send",
+    description: "Send and schedule emails via the API",
+  },
+  {
+    value: "read",
+    label: "Read",
+    description: "Read inboxes, messages, and analytics",
+  },
+  {
+    value: "delete",
+    label: "Delete",
+    description: "Delete messages, inboxes, and keys",
+  },
+];
 
 const form = reactive({
   name: "",

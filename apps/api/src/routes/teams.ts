@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { getEnv } from "@smtp-service/env";
 import { getDb, teams, teamMembers, users } from "@smtp-service/db";
-import { eq, and, inArray, or } from "drizzle-orm";
+import { eq, and, inArray, or, ilike } from "drizzle-orm";
 import { authGuard } from "../middleware/auth.js";
 import { isGlobalAdmin } from "../middleware/access.js";
 
@@ -322,6 +322,29 @@ export function registerTeamRoutes(app: FastifyInstance) {
       }
 
       return reply.status(204).send();
+    },
+  );
+
+  // ─── Search users (for team member picker) ───────────────
+  app.get<{ Querystring: { q?: string } }>(
+    "/api/users/search",
+    { preHandler: [authGuard] },
+    async (request, reply) => {
+      const query = request.query.q?.trim();
+      if (!query || query.length < 2) {
+        return reply
+          .status(400)
+          .send({ error: "Search query must be at least 2 characters" });
+      }
+
+      const term = `%${query}%`;
+      const results = await db
+        .select({ id: users.id, email: users.email, name: users.name })
+        .from(users)
+        .where(or(ilike(users.email, term), ilike(users.name, term)))
+        .limit(10);
+
+      return results;
     },
   );
 

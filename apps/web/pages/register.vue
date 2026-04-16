@@ -65,13 +65,9 @@
 
           <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
 
-          <button
-            type="submit"
-            :disabled="loading"
-            class="w-full py-2 px-4 bg-indigo-600 text-white font-medium rounded-lg text-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 transition-colors"
-          >
+          <UBtn type="submit" :disabled="loading" class="w-full">
             {{ loading ? "Creating account..." : "Create account" }}
-          </button>
+          </UBtn>
         </form>
 
         <p class="mt-4 text-center text-sm text-gray-500 dark:text-gray-400">
@@ -90,6 +86,7 @@
 
 <script setup lang="ts">
 definePageMeta({ layout: false });
+useHead({ title: "Create Account" });
 
 const { register, isAuthenticated } = useAuth();
 

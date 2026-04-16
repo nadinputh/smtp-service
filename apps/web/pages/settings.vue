@@ -120,13 +120,9 @@
                 {{ success }}
               </p>
               <div class="flex justify-end pt-1">
-                <button
-                  type="submit"
-                  :disabled="saving"
-                  class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-                >
+                <UBtn type="submit" :disabled="saving">
                   {{ saving ? "Updating..." : "Update Password" }}
-                </button>
+                </UBtn>
               </div>
             </form>
           </div>
@@ -138,6 +134,7 @@
 
 <script setup lang="ts">
 definePageMeta({ layout: "default" });
+useHead({ title: "Settings" });
 
 const api = useApi();
 const { user } = useAuth();

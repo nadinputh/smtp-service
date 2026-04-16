@@ -9,18 +9,24 @@
           <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100">
             {{ inbox?.name ?? "Inbox" }}
           </h2>
-          <p class="text-sm text-gray-400">{{ totalMessages }} messages</p>
+          <p class="text-sm text-gray-400">
+            {{ totalMessages }} messages
+            <span v-if="unreadCount > 0" class="text-indigo-600 font-medium"
+              >&middot; {{ unreadCount }} unread</span
+            >
+          </p>
         </div>
         <div class="flex items-center gap-2">
           <!-- Export dropdown -->
           <div class="relative">
-            <button
+            <UBtn
+              variant="secondary"
+              size="sm"
               @click="showExportMenu = !showExportMenu"
-              class="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
             >
               <Icon name="lucide:download" class="w-4 h-4" />
               Export
-            </button>
+            </UBtn>
             <div
               v-if="showExportMenu"
               class="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-10 w-36"
@@ -48,21 +54,19 @@
               </a>
             </div>
           </div>
-          <button
-            @click="showCreds = !showCreds"
-            class="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-          >
+          <UBtn variant="secondary" size="sm" @click="showCreds = !showCreds">
             <Icon name="lucide:key" class="w-4 h-4" />
             SMTP Credentials
-          </button>
-          <button
-            @click="handleDelete"
+          </UBtn>
+          <UBtn
+            variant="danger"
+            size="sm"
             :disabled="deleting"
-            class="flex items-center gap-1 px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
+            @click="handleDelete"
           >
             <Icon name="lucide:trash-2" class="w-4 h-4" />
             {{ deleting ? "Deleting..." : "Delete" }}
-          </button>
+          </UBtn>
         </div>
       </div>
     </header>
@@ -77,27 +81,29 @@
       </p>
       <div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
         <span class="text-gray-500">Host:</span>
-        <code class="text-gray-800">localhost</code>
+        <code class="text-gray-800 dark:text-gray-200">localhost</code>
         <span class="text-gray-500">Port:</span>
-        <code class="text-gray-800">2525</code>
+        <code class="text-gray-800 dark:text-gray-200">2525</code>
         <span class="text-gray-500">Username:</span>
         <div class="flex items-center gap-1">
-          <code class="text-gray-800">{{ inboxDetail.smtpUsername }}</code>
+          <code class="text-gray-800 dark:text-gray-200">{{
+            inboxDetail.smtpUsername
+          }}</code>
           <button
             @click="copy(inboxDetail.smtpUsername)"
-            class="text-gray-400 hover:text-indigo-600"
+            class="text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
           >
             <Icon name="lucide:copy" class="w-3.5 h-3.5" />
           </button>
         </div>
         <span class="text-gray-500">Password:</span>
         <div class="flex items-center gap-1">
-          <code class="text-gray-800">{{
+          <code class="text-gray-800 dark:text-gray-200">{{
             showPassword ? inboxDetail.smtpPassword : "••••••••••••"
           }}</code>
           <button
             @click="showPassword = !showPassword"
-            class="text-gray-400 hover:text-indigo-600"
+            class="text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
           >
             <Icon
               :name="showPassword ? 'lucide:eye-off' : 'lucide:eye'"
@@ -106,7 +112,7 @@
           </button>
           <button
             @click="copy(inboxDetail.smtpPassword)"
-            class="text-gray-400 hover:text-indigo-600"
+            class="text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
           >
             <Icon name="lucide:copy" class="w-3.5 h-3.5" />
           </button>
@@ -246,24 +252,51 @@
         </p>
       </div>
 
-      <ul v-else class="divide-y divide-gray-100 flex-1 overflow-y-auto">
+      <ul
+        v-else
+        class="divide-y divide-gray-100 dark:divide-gray-700 flex-1 overflow-y-auto"
+      >
         <li v-for="msg in messages" :key="msg.id">
           <NuxtLink
             :to="`/inbox/${inboxId}/message/${msg.id}`"
             class="block px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
-            :class="route.params.messageId === msg.id ? 'bg-indigo-50' : ''"
+            :class="[
+              route.params.messageId === msg.id
+                ? 'bg-indigo-50 dark:bg-indigo-900/20'
+                : '',
+              !msg.isRead ? 'bg-indigo-50/40 dark:bg-indigo-900/10' : '',
+            ]"
+            @click="handleMessageClick(msg)"
           >
             <div class="flex items-center justify-between">
-              <span
-                class="font-medium text-sm text-gray-800 dark:text-gray-100 truncate"
-              >
-                {{ msg.from }}
-              </span>
+              <div class="flex items-center gap-2 min-w-0">
+                <span
+                  v-if="!msg.isRead"
+                  class="w-2 h-2 rounded-full bg-indigo-500 shrink-0"
+                ></span>
+                <span
+                  class="text-sm truncate"
+                  :class="
+                    msg.isRead
+                      ? 'text-gray-600 dark:text-gray-400'
+                      : 'font-semibold text-gray-900 dark:text-gray-100'
+                  "
+                >
+                  {{ msg.from }}
+                </span>
+              </div>
               <span class="text-xs text-gray-400 shrink-0 ml-3">
                 {{ formatDate(msg.date || msg.createdAt) }}
               </span>
             </div>
-            <p class="text-sm text-gray-600 dark:text-gray-300 truncate mt-0.5">
+            <p
+              class="text-sm truncate mt-0.5"
+              :class="
+                msg.isRead
+                  ? 'text-gray-500 dark:text-gray-400'
+                  : 'font-medium text-gray-800 dark:text-gray-200'
+              "
+            >
               {{ msg.subject || "(no subject)" }}
             </p>
             <div class="flex items-center gap-2 mt-1">
@@ -282,6 +315,22 @@
               >
                 {{ msg.status }}
               </span>
+              <button
+                v-if="msg.isRead"
+                @click.prevent="toggleReadStatus(msg)"
+                class="text-xs text-gray-400 hover:text-indigo-600 transition-colors"
+                title="Mark as unread"
+              >
+                <Icon name="lucide:mail" class="w-3.5 h-3.5" />
+              </button>
+              <button
+                v-else
+                @click.prevent="toggleReadStatus(msg)"
+                class="text-xs text-indigo-500 hover:text-indigo-700 transition-colors"
+                title="Mark as read"
+              >
+                <Icon name="lucide:mail-open" class="w-3.5 h-3.5" />
+              </button>
             </div>
           </NuxtLink>
         </li>
@@ -297,20 +346,22 @@
           {{ currentPage }} of {{ totalPages }}
         </p>
         <div class="flex gap-1">
-          <button
+          <UBtn
+            variant="secondary"
+            size="sm"
             :disabled="currentPage <= 1"
             @click="currentPage--"
-            class="px-3 py-1.5 text-sm border border-gray-200 dark:border-gray-600 dark:text-gray-300 rounded-lg disabled:opacity-30 hover:bg-gray-50 dark:hover:bg-gray-700"
           >
             Prev
-          </button>
-          <button
+          </UBtn>
+          <UBtn
+            variant="secondary"
+            size="sm"
             :disabled="currentPage >= totalPages"
             @click="currentPage++"
-            class="px-3 py-1.5 text-sm border border-gray-200 dark:border-gray-600 dark:text-gray-300 rounded-lg disabled:opacity-30 hover:bg-gray-50 dark:hover:bg-gray-700"
           >
             Next
-          </button>
+          </UBtn>
         </div>
       </div>
     </div>
@@ -319,12 +370,9 @@
     <div v-if="activeTab === 'webhooks'" class="flex-1 overflow-y-auto p-6">
       <div class="flex items-center justify-between mb-4">
         <p class="text-sm text-gray-500">Event notifications for this inbox</p>
-        <button
-          @click="showWebhookModal = true"
-          class="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
-        >
+        <UBtn size="sm" @click="showWebhookModal = true">
           <Icon name="lucide:plus" class="w-4 h-4" /> Add Webhook
-        </button>
+        </UBtn>
       </div>
       <div v-if="!webhooks?.length" class="text-center text-gray-400 py-8">
         <Icon name="lucide:webhook" class="w-10 h-10 mx-auto mb-2 opacity-50" />
@@ -365,18 +413,16 @@
               </div>
             </div>
             <div class="flex items-center gap-2">
-              <button
-                @click="toggleLogs(wh.id)"
-                class="text-xs px-2 py-1 border border-gray-200 rounded-md text-gray-500 hover:bg-gray-50"
-              >
+              <UBtn variant="secondary" size="xs" @click="toggleLogs(wh.id)">
                 {{ expandedWebhook === wh.id ? "Hide" : "Logs" }}
-              </button>
-              <button
+              </UBtn>
+              <UBtn
+                variant="danger"
+                size="xs"
                 @click="handleDeleteWebhook(wh.id)"
-                class="text-xs px-2 py-1 border border-red-200 rounded-md text-red-600 hover:bg-red-50"
               >
                 <Icon name="lucide:trash-2" class="w-3.5 h-3.5" />
-              </button>
+              </UBtn>
             </div>
           </div>
           <!-- Delivery logs -->
@@ -421,13 +467,14 @@
                   <span class="text-gray-400">{{
                     formatDate(log.createdAt)
                   }}</span>
-                  <button
+                  <UBtn
                     v-if="log.status === 'failed'"
+                    variant="secondary"
+                    size="xs"
                     @click="handleRetryWebhookLog(wh.id, log.id)"
-                    class="px-1.5 py-0.5 border border-indigo-200 rounded text-indigo-600 hover:bg-indigo-50"
                   >
                     Retry
-                  </button>
+                  </UBtn>
                 </div>
               </div>
             </div>
@@ -442,12 +489,7 @@
         <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300">
           Inbox Members
         </h3>
-        <button
-          @click="showInviteModal = true"
-          class="px-3 py-1.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
-        >
-          Invite Member
-        </button>
+        <UBtn size="sm" @click="showInviteModal = true"> Invite Member </UBtn>
       </div>
 
       <div v-if="membersLoading" class="text-sm text-gray-400">Loading...</div>
@@ -497,13 +539,14 @@
             <option value="editor">Editor</option>
             <option value="viewer">Viewer</option>
           </select>
-          <button
+          <UBtn
             v-if="member.role !== 'owner' && member.id !== 'owner'"
+            variant="danger"
+            size="xs"
             @click="handleRemoveMember(member.id)"
-            class="text-xs text-red-500 hover:text-red-700"
           >
             Remove
-          </button>
+          </UBtn>
         </div>
       </div>
     </div>
@@ -542,20 +585,16 @@
               {{ inviteError }}
             </p>
             <div class="flex justify-end gap-2">
-              <button
+              <UBtn
                 type="button"
+                variant="ghost"
                 @click="showInviteModal = false"
-                class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
               >
                 Cancel
-              </button>
-              <button
-                type="submit"
-                :disabled="inviting"
-                class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-              >
+              </UBtn>
+              <UBtn type="submit" :disabled="inviting">
                 {{ inviting ? "Inviting..." : "Invite" }}
-              </button>
+              </UBtn>
             </div>
           </form>
         </div>
@@ -585,54 +624,144 @@
               placeholder="https://your-endpoint.com/webhook"
               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             />
-            <div class="flex flex-wrap gap-3 text-sm">
-              <label class="flex items-center gap-1.5">
+            <div class="space-y-2">
+              <label
+                class="flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors"
+                :class="
+                  webhookForm.onDelivered
+                    ? 'border-indigo-300 dark:border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20'
+                    : 'border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                "
+              >
                 <input
                   v-model="webhookForm.onDelivered"
                   type="checkbox"
-                  class="rounded border-gray-300 text-indigo-600"
+                  class="mt-0.5 rounded border-gray-300 dark:border-gray-500 text-indigo-600 focus:ring-indigo-500"
                 />
-                Delivered
+                <div>
+                  <p
+                    class="text-sm font-medium text-gray-800 dark:text-gray-100"
+                  >
+                    Delivered
+                  </p>
+                  <p class="text-xs text-gray-400 dark:text-gray-500">
+                    Fires when an email is successfully delivered
+                  </p>
+                </div>
               </label>
-              <label class="flex items-center gap-1.5">
+              <label
+                class="flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors"
+                :class="
+                  webhookForm.onBounced
+                    ? 'border-indigo-300 dark:border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20'
+                    : 'border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                "
+              >
                 <input
                   v-model="webhookForm.onBounced"
                   type="checkbox"
-                  class="rounded border-gray-300 text-indigo-600"
+                  class="mt-0.5 rounded border-gray-300 dark:border-gray-500 text-indigo-600 focus:ring-indigo-500"
                 />
-                Bounced
+                <div>
+                  <p
+                    class="text-sm font-medium text-gray-800 dark:text-gray-100"
+                  >
+                    Bounced
+                  </p>
+                  <p class="text-xs text-gray-400 dark:text-gray-500">
+                    Fires when an email delivery bounces
+                  </p>
+                </div>
               </label>
-              <label class="flex items-center gap-1.5">
+              <label
+                class="flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors"
+                :class="
+                  webhookForm.onOpened
+                    ? 'border-indigo-300 dark:border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20'
+                    : 'border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                "
+              >
                 <input
                   v-model="webhookForm.onOpened"
                   type="checkbox"
-                  class="rounded border-gray-300 text-indigo-600"
+                  class="mt-0.5 rounded border-gray-300 dark:border-gray-500 text-indigo-600 focus:ring-indigo-500"
                 />
-                Opened
+                <div>
+                  <p
+                    class="text-sm font-medium text-gray-800 dark:text-gray-100"
+                  >
+                    Opened
+                  </p>
+                  <p class="text-xs text-gray-400 dark:text-gray-500">
+                    Fires when a recipient opens the email
+                  </p>
+                </div>
               </label>
             </div>
             <p v-if="webhookError" class="text-sm text-red-600">
               {{ webhookError }}
             </p>
             <div class="flex justify-end gap-2">
-              <button
+              <UBtn
                 type="button"
+                variant="ghost"
                 @click="showWebhookModal = false"
-                class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
               >
                 Cancel
-              </button>
-              <button
-                type="submit"
-                :disabled="addingWebhook"
-                class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-              >
+              </UBtn>
+              <UBtn type="submit" :disabled="addingWebhook">
                 {{ addingWebhook ? "Adding..." : "Add" }}
-              </button>
+              </UBtn>
             </div>
           </form>
         </div>
       </div>
+    </Teleport>
+
+    <!-- New mail notification toast -->
+    <Teleport to="body">
+      <Transition
+        enter-active-class="transition ease-out duration-300"
+        enter-from-class="translate-y-2 opacity-0"
+        enter-to-class="translate-y-0 opacity-100"
+        leave-active-class="transition ease-in duration-200"
+        leave-from-class="translate-y-0 opacity-100"
+        leave-to-class="translate-y-2 opacity-0"
+      >
+        <div
+          v-if="newMailNotification"
+          class="fixed bottom-6 right-6 z-50 bg-white dark:bg-gray-800 border border-indigo-200 dark:border-indigo-700 rounded-xl shadow-lg px-4 py-3 flex items-start gap-3 max-w-sm"
+        >
+          <div
+            class="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900 flex items-center justify-center shrink-0"
+          >
+            <Icon
+              name="lucide:mail"
+              class="w-4 h-4 text-indigo-600 dark:text-indigo-400"
+            />
+          </div>
+          <div class="min-w-0">
+            <p class="text-sm font-medium text-gray-800 dark:text-gray-100">
+              New email received
+            </p>
+            <p class="text-xs text-gray-500 dark:text-gray-400 truncate">
+              From: {{ newMailNotification.from }}
+            </p>
+            <p
+              v-if="newMailNotification.subject"
+              class="text-xs text-gray-400 truncate"
+            >
+              {{ newMailNotification.subject }}
+            </p>
+          </div>
+          <button
+            @click="newMailNotification = null"
+            class="text-gray-400 hover:text-gray-600 shrink-0"
+          >
+            <Icon name="lucide:x" class="w-4 h-4" />
+          </button>
+        </div>
+      </Transition>
     </Teleport>
   </div>
 </template>
@@ -669,6 +798,10 @@ const hasActiveFilters = computed(
 
 const totalPages = computed(() =>
   Math.max(1, Math.ceil(totalMessages.value / 50)),
+);
+
+const unreadCount = computed(
+  () => messages.value.filter((m) => !m.isRead).length,
 );
 
 // Debounced search
@@ -717,6 +850,30 @@ function clearFilters() {
   currentPage.value = 1;
 }
 
+function handleMessageClick(msg: (typeof messages.value)[number]) {
+  if (!msg.isRead) {
+    // Optimistically mark as read in UI
+    msg.isRead = true;
+    api.markMessageRead(msg.id).catch(() => {
+      msg.isRead = false;
+    });
+  }
+}
+
+async function toggleReadStatus(msg: (typeof messages.value)[number]) {
+  const wasRead = msg.isRead;
+  msg.isRead = !wasRead;
+  try {
+    if (wasRead) {
+      await api.markMessageUnread(msg.id);
+    } else {
+      await api.markMessageRead(msg.id);
+    }
+  } catch {
+    msg.isRead = wasRead;
+  }
+}
+
 // Webhooks state
 const webhooks = ref<Awaited<ReturnType<typeof api.getWebhooks>> | null>(null);
 const showWebhookModal = ref(false);
@@ -748,14 +905,27 @@ const { data: inboxDetail } = useAsyncData(`inbox-detail-${inboxId}`, () =>
 
 // Keep backward compat for the template
 const inbox = computed(() => inboxDetail.value);
+useHead({ title: computed(() => inbox.value?.name ?? "Inbox") });
 
 // Initial fetch
 fetchMessages();
 
 // Real-time: refresh message list when a new email arrives in this inbox
+const newMailNotification = ref<{
+  from: string;
+  subject: string | null;
+} | null>(null);
+let notificationTimeout: ReturnType<typeof setTimeout>;
+
 useSSE((data) => {
   if (data.inboxId === inboxId) {
     fetchMessages();
+    // Show notification toast
+    newMailNotification.value = { from: data.from, subject: data.subject };
+    clearTimeout(notificationTimeout);
+    notificationTimeout = setTimeout(() => {
+      newMailNotification.value = null;
+    }, 5000);
   }
 });
 

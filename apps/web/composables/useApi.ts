@@ -544,6 +544,13 @@ export function useApi() {
       });
     },
 
+    async searchUsers(query: string) {
+      return await $fetch<{ id: string; email: string; name: string | null }[]>(
+        "/api/users/search",
+        { headers: authHeaders(), query: { q: query } },
+      );
+    },
+
     async addTeamMember(teamId: string, userId: string, role?: string) {
       return await $fetch<TeamMember>(`/api/teams/${teamId}/members`, {
         method: "POST",
@@ -564,6 +571,36 @@ export function useApi() {
         method: "DELETE",
         headers: authHeaders(),
       });
+    },
+
+    // ─── Read Status ──────────────────────────────────────
+    async markMessageRead(messageId: string) {
+      return await $fetch<{ success: boolean }>(
+        `/api/messages/${messageId}/read`,
+        { method: "PUT", headers: authHeaders() },
+      );
+    },
+
+    async markMessageUnread(messageId: string) {
+      return await $fetch<{ success: boolean }>(
+        `/api/messages/${messageId}/read`,
+        { method: "DELETE", headers: authHeaders() },
+      );
+    },
+
+    async batchMarkRead(
+      inboxId: string,
+      messageIds: string[],
+      isRead: boolean,
+    ) {
+      return await $fetch<{ success: boolean; updated: number }>(
+        `/api/inboxes/${inboxId}/messages/read`,
+        {
+          method: "PUT",
+          headers: authHeaders(),
+          body: { messageIds, isRead },
+        },
+      );
     },
   };
 }
@@ -590,6 +627,7 @@ export interface Message {
   date: string | null;
   size: number | null;
   status: string;
+  isRead: boolean;
   createdAt: string;
 }
 

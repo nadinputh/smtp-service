@@ -35,7 +35,7 @@ services:
       MINIO_ROOT_USER: wCseX5eaoB3f1Jk69LoV
       MINIO_ROOT_PASSWORD: lrShukwBMSJmcFvyJJPQTJyEEe9qFXtcBMGC28LN
     ports:
-      - "9080:9000"
+      - "9000:9000"
       - "9001:9001"
     volumes:
       - miniodata:/data

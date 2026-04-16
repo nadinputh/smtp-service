@@ -352,6 +352,24 @@ export function createOutboundProcessor(
       .set({ status: "delivered" })
       .where(eq(messages.id, messageId));
 
+    // 5. Publish real-time event so the UI refreshes
+    const [msg] = await db
+      .select({ inboxId: messages.inboxId, subject: messages.subject })
+      .from(messages)
+      .where(eq(messages.id, messageId))
+      .limit(1);
+
+    if (msg) {
+      await redisPub.publish(
+        "email:new",
+        JSON.stringify({
+          inboxId: msg.inboxId,
+          subject: msg.subject,
+          from,
+        }),
+      );
+    }
+
     console.log(`📤 Outbound complete: ${messageId}`);
   };
 }

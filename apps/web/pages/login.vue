@@ -87,13 +87,9 @@
 
           <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
 
-          <button
-            type="submit"
-            :disabled="loading"
-            class="w-full py-2 px-4 bg-indigo-600 text-white font-medium rounded-lg text-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 transition-colors"
-          >
+          <UBtn type="submit" :disabled="loading" class="w-full">
             {{ loading ? "Signing in..." : "Sign in" }}
-          </button>
+          </UBtn>
         </form>
 
         <!-- LDAP login form -->
@@ -133,13 +129,9 @@
 
           <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
 
-          <button
-            type="submit"
-            :disabled="loading"
-            class="w-full py-2 px-4 bg-indigo-600 text-white font-medium rounded-lg text-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 transition-colors"
-          >
+          <UBtn type="submit" :disabled="loading" class="w-full">
             {{ loading ? "Signing in..." : "Sign in with LDAP" }}
-          </button>
+          </UBtn>
         </form>
 
         <!-- OAuth2 button -->
@@ -158,14 +150,15 @@
             </div>
           </div>
 
-          <button
+          <UBtn
+            variant="secondary"
             :disabled="loading"
-            class="w-full py-2 px-4 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 font-medium rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+            class="w-full"
             @click="handleOAuth2"
           >
             <Icon name="lucide:shield" class="w-4 h-4" />
             {{ loading ? "Redirecting..." : "Sign in with SSO" }}
-          </button>
+          </UBtn>
         </div>
 
         <p
@@ -187,6 +180,7 @@
 
 <script setup lang="ts">
 definePageMeta({ layout: false });
+useHead({ title: "Sign In" });
 
 const { login, loginLdap, loginOAuth2, fetchProviders, isAuthenticated } =
   useAuth();

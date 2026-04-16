@@ -12,12 +12,9 @@
             Manage sending domains &amp; DKIM keys
           </p>
         </div>
-        <button
-          @click="showAddModal = true"
-          class="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
-        >
+        <UBtn size="sm" @click="showAddModal = true">
           <Icon name="lucide:plus" class="w-4 h-4" /> Add Domain
-        </button>
+        </UBtn>
       </div>
     </header>
 
@@ -57,19 +54,21 @@
               >
             </div>
             <div class="flex items-center gap-2">
-              <button
+              <UBtn
+                variant="secondary"
+                size="xs"
                 @click="handleVerify(d.id)"
                 :disabled="verifying === d.id"
-                class="text-xs px-2 py-1 border border-gray-200 dark:border-gray-600 rounded-md text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
               >
                 {{ verifying === d.id ? "Checking..." : "Verify DNS" }}
-              </button>
-              <button
+              </UBtn>
+              <UBtn
+                variant="danger"
+                size="xs"
                 @click="handleDeleteDomain(d.id)"
-                class="text-xs px-2 py-1 border border-red-200 rounded-md text-red-600 hover:bg-red-50"
               >
                 <Icon name="lucide:trash-2" class="w-3.5 h-3.5" />
-              </button>
+              </UBtn>
             </div>
           </div>
           <!-- DNS Records -->
@@ -151,20 +150,12 @@
               {{ addError }}
             </p>
             <div class="flex justify-end gap-2 mt-4">
-              <button
-                type="button"
-                @click="showAddModal = false"
-                class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors"
-              >
+              <UBtn type="button" variant="ghost" @click="showAddModal = false">
                 Cancel
-              </button>
-              <button
-                type="submit"
-                :disabled="adding"
-                class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-              >
+              </UBtn>
+              <UBtn type="submit" :disabled="adding">
                 {{ adding ? "Adding..." : "Add Domain" }}
-              </button>
+              </UBtn>
             </div>
           </form>
         </div>
@@ -175,6 +166,7 @@
 
 <script setup lang="ts">
 definePageMeta({ layout: "default" });
+useHead({ title: "Domains" });
 
 const api = useApi();
 

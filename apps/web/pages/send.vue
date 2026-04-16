@@ -233,11 +233,7 @@
         </div>
 
         <div class="flex items-center gap-3">
-          <button
-            type="submit"
-            :disabled="sending"
-            class="px-5 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors flex items-center gap-2"
-          >
+          <UBtn type="submit" :disabled="sending">
             <Icon
               :name="useSchedule ? 'lucide:clock' : 'lucide:send'"
               class="w-4 h-4"
@@ -245,7 +241,7 @@
             {{
               sending ? "Sending..." : useSchedule ? "Schedule" : "Send Email"
             }}
-          </button>
+          </UBtn>
           <p v-if="sendError" class="text-sm text-red-600">{{ sendError }}</p>
         </div>
 
@@ -284,6 +280,7 @@
 import type { Template } from "~/composables/useApi";
 
 definePageMeta({ layout: "default" });
+useHead({ title: "Send Email" });
 
 const api = useApi();
 

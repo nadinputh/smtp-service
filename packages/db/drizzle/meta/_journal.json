@@ -64,6 +64,13 @@
       "when": 1775616000000,
       "tag": "0008_rbac_teams_multiauth",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1776230400000,
+      "tag": "0009_message_read_status",
+      "breakpoints": true
     }
   ]
 }

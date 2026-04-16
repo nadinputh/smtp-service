@@ -35,6 +35,7 @@
 
 <script setup lang="ts">
 definePageMeta({ layout: false });
+useHead({ title: "Authenticating..." });
 
 const { handleOAuth2Callback } = useAuth();
 const route = useRoute();

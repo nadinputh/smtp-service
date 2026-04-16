@@ -11,12 +11,9 @@
           Manage teams and team members
         </p>
       </div>
-      <button
-        @click="showCreateModal = true"
-        class="flex items-center gap-1 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
-      >
+      <UBtn size="sm" @click="showCreateModal = true">
         <Icon name="lucide:plus" class="w-4 h-4" /> Create Team
-      </button>
+      </UBtn>
     </header>
 
     <div class="flex-1 overflow-y-auto p-6">
@@ -109,18 +106,12 @@
                 </p>
               </div>
               <div class="flex gap-2">
-                <button
-                  @click="openRenameModal"
-                  class="text-xs px-3 py-1.5 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                >
+                <UBtn variant="secondary" size="xs" @click="openRenameModal">
                   Rename
-                </button>
-                <button
-                  @click="confirmDeleteTeam"
-                  class="text-xs px-3 py-1.5 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                >
+                </UBtn>
+                <UBtn variant="danger" size="xs" @click="confirmDeleteTeam">
                   Delete
-                </button>
+                </UBtn>
               </div>
             </div>
           </div>
@@ -135,12 +126,9 @@
               >
                 Members ({{ members.length }})
               </h4>
-              <button
-                @click="showAddMemberModal = true"
-                class="flex items-center gap-1 text-xs px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-              >
+              <UBtn size="xs" @click="showAddMemberModal = true">
                 <Icon name="lucide:plus" class="w-3.5 h-3.5" /> Add Member
-              </button>
+              </UBtn>
             </div>
 
             <div
@@ -204,12 +192,13 @@
                       </select>
                     </td>
                     <td class="px-4 py-3 text-right whitespace-nowrap">
-                      <button
+                      <UBtn
+                        variant="danger"
+                        size="xs"
                         @click="handleRemoveMember(member)"
-                        class="text-xs px-2 py-1 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                       >
                         Remove
-                      </button>
+                      </UBtn>
                     </td>
                   </tr>
                 </tbody>
@@ -250,20 +239,16 @@
               {{ createError }}
             </p>
             <div class="flex justify-end gap-2 mt-4">
-              <button
+              <UBtn
                 type="button"
+                variant="ghost"
                 @click="showCreateModal = false"
-                class="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
               >
                 Cancel
-              </button>
-              <button
-                type="submit"
-                :disabled="creating"
-                class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-              >
+              </UBtn>
+              <UBtn type="submit" :disabled="creating">
                 {{ creating ? "Creating..." : "Create" }}
-              </button>
+              </UBtn>
             </div>
           </form>
         </div>
@@ -298,20 +283,16 @@
               {{ renameError }}
             </p>
             <div class="flex justify-end gap-2 mt-4">
-              <button
+              <UBtn
                 type="button"
+                variant="ghost"
                 @click="showRenameModal = false"
-                class="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
               >
                 Cancel
-              </button>
-              <button
-                type="submit"
-                :disabled="renaming"
-                class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-              >
+              </UBtn>
+              <UBtn type="submit" :disabled="renaming">
                 {{ renaming ? "Saving..." : "Save" }}
-              </button>
+              </UBtn>
             </div>
           </form>
         </div>
@@ -321,7 +302,7 @@
       <div
         v-if="showAddMemberModal"
         class="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
-        @click.self="showAddMemberModal = false"
+        @click.self="closeAddMemberModal"
       >
         <div
           class="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-sm p-6"
@@ -333,16 +314,113 @@
           </h2>
           <form @submit.prevent="handleAddMember">
             <label class="block text-sm text-gray-600 dark:text-gray-400 mb-1">
-              User ID
+              Search User
             </label>
-            <input
-              v-model="addMemberForm.userId"
-              type="text"
-              required
-              placeholder="User UUID"
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-3"
-            />
-            <label class="block text-sm text-gray-600 dark:text-gray-400 mb-1">
+            <div class="relative">
+              <div class="relative">
+                <Icon
+                  name="lucide:search"
+                  class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
+                />
+                <input
+                  v-model="userSearchQuery"
+                  type="text"
+                  placeholder="Search by name or email..."
+                  class="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  @input="debouncedSearch"
+                  @focus="showSearchResults = true"
+                />
+              </div>
+
+              <!-- Selected user chip -->
+              <div
+                v-if="selectedUser"
+                class="mt-2 flex items-center gap-2 px-3 py-2 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-lg"
+              >
+                <div
+                  class="w-7 h-7 rounded-full bg-indigo-100 dark:bg-indigo-800 text-indigo-600 dark:text-indigo-300 flex items-center justify-center text-xs font-semibold shrink-0"
+                >
+                  {{
+                    (selectedUser.name || selectedUser.email)
+                      .charAt(0)
+                      .toUpperCase()
+                  }}
+                </div>
+                <div class="min-w-0 flex-1">
+                  <p
+                    class="text-sm font-medium text-gray-800 dark:text-gray-100 truncate"
+                  >
+                    {{ selectedUser.name || selectedUser.email }}
+                  </p>
+                  <p
+                    v-if="selectedUser.name"
+                    class="text-xs text-gray-400 dark:text-gray-500 truncate"
+                  >
+                    {{ selectedUser.email }}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                  @click="clearSelectedUser"
+                >
+                  <Icon name="lucide:x" class="w-4 h-4" />
+                </button>
+              </div>
+
+              <!-- Search results dropdown -->
+              <div
+                v-if="
+                  showSearchResults &&
+                  !selectedUser &&
+                  userSearchQuery.length >= 2
+                "
+                class="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto"
+              >
+                <div
+                  v-if="searching"
+                  class="px-3 py-3 text-sm text-gray-400 dark:text-gray-500 text-center"
+                >
+                  Searching...
+                </div>
+                <div
+                  v-else-if="!searchResults.length"
+                  class="px-3 py-3 text-sm text-gray-400 dark:text-gray-500 text-center"
+                >
+                  No users found
+                </div>
+                <button
+                  v-for="user in searchResults"
+                  :key="user.id"
+                  type="button"
+                  class="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors text-left"
+                  @click="selectUser(user)"
+                >
+                  <div
+                    class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 flex items-center justify-center text-sm font-semibold shrink-0"
+                  >
+                    {{ (user.name || user.email).charAt(0).toUpperCase() }}
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <p
+                      class="text-sm font-medium text-gray-800 dark:text-gray-100 truncate"
+                    >
+                      {{ user.name || user.email }}
+                    </p>
+                    <p
+                      v-if="user.name"
+                      class="text-xs text-gray-400 dark:text-gray-500 truncate"
+                    >
+                      {{ user.email }}
+                    </p>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            <label
+              class="block text-sm text-gray-600 dark:text-gray-400 mb-1 mt-3"
+            >
               Role
             </label>
             <select
@@ -359,20 +437,12 @@
               {{ addMemberError }}
             </p>
             <div class="flex justify-end gap-2 mt-4">
-              <button
-                type="button"
-                @click="showAddMemberModal = false"
-                class="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
-              >
+              <UBtn type="button" variant="ghost" @click="closeAddMemberModal">
                 Cancel
-              </button>
-              <button
-                type="submit"
-                :disabled="addingMember"
-                class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-              >
+              </UBtn>
+              <UBtn type="submit" :disabled="addingMember || !selectedUser">
                 {{ addingMember ? "Adding..." : "Add" }}
-              </button>
+              </UBtn>
             </div>
           </form>
         </div>
@@ -404,19 +474,16 @@
             {{ deleteTeamError }}
           </p>
           <div class="flex justify-end gap-2">
-            <button
-              @click="showDeleteTeamModal = false"
-              class="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
-            >
+            <UBtn variant="ghost" @click="showDeleteTeamModal = false">
               Cancel
-            </button>
-            <button
-              @click="handleDeleteTeam"
+            </UBtn>
+            <UBtn
+              variant="danger-filled"
               :disabled="deletingTeam"
-              class="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+              @click="handleDeleteTeam"
             >
               {{ deletingTeam ? "Deleting..." : "Delete" }}
-            </button>
+            </UBtn>
           </div>
         </div>
       </div>
@@ -428,6 +495,7 @@
 import type { Team, TeamMember } from "~/composables/useApi";
 
 definePageMeta({ layout: "default" });
+useHead({ title: "Teams" });
 
 const api = useApi();
 
@@ -544,23 +612,74 @@ async function handleDeleteTeam() {
 
 // ─── Members ───────────────────────────────────────────────
 const showAddMemberModal = ref(false);
-const addMemberForm = reactive({ userId: "", role: "member" });
+const addMemberForm = reactive({ role: "member" });
 const addingMember = ref(false);
 const addMemberError = ref("");
 
+// User search state
+const userSearchQuery = ref("");
+const searchResults = ref<{ id: string; email: string; name: string | null }[]>(
+  [],
+);
+const selectedUser = ref<{
+  id: string;
+  email: string;
+  name: string | null;
+} | null>(null);
+const searching = ref(false);
+const showSearchResults = ref(false);
+let searchTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function debouncedSearch() {
+  if (searchTimeout) clearTimeout(searchTimeout);
+  selectedUser.value = null;
+  if (userSearchQuery.value.length < 2) {
+    searchResults.value = [];
+    return;
+  }
+  searching.value = true;
+  searchTimeout = setTimeout(async () => {
+    try {
+      searchResults.value = await api.searchUsers(userSearchQuery.value);
+    } catch {
+      searchResults.value = [];
+    } finally {
+      searching.value = false;
+    }
+  }, 300);
+}
+
+function selectUser(user: { id: string; email: string; name: string | null }) {
+  selectedUser.value = user;
+  showSearchResults.value = false;
+  userSearchQuery.value = "";
+  searchResults.value = [];
+}
+
+function clearSelectedUser() {
+  selectedUser.value = null;
+  userSearchQuery.value = "";
+  searchResults.value = [];
+}
+
+function closeAddMemberModal() {
+  showAddMemberModal.value = false;
+  clearSelectedUser();
+  addMemberForm.role = "member";
+  addMemberError.value = "";
+}
+
 async function handleAddMember() {
-  if (!selectedTeam.value) return;
+  if (!selectedTeam.value || !selectedUser.value) return;
   addingMember.value = true;
   addMemberError.value = "";
   try {
     await api.addTeamMember(
       selectedTeam.value.id,
-      addMemberForm.userId,
+      selectedUser.value.id,
       addMemberForm.role,
     );
-    showAddMemberModal.value = false;
-    addMemberForm.userId = "";
-    addMemberForm.role = "member";
+    closeAddMemberModal();
     members.value = await api.getTeamMembers(selectedTeam.value.id);
   } catch (e: any) {
     addMemberError.value = e?.data?.error || "Failed to add member";

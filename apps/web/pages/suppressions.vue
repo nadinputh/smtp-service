@@ -11,13 +11,10 @@
           Blocked addresses that won't receive emails
         </p>
       </div>
-      <button
-        @click="showAddModal = true"
-        class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2"
-      >
+      <UBtn size="sm" @click="showAddModal = true">
         <Icon name="lucide:plus" class="w-4 h-4" />
         Add Address
-      </button>
+      </UBtn>
     </header>
 
     <div class="flex-1 overflow-y-auto p-6">
@@ -95,12 +92,13 @@
                   {{ new Date(item.createdAt).toLocaleDateString() }}
                 </td>
                 <td class="px-4 py-3 text-right whitespace-nowrap">
-                  <button
+                  <UBtn
+                    variant="danger"
+                    size="xs"
                     @click="handleRemove(item.id)"
-                    class="px-3 py-1.5 text-xs text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
                   >
                     Remove
-                  </button>
+                  </UBtn>
                 </td>
               </tr>
             </tbody>
@@ -119,20 +117,22 @@
             of {{ data.total }}
           </span>
           <div class="flex gap-2">
-            <button
+            <UBtn
+              variant="secondary"
+              size="sm"
               :disabled="currentPage <= 1"
               @click="currentPage--"
-              class="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 dark:text-gray-300 rounded-lg disabled:opacity-40"
             >
               Prev
-            </button>
-            <button
+            </UBtn>
+            <UBtn
+              variant="secondary"
+              size="sm"
               :disabled="currentPage * (data?.limit ?? 50) >= data.total"
               @click="currentPage++"
-              class="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 dark:text-gray-300 rounded-lg disabled:opacity-40"
             >
               Next
-            </button>
+            </UBtn>
           </div>
         </div>
       </div>
@@ -165,20 +165,12 @@
               {{ addError }}
             </p>
             <div class="flex justify-end gap-2 mt-4">
-              <button
-                type="button"
-                @click="showAddModal = false"
-                class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
-              >
+              <UBtn type="button" variant="ghost" @click="showAddModal = false">
                 Cancel
-              </button>
-              <button
-                type="submit"
-                :disabled="adding"
-                class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-              >
+              </UBtn>
+              <UBtn type="submit" :disabled="adding">
                 {{ adding ? "Adding..." : "Suppress" }}
-              </button>
+              </UBtn>
             </div>
           </form>
         </div>
@@ -191,6 +183,7 @@
 import type { PaginatedSuppressions } from "~/composables/useApi";
 
 definePageMeta({ layout: "default" });
+useHead({ title: "Suppressions" });
 
 const api = useApi();
 

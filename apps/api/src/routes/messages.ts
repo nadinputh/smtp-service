@@ -116,6 +116,7 @@ export function registerMessageRoutes(app: FastifyInstance) {
           date: messages.date,
           size: messages.size,
           status: messages.status,
+          isRead: messages.isRead,
           createdAt: messages.createdAt,
         })
         .from(messages)
@@ -599,6 +600,84 @@ export function registerMessageRoutes(app: FastifyInstance) {
         `inline; filename="${att.filename.replace(/"/g, '\\"')}"`,
       );
       return reply.send(stream);
+    },
+  );
+
+  // ─── Mark a single message as read ─────────────────────
+  app.put<{ Params: { id: string } }>(
+    "/api/messages/:id/read",
+    { preHandler: [authGuard, requireMessageRole("viewer")] },
+    async (request, reply) => {
+      const { id } = request.params;
+
+      const [message] = await db
+        .select({ id: messages.id })
+        .from(messages)
+        .where(eq(messages.id, id))
+        .limit(1);
+
+      if (!message) {
+        return reply.status(404).send({ error: "Message not found" });
+      }
+
+      await db
+        .update(messages)
+        .set({ isRead: true })
+        .where(eq(messages.id, id));
+
+      return { success: true };
+    },
+  );
+
+  // ─── Mark a single message as unread ───────────────────
+  app.delete<{ Params: { id: string } }>(
+    "/api/messages/:id/read",
+    { preHandler: [authGuard, requireMessageRole("viewer")] },
+    async (request, reply) => {
+      const { id } = request.params;
+
+      const [message] = await db
+        .select({ id: messages.id })
+        .from(messages)
+        .where(eq(messages.id, id))
+        .limit(1);
+
+      if (!message) {
+        return reply.status(404).send({ error: "Message not found" });
+      }
+
+      await db
+        .update(messages)
+        .set({ isRead: false })
+        .where(eq(messages.id, id));
+
+      return { success: true };
+    },
+  );
+
+  // ─── Batch mark messages as read/unread ────────────────
+  app.put<{ Params: { id: string }; Body: { messageIds: string[]; isRead: boolean } }>(
+    "/api/inboxes/:id/messages/read",
+    { preHandler: [authGuard, requireInboxRole("viewer")] },
+    async (request, reply) => {
+      const { id: inboxId } = request.params;
+      const { messageIds, isRead } = request.body;
+
+      if (!Array.isArray(messageIds) || messageIds.length === 0) {
+        return reply.status(400).send({ error: "messageIds array is required" });
+      }
+
+      await db
+        .update(messages)
+        .set({ isRead })
+        .where(
+          and(
+            eq(messages.inboxId, inboxId),
+            sql`${messages.id} = ANY(${messageIds})`,
+          ),
+        );
+
+      return { success: true, updated: messageIds.length };
     },
   );
 }

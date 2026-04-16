@@ -21,29 +21,22 @@
       <a
         :href="`/api/messages/${messageId}/raw`"
         target="_blank"
-        class="text-xs px-3 py-1.5 rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50 shrink-0"
+        class="text-xs px-3 py-1.5 rounded-md border border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 shrink-0"
       >
         Download .eml
       </a>
-      <button
-        class="text-xs px-3 py-1.5 rounded-md border border-indigo-200 text-indigo-600 hover:bg-indigo-50 shrink-0"
-        @click="showForwardModal = true"
-      >
+      <UBtn variant="secondary" size="xs" @click="showForwardModal = true">
         Forward
-      </button>
-      <button
+      </UBtn>
+      <UBtn
         v-if="message?.status === 'scheduled'"
-        class="text-xs px-3 py-1.5 rounded-md border border-orange-200 text-orange-600 hover:bg-orange-50 shrink-0"
+        variant="warning"
+        size="xs"
         @click="handleCancelSchedule"
       >
         Cancel Schedule
-      </button>
-      <button
-        class="text-xs px-3 py-1.5 rounded-md border border-red-200 text-red-500 hover:bg-red-50 shrink-0"
-        @click="handleDelete"
-      >
-        Delete
-      </button>
+      </UBtn>
+      <UBtn variant="danger" size="xs" @click="handleDelete"> Delete </UBtn>
     </header>
 
     <div v-if="pending" class="p-6 text-gray-400">Loading...</div>
@@ -53,17 +46,29 @@
       <div
         class="px-6 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm space-y-1"
       >
-        <div>
-          <span class="text-gray-400 w-12 inline-block">To:</span>
+        <div class="text-gray-700 dark:text-gray-300">
+          <span class="text-gray-400 dark:text-gray-500 w-12 inline-block"
+            >To:</span
+          >
           {{ message.to.join(", ") }}
         </div>
-        <div v-if="message.cc?.length">
-          <span class="text-gray-400 w-12 inline-block">Cc:</span>
+        <div v-if="message.cc?.length" class="text-gray-700 dark:text-gray-300">
+          <span class="text-gray-400 dark:text-gray-500 w-12 inline-block"
+            >Cc:</span
+          >
           {{ message.cc.join(", ") }}
         </div>
-        <div>
-          <span class="text-gray-400 w-12 inline-block">Date:</span>
-          {{ message.date ? new Date(message.date).toLocaleString() : "—" }}
+        <div class="text-gray-700 dark:text-gray-300">
+          <span class="text-gray-400 dark:text-gray-500 w-12 inline-block"
+            >Date:</span
+          >
+          {{
+            message.date
+              ? new Date(message.date).toLocaleString()
+              : message.createdAt
+                ? new Date(message.createdAt).toLocaleString()
+                : "—"
+          }}
         </div>
       </div>
 
@@ -91,13 +96,45 @@
         <!-- HTML preview -->
         <div
           v-if="activeTab === 'html' && message.html"
-          class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4"
+          class="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden"
         >
-          <iframe
-            :srcdoc="message.html"
-            class="w-full min-h-[400px] border-0"
-            sandbox="allow-same-origin"
-          />
+          <!-- Preview toolbar -->
+          <div
+            class="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"
+          >
+            <span class="text-xs text-gray-400 dark:text-gray-500"
+              >HTML Preview</span
+            >
+            <div
+              class="flex items-center bg-gray-200 dark:bg-gray-700 rounded-md p-0.5"
+            >
+              <button
+                v-for="opt in previewModes"
+                :key="opt.value"
+                @click="previewBg = opt.value"
+                class="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors"
+                :class="
+                  previewBg === opt.value
+                    ? 'bg-white dark:bg-gray-600 text-gray-800 dark:text-gray-100 shadow-sm'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                "
+              >
+                <Icon :name="opt.icon" class="w-3 h-3" />
+                {{ opt.label }}
+              </button>
+            </div>
+          </div>
+          <!-- iframe -->
+          <div
+            class="p-4 transition-colors"
+            :class="previewBg === 'dark' ? 'bg-gray-900' : 'bg-white'"
+          >
+            <iframe
+              :srcdoc="previewHtml"
+              class="w-full min-h-[400px] border-0"
+              sandbox="allow-same-origin"
+            />
+          </div>
         </div>
         <p
           v-else-if="activeTab === 'html'"
@@ -186,18 +223,19 @@
                   </p>
                 </div>
                 <div class="flex items-center gap-2 shrink-0">
-                  <button
+                  <UBtn
                     v-if="isPreviewable(att)"
+                    variant="secondary"
+                    size="xs"
                     @click="previewAttachment = idx"
-                    class="text-xs px-2 py-1 text-indigo-600 border border-indigo-200 rounded hover:bg-indigo-50 transition-colors"
                   >
                     Preview
-                  </button>
+                  </UBtn>
                   <a
                     :href="`/api/messages/${messageId}/attachments/${idx}`"
                     target="_blank"
                     download
-                    class="text-xs px-2 py-1 text-gray-600 border border-gray-200 rounded hover:bg-gray-50 transition-colors"
+                    class="text-xs px-2 py-1 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                   >
                     Download
                   </a>
@@ -228,7 +266,7 @@
                         :href="`/api/messages/${messageId}/attachments/${previewAttachment}`"
                         target="_blank"
                         download
-                        class="text-xs px-3 py-1.5 text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
+                        class="text-xs px-3 py-1.5 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
                       >
                         Download
                       </a>
@@ -361,19 +399,28 @@
                   :key="idx"
                   class="flex items-center gap-2 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-3 py-1.5"
                 >
-                  <span class="font-mono text-gray-600">{{ idx + 1 }}.</span>
-                  <span class="text-gray-800">{{ hop.from }}</span>
+                  <span class="font-mono text-gray-600 dark:text-gray-400"
+                    >{{ idx + 1 }}.</span
+                  >
+                  <span class="text-gray-800 dark:text-gray-200">{{
+                    hop.from
+                  }}</span>
                   <Icon
                     name="lucide:arrow-right"
                     class="w-3 h-3 text-gray-400 shrink-0"
                   />
-                  <span class="text-gray-800">{{ hop.by }}</span>
+                  <span class="text-gray-800 dark:text-gray-200">{{
+                    hop.by
+                  }}</span>
                   <span
                     v-if="hop.delay"
-                    class="ml-auto text-indigo-600 font-medium"
+                    class="ml-auto text-indigo-600 dark:text-indigo-400 font-medium"
                     >+{{ hop.delay }}</span
                   >
-                  <span v-if="hop.timestamp" class="text-gray-400 shrink-0">
+                  <span
+                    v-if="hop.timestamp"
+                    class="text-gray-400 dark:text-gray-500 shrink-0"
+                  >
                     {{ new Date(hop.timestamp).toLocaleString() }}
                   </span>
                 </div>
@@ -395,12 +442,14 @@
                       :key="idx"
                       class="bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 px-3 py-2 text-sm"
                     >
-                      <span class="font-mono font-semibold text-indigo-600"
+                      <span
+                        class="font-mono font-semibold text-indigo-600 dark:text-indigo-400"
                         >{{ h.key }}:</span
                       >
-                      <span class="ml-2 text-gray-700 break-all">{{
-                        h.value
-                      }}</span>
+                      <span
+                        class="ml-2 text-gray-700 dark:text-gray-300 break-all"
+                        >{{ h.value }}</span
+                      >
                     </div>
                   </div>
                 </details>
@@ -474,7 +523,7 @@
           <!-- Suggestions -->
           <div
             v-if="spamSuggestions.length"
-            class="mt-5 border-t border-gray-100 pt-4"
+            class="mt-5 border-t border-gray-100 dark:border-gray-700 pt-4"
           >
             <p class="text-xs font-semibold text-gray-400 uppercase mb-2">
               Suggestions
@@ -483,7 +532,7 @@
               <li
                 v-for="(s, idx) in spamSuggestions"
                 :key="idx"
-                class="flex items-start gap-2 text-sm text-gray-600"
+                class="flex items-start gap-2 text-sm text-gray-600 dark:text-gray-300"
               >
                 <Icon
                   name="lucide:lightbulb"
@@ -527,20 +576,16 @@
               Message forwarded and queued!
             </p>
             <div class="flex justify-end gap-2 mt-4">
-              <button
+              <UBtn
                 type="button"
+                variant="ghost"
                 @click="showForwardModal = false"
-                class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
               >
                 Cancel
-              </button>
-              <button
-                type="submit"
-                :disabled="forwarding"
-                class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-              >
+              </UBtn>
+              <UBtn type="submit" :disabled="forwarding">
                 {{ forwarding ? "Forwarding..." : "Forward" }}
-              </button>
+              </UBtn>
             </div>
           </form>
         </div>
@@ -560,6 +605,20 @@ const messageId = route.params.messageId as string;
 const activeTab = ref<
   "html" | "text" | "attachments" | "delivery" | "source" | "headers" | "spam"
 >("html");
+
+// ─── HTML preview background toggle ──────────────────────
+const previewBg = ref<"light" | "dark">("light");
+const previewModes = [
+  { value: "light" as const, icon: "lucide:sun", label: "Light" },
+  { value: "dark" as const, icon: "lucide:moon", label: "Dark" },
+];
+
+const previewHtml = computed(() => {
+  if (!message.value?.html) return "";
+  const bg = previewBg.value === "dark" ? "#111827" : "#ffffff";
+  const color = previewBg.value === "dark" ? "#e5e7eb" : "#1f2937";
+  return `<html><head><style>body{margin:0;background:${bg};color:${color}}</style></head><body>${message.value.html}</body></html>`;
+});
 
 const tabs = [
   { key: "html" as const, label: "HTML" },
@@ -596,6 +655,22 @@ const { data: message, pending } = useAsyncData(
   `message-${messageId}`,
   () => api.getMessage(messageId),
   { server: false },
+);
+
+useHead({
+  title: computed(() => message.value?.subject || "Message"),
+});
+
+// Auto-mark message as read when viewed
+watch(
+  message,
+  (msg) => {
+    if (msg && !msg.isRead) {
+      msg.isRead = true;
+      api.markMessageRead(messageId).catch(() => {});
+    }
+  },
+  { immediate: true },
 );
 
 // ─── Attachment Helpers ───────────────────────────────────

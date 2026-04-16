@@ -3,6 +3,20 @@ export default defineNuxtConfig({
   compatibilityDate: "2025-01-01",
   devtools: { enabled: true },
 
+  app: {
+    head: {
+      title: "SMTP Service",
+      titleTemplate: "%s — SMTP Service",
+      link: [
+        { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
+      ],
+    },
+  },
+
+  experimental: {
+    appManifest: false,
+  },
+
   modules: ["@nuxtjs/tailwindcss", "@nuxt/icon"],
 
   // ─── Proxy: hide the API origin behind the Nuxt server ──
@@ -36,6 +50,16 @@ export default defineNuxtConfig({
     server: {
       watch: {
         ignored: ["**/node_modules/**", "**/.nuxt/**"],
+      },
+      proxy: {
+        "/api/events": {
+          target: process.env.NUXT_API_TARGET || "http://localhost:3002",
+          changeOrigin: true,
+          // SSE requires no response buffering
+          headers: {
+            Connection: "keep-alive",
+          },
+        },
       },
     },
   },

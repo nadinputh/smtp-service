@@ -7,6 +7,7 @@ import {
   integer,
   jsonb,
   real,
+  boolean,
 } from "drizzle-orm/pg-core";
 import { inboxes } from "./inboxes.js";
 
@@ -55,6 +56,9 @@ export const messages = pgTable("messages", {
 
   // Custom headers (X-* headers set via API)
   customHeaders: jsonb("custom_headers").$type<Record<string, string>>(),
+
+  // Read status
+  isRead: boolean("is_read").notNull().default(false),
 
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

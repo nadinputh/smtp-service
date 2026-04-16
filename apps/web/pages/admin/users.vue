@@ -11,12 +11,9 @@
           Manage users and assign roles
         </p>
       </div>
-      <button
-        @click="showCreateModal = true"
-        class="flex items-center gap-1 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
-      >
+      <UBtn size="sm" @click="showCreateModal = true">
         <Icon name="lucide:plus" class="w-4 h-4" /> Create User
-      </button>
+      </UBtn>
     </header>
 
     <div class="flex-1 overflow-y-auto p-6">
@@ -93,25 +90,26 @@
                   {{ formatDate(u.createdAt) }}
                 </td>
                 <td class="px-4 py-3 text-right whitespace-nowrap">
-                  <button
-                    @click="openEditModal(u)"
-                    class="text-xs px-3 py-1.5 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                  >
+                  <UBtn variant="secondary" size="xs" @click="openEditModal(u)">
                     Edit
-                  </button>
-                  <button
+                  </UBtn>
+                  <UBtn
+                    variant="secondary"
+                    size="xs"
+                    class="ml-1"
                     @click="openPasswordModal(u)"
-                    class="text-xs px-3 py-1.5 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ml-1"
                   >
                     Set Password
-                  </button>
-                  <button
+                  </UBtn>
+                  <UBtn
                     v-if="u.id !== currentUser?.id"
+                    variant="danger"
+                    size="xs"
+                    class="ml-1"
                     @click="confirmDelete(u)"
-                    class="text-xs px-3 py-1.5 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors ml-1"
                   >
                     Delete
-                  </button>
+                  </UBtn>
                 </td>
               </tr>
             </tbody>
@@ -129,26 +127,28 @@
             users)
           </p>
           <div class="flex gap-2">
-            <button
+            <UBtn
+              variant="secondary"
+              size="xs"
               :disabled="page <= 1"
               @click="
                 page--;
                 fetchUsers();
               "
-              class="text-xs px-3 py-1.5 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 transition-colors"
             >
               Previous
-            </button>
-            <button
+            </UBtn>
+            <UBtn
+              variant="secondary"
+              size="xs"
               :disabled="page >= usersData.pagination.pages"
               @click="
                 page++;
                 fetchUsers();
               "
-              class="text-xs px-3 py-1.5 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 transition-colors"
             >
               Next
-            </button>
+            </UBtn>
           </div>
         </div>
       </div>
@@ -196,20 +196,12 @@
               {{ editError }}
             </p>
             <div class="flex justify-end gap-2 mt-4">
-              <button
-                type="button"
-                @click="editUser = null"
-                class="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
-              >
+              <UBtn type="button" variant="ghost" @click="editUser = null">
                 Cancel
-              </button>
-              <button
-                type="submit"
-                :disabled="saving"
-                class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-              >
+              </UBtn>
+              <UBtn type="submit" :disabled="saving">
                 {{ saving ? "Saving..." : "Save" }}
-              </button>
+              </UBtn>
             </div>
           </form>
         </div>
@@ -241,19 +233,14 @@
             {{ deleteError }}
           </p>
           <div class="flex justify-end gap-2">
-            <button
-              @click="deleteTarget = null"
-              class="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              @click="handleDelete"
+            <UBtn variant="ghost" @click="deleteTarget = null"> Cancel </UBtn>
+            <UBtn
+              variant="danger-filled"
               :disabled="deleting"
-              class="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+              @click="handleDelete"
             >
               {{ deleting ? "Deleting..." : "Delete" }}
-            </button>
+            </UBtn>
           </div>
         </div>
       </div>
@@ -320,20 +307,16 @@
               {{ createError }}
             </p>
             <div class="flex justify-end gap-2 mt-4">
-              <button
+              <UBtn
                 type="button"
+                variant="ghost"
                 @click="showCreateModal = false"
-                class="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
               >
                 Cancel
-              </button>
-              <button
-                type="submit"
-                :disabled="creating"
-                class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-              >
+              </UBtn>
+              <UBtn type="submit" :disabled="creating">
                 {{ creating ? "Creating..." : "Create" }}
-              </button>
+              </UBtn>
             </div>
           </form>
         </div>
@@ -393,20 +376,16 @@
               {{ passwordSuccess }}
             </p>
             <div class="flex justify-end gap-2 mt-4">
-              <button
+              <UBtn
                 type="button"
+                variant="ghost"
                 @click="passwordTarget = null"
-                class="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
               >
                 Cancel
-              </button>
-              <button
-                type="submit"
-                :disabled="settingPassword"
-                class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-              >
+              </UBtn>
+              <UBtn type="submit" :disabled="settingPassword">
                 {{ settingPassword ? "Setting..." : "Set Password" }}
-              </button>
+              </UBtn>
             </div>
           </form>
         </div>
@@ -419,6 +398,7 @@
 import type { AdminUser, PaginatedUsers } from "~/composables/useApi";
 
 definePageMeta({ layout: "default" });
+useHead({ title: "User Management" });
 
 const api = useApi();
 const { user: currentUser } = useAuth();
