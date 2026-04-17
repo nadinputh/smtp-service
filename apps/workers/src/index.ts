@@ -2,10 +2,10 @@ import dotenv from "dotenv";
 dotenv.config({ path: "../../.env" });
 import { Worker, type Job } from "bullmq";
 import { simpleParser, type ParsedMail } from "mailparser";
-import { getEnv } from "@smtp-service/env";
-import { getDb, messages, userQuotas } from "@smtp-service/db";
+import { getEnv } from "@mailpocket/env";
+import { getDb, messages, userQuotas } from "@mailpocket/db";
 import { lt, lte } from "drizzle-orm";
-import { createStorage } from "@smtp-service/storage";
+import { createStorage } from "@mailpocket/storage";
 import {
   QUEUE_NAMES,
   createRedisConnection,
@@ -16,7 +16,7 @@ import {
   type OutboundEmailPayload,
   type CleanupPayload,
   type QuotaResetPayload,
-} from "@smtp-service/queue";
+} from "@mailpocket/queue";
 import { randomUUID } from "node:crypto";
 import Redis from "ioredis";
 import { createOutboundProcessor } from "./outbound.js";

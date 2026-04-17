@@ -1,12 +1,12 @@
 import type { FastifyInstance } from "fastify";
-import { getEnv } from "@smtp-service/env";
+import { getEnv } from "@mailpocket/env";
 import {
   getDb,
   inboxes,
   inboxMembers,
   teamMembers,
   userQuotas,
-} from "@smtp-service/db";
+} from "@mailpocket/db";
 import { eq, and, count, or, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { authGuard } from "../middleware/auth.js";
@@ -31,7 +31,8 @@ export function registerInboxRoutes(app: FastifyInstance) {
 
       // Get inboxes via: 1) ownership, 2) explicit membership, 3) team membership
       const result = await db.execute(sql`
-        SELECT DISTINCT i.id, i.name, i.smtp_username AS "smtpUsername", i.created_at AS "createdAt"
+        SELECT DISTINCT i.id, i.name, i.smtp_username AS "smtpUsername", i.created_at AS "createdAt",
+          COALESCE((SELECT COUNT(*) FROM messages m WHERE m.inbox_id = i.id AND m.is_read = false), 0)::int AS "unreadCount"
         FROM inboxes i
         LEFT JOIN inbox_members im ON im.inbox_id = i.id AND im.user_id = ${userId}
         LEFT JOIN team_members tm ON tm.team_id = i.team_id AND tm.user_id = ${userId}

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
-import { getEnv } from "@smtp-service/env";
-import { getDb, inboxes, inboxMembers, users } from "@smtp-service/db";
+import { getEnv } from "@mailpocket/env";
+import { getDb, inboxes, inboxMembers, users } from "@mailpocket/db";
 import { eq, and } from "drizzle-orm";
 import { authGuard } from "../middleware/auth.js";
 import { requireInboxRole } from "../middleware/access.js";

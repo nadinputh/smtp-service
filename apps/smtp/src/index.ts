@@ -1,14 +1,14 @@
 import dotenv from "dotenv";
 dotenv.config({ path: "../../.env" });
 import { SMTPServer } from "smtp-server";
-import { getEnv } from "@smtp-service/env";
-import { getDb, inboxes } from "@smtp-service/db";
-import { createStorage } from "@smtp-service/storage";
+import { getEnv } from "@mailpocket/env";
+import { getDb, inboxes } from "@mailpocket/db";
+import { createStorage } from "@mailpocket/storage";
 import {
   createIncomingQueue,
   createRedisConnection,
   type IncomingEmailPayload,
-} from "@smtp-service/queue";
+} from "@mailpocket/queue";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { PassThrough } from "node:stream";

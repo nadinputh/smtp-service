@@ -1,8 +1,8 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-import { getEnv } from "@smtp-service/env";
-import { getDb, apiKeys, users } from "@smtp-service/db";
+import { getEnv } from "@mailpocket/env";
+import { getDb, apiKeys, users } from "@mailpocket/db";
 import { eq } from "drizzle-orm";
 
 export interface JwtPayload {

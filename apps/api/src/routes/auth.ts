@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
-import { getEnv } from "@smtp-service/env";
-import { getDb, users } from "@smtp-service/db";
+import { getEnv } from "@mailpocket/env";
+import { getDb, users } from "@mailpocket/db";
 import { eq } from "drizzle-orm";
 import { signToken, authGuard } from "../middleware/auth.js";
 

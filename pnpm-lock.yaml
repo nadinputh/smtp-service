@@ -41,16 +41,16 @@ importers:
       '@fastify/rate-limit':
         specifier: ^10.3.0
         version: 10.3.0
-      '@smtp-service/db':
+      '@mailpocket/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@smtp-service/env':
+      '@mailpocket/env':
         specifier: workspace:*
         version: link:../../packages/env
-      '@smtp-service/queue':
+      '@mailpocket/queue':
         specifier: workspace:*
         version: link:../../packages/queue
-      '@smtp-service/storage':
+      '@mailpocket/storage':
         specifier: workspace:*
         version: link:../../packages/storage
       archiver:
@@ -108,16 +108,16 @@ importers:
 
   apps/smtp:
     dependencies:
-      '@smtp-service/db':
+      '@mailpocket/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@smtp-service/env':
+      '@mailpocket/env':
         specifier: workspace:*
         version: link:../../packages/env
-      '@smtp-service/queue':
+      '@mailpocket/queue':
         specifier: workspace:*
         version: link:../../packages/queue
-      '@smtp-service/storage':
+      '@mailpocket/storage':
         specifier: workspace:*
         version: link:../../packages/storage
       dotenv:
@@ -158,16 +158,16 @@ importers:
 
   apps/workers:
     dependencies:
-      '@smtp-service/db':
+      '@mailpocket/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@smtp-service/env':
+      '@mailpocket/env':
         specifier: workspace:*
         version: link:../../packages/env
-      '@smtp-service/queue':
+      '@mailpocket/queue':
         specifier: workspace:*
         version: link:../../packages/queue
-      '@smtp-service/storage':
+      '@mailpocket/storage':
         specifier: workspace:*
         version: link:../../packages/storage
       bullmq:

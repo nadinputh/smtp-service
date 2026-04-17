@@ -30,7 +30,7 @@ WORKDIR /app/apps/api
 EXPOSE 3002
 CMD ["node", "--import", "tsx", "src/index.ts"]
 
-# ─── SMTP Service ─────────────────────────────────────────
+# ─── SMTP Server ──────────────────────────────────────────
 FROM base AS smtp
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app .

@@ -5,11 +5,9 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      title: "SMTP Service",
-      titleTemplate: "%s — SMTP Service",
-      link: [
-        { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
-      ],
+      title: "MailPocket",
+      titleTemplate: "%s — MailPocket",
+      link: [{ rel: "icon", type: "image/svg+xml", href: "/favicon.svg" }],
     },
   },
 

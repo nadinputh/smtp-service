@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
-import { getEnv } from "@smtp-service/env";
-import { getDb, messages, inboxes } from "@smtp-service/db";
-import { createStorage } from "@smtp-service/storage";
+import { getEnv } from "@mailpocket/env";
+import { getDb, messages, inboxes } from "@mailpocket/db";
+import { createStorage } from "@mailpocket/storage";
 import { eq, desc, and, ilike, gte, lte, sql, count } from "drizzle-orm";
 import { authGuard } from "../middleware/auth.js";
 import { requireInboxRole, requireMessageRole } from "../middleware/access.js";
@@ -9,11 +9,12 @@ import { simpleParser } from "mailparser";
 import MailComposer from "nodemailer/lib/mail-composer/index.js";
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
+import Redis from "ioredis";
 import {
   createOutboundQueue,
   createRedisConnection,
   type OutboundEmailPayload,
-} from "@smtp-service/queue";
+} from "@mailpocket/queue";
 
 export function registerMessageRoutes(app: FastifyInstance) {
   const env = getEnv();
@@ -42,6 +43,12 @@ export function registerMessageRoutes(app: FastifyInstance) {
     password: env.REDIS_PASSWORD,
   });
   const outboundQueue = createOutboundQueue(redisConn);
+
+  const redisPub = new Redis.default({
+    host: env.REDIS_HOST,
+    port: env.REDIS_PORT,
+    password: env.REDIS_PASSWORD || undefined,
+  });
 
   // List messages in an inbox with search, filters, and pagination
   app.get<{
@@ -446,7 +453,7 @@ export function registerMessageRoutes(app: FastifyInstance) {
       const rawBuffer = await storage.getObjectAsBuffer(message.rawKey);
 
       // Build a forwarding MIME envelope
-      const fromAddr = `forwarded@${env.API_HOST !== "0.0.0.0" ? env.API_HOST : "smtp-service.local"}`;
+      const fromAddr = `forwarded@${env.API_HOST !== "0.0.0.0" ? env.API_HOST : "mailpocket.local"}`;
       const fwdSubject = `[Fwd] ${message.subject ?? "(no subject)"}`;
 
       const mail = new MailComposer({
@@ -600,7 +607,7 @@ export function registerMessageRoutes(app: FastifyInstance) {
       const { id } = request.params;
 
       const [message] = await db
-        .select({ id: messages.id })
+        .select({ id: messages.id, inboxId: messages.inboxId })
         .from(messages)
         .where(eq(messages.id, id))
         .limit(1);
@@ -614,6 +621,11 @@ export function registerMessageRoutes(app: FastifyInstance) {
         .set({ isRead: true })
         .where(eq(messages.id, id));
 
+      await redisPub.publish(
+        "read:changed",
+        JSON.stringify({ inboxId: message.inboxId }),
+      );
+
       return { success: true };
     },
   );
@@ -626,7 +638,7 @@ export function registerMessageRoutes(app: FastifyInstance) {
       const { id } = request.params;
 
       const [message] = await db
-        .select({ id: messages.id })
+        .select({ id: messages.id, inboxId: messages.inboxId })
         .from(messages)
         .where(eq(messages.id, id))
         .limit(1);
@@ -639,6 +651,11 @@ export function registerMessageRoutes(app: FastifyInstance) {
         .update(messages)
         .set({ isRead: false })
         .where(eq(messages.id, id));
+
+      await redisPub.publish(
+        "read:changed",
+        JSON.stringify({ inboxId: message.inboxId }),
+      );
 
       return { success: true };
     },
@@ -670,6 +687,8 @@ export function registerMessageRoutes(app: FastifyInstance) {
             sql`${messages.id} = ANY(${messageIds})`,
           ),
         );
+
+      await redisPub.publish("read:changed", JSON.stringify({ inboxId }));
 
       return { success: true, updated: messageIds.length };
     },

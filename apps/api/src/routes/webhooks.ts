@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
-import { getEnv } from "@smtp-service/env";
-import { getDb, webhooks, webhookLogs, inboxes } from "@smtp-service/db";
+import { getEnv } from "@mailpocket/env";
+import { getDb, webhooks, webhookLogs, inboxes } from "@mailpocket/db";
 import { eq, and, desc } from "drizzle-orm";
 import { authGuard } from "../middleware/auth.js";
 import { requireInboxRole } from "../middleware/access.js";
@@ -144,7 +144,7 @@ export function registerWebhookRoutes(app: FastifyInstance) {
       // Re-enqueue via the webhook delivery queue
       // We need external access to the queue — use Redis pub/sub to signal workers
       const { createWebhookDeliveryQueue, createRedisConnection } =
-        await import("@smtp-service/queue");
+        await import("@mailpocket/queue");
       const conn = createRedisConnection({
         host: env.REDIS_HOST,
         port: env.REDIS_PORT,

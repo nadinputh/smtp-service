@@ -1,6 +1,6 @@
-# SMTP Service - Project Requirements & Progress Tracker
+# MailPocket - Project Requirements & Progress Tracker
 
-This project aims to build a hybrid SMTP service.
+This project aims to build a friendly, local email service.
 
 1. **Testing Mode (Mailtrap-like):** Acts as an SMTP sinkhole to capture and inspect emails during development.
 2. **Production Mode (Mailgun-like):** Acts as a scalable Mail Transfer Agent (MTA) with an HTTP API to deliver emails to the outside world.

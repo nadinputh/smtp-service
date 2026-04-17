@@ -1,8 +1,8 @@
 # ──────────────────────────────────────────────────────────
 # All-in-One Image: PostgreSQL 16 + Redis 7 + App Services
 # ──────────────────────────────────────────────────────────
-# Build:  docker build -f Dockerfile.allinone -t smtp-service .
-# Run:    docker run -d -v smtp_data:/data -p 3000:3000 -p 3002:3002 -p 2525:2525 -p 1025:1025 --env-file .env smtp-service
+# Build:  docker build -f Dockerfile.allinone -t mailpocket .
+# Run:    docker run -d -v smtp_data:/data -p 3000:3000 -p 3002:3002 -p 2525:2525 -p 1025:1025 --env-file .env mailpocket
 # ──────────────────────────────────────────────────────────
 
 # ─── Stage 1: Build app ──────────────────────────────────

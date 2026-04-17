@@ -6,9 +6,9 @@ import {
   teams,
   teamMembers,
   users,
-} from "@smtp-service/db";
+} from "@mailpocket/db";
 import { eq, and } from "drizzle-orm";
-import { getEnv } from "@smtp-service/env";
+import { getEnv } from "@mailpocket/env";
 
 export type InboxRole = "owner" | "editor" | "viewer";
 export type TeamRole = "admin" | "member";
@@ -215,7 +215,7 @@ export function requireMessageRole(minRole: InboxRole) {
     const db = getDb(env.DATABASE_URL);
 
     // Import messages table inline to avoid circular dependency
-    const { messages } = await import("@smtp-service/db");
+    const { messages } = await import("@mailpocket/db");
     const [msg] = await db
       .select({ inboxId: messages.inboxId })
       .from(messages)

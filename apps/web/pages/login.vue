@@ -12,10 +12,10 @@
             class="w-10 h-10 text-indigo-600 mx-auto mb-2"
           />
           <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100">
-            Sign in
+            Welcome back
           </h1>
           <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Access your SMTP inboxes
+            Sign in to your MailPocket inboxes
           </p>
         </div>
 

@@ -1,5 +1,5 @@
 {
-  "name": "@smtp-service/env",
+  "name": "@mailpocket/env",
   "version": "0.0.1",
   "private": true,
   "type": "module",

@@ -1,6 +1,6 @@
-# SMTP Service
+# MailPocket
 
-A hybrid SMTP service that works as an **email sinkhole** (Mailtrap-like) for development testing and as a **production relay** (Mailgun-like) for outbound delivery. Built with a pnpm monorepo architecture.
+A friendly, local email service that works as an **email sinkhole** (Mailtrap-like) for development testing and as a **production relay** (Mailgun-like) for outbound delivery. Built with a pnpm monorepo architecture.
 
 ## Features
 
@@ -46,7 +46,7 @@ packages/
 ### 1. Clone and install
 
 ```bash
-git clone <repo-url> && cd smtp-service
+git clone <repo-url> && cd mailpocket
 corepack enable
 pnpm install
 ```
@@ -74,7 +74,7 @@ pnpm db:migrate
 
 ```bash
 # Set ADMIN_EMAIL and ADMIN_PASSWORD in .env first
-pnpm --filter @smtp-service/db seed
+pnpm --filter @mailpocket/db seed
 ```
 
 ### 6. Start all services
@@ -310,20 +310,20 @@ Supports `templateId` + `variables`, `sendAt` for scheduling, and custom `X-*` h
 
 ## Scripts
 
-| Command                               | Description                    |
-| ------------------------------------- | ------------------------------ |
-| `pnpm dev`                            | Start all services in dev mode |
-| `pnpm dev:api`                        | Start API only                 |
-| `pnpm dev:smtp`                       | Start SMTP only                |
-| `pnpm dev:workers`                    | Start workers only             |
-| `pnpm dev:web`                        | Start web UI only              |
-| `pnpm build`                          | Build all packages             |
-| `pnpm test`                           | Run all tests                  |
-| `pnpm test:watch`                     | Run tests in watch mode        |
-| `pnpm db:generate`                    | Generate Drizzle migrations    |
-| `pnpm db:migrate`                     | Run database migrations        |
-| `pnpm db:studio`                      | Open Drizzle Studio            |
-| `pnpm --filter @smtp-service/db seed` | Seed admin user                |
+| Command                             | Description                    |
+| ----------------------------------- | ------------------------------ |
+| `pnpm dev`                          | Start all services in dev mode |
+| `pnpm dev:api`                      | Start API only                 |
+| `pnpm dev:smtp`                     | Start SMTP only                |
+| `pnpm dev:workers`                  | Start workers only             |
+| `pnpm dev:web`                      | Start web UI only              |
+| `pnpm build`                        | Build all packages             |
+| `pnpm test`                         | Run all tests                  |
+| `pnpm test:watch`                   | Run tests in watch mode        |
+| `pnpm db:generate`                  | Generate Drizzle migrations    |
+| `pnpm db:migrate`                   | Run database migrations        |
+| `pnpm db:studio`                    | Open Drizzle Studio            |
+| `pnpm --filter @mailpocket/db seed` | Seed admin user                |
 
 ## Testing
 

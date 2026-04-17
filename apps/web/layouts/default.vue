@@ -19,7 +19,7 @@
           class="text-xl font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2"
         >
           <Icon name="lucide:mail" class="w-6 h-6 text-indigo-600" />
-          SMTP Service
+          MailPocket
         </h1>
         <!-- Close button (mobile only) -->
         <button
@@ -47,7 +47,7 @@
           </button>
         </div>
         <div
-          v-if="pending"
+          v-if="!inboxes && pending"
           class="text-sm text-gray-400 dark:text-gray-500 px-2"
         >
           Loading...
@@ -64,7 +64,23 @@
               "
             >
               <Icon name="lucide:inbox" class="w-4 h-4 shrink-0" />
-              <span class="truncate">{{ inbox.name }}</span>
+              <span class="truncate flex-1">{{ inbox.name }}</span>
+              <Transition
+                enter-active-class="transition-all duration-200 ease-out"
+                leave-active-class="transition-all duration-150 ease-in"
+                enter-from-class="opacity-0 scale-75"
+                enter-to-class="opacity-100 scale-100"
+                leave-from-class="opacity-100 scale-100"
+                leave-to-class="opacity-0 scale-75"
+              >
+                <span
+                  v-if="inbox.unreadCount > 0"
+                  :key="inbox.unreadCount"
+                  class="ml-auto inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-semibold rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300"
+                >
+                  {{ inbox.unreadCount > 99 ? "99+" : inbox.unreadCount }}
+                </span>
+              </Transition>
             </NuxtLink>
           </li>
         </ul>
@@ -291,7 +307,7 @@
         </button>
         <span
           class="ml-3 text-lg font-semibold text-gray-800 dark:text-gray-100"
-          >SMTP Service</span
+          >MailPocket</span
         >
       </div>
       <div class="flex-1 overflow-hidden">
@@ -397,10 +413,38 @@ const {
   refresh: refreshInboxes,
 } = useAsyncData("inboxes", () => api.getInboxes());
 
-// Real-time: refresh inbox list when a new email arrives
-useSSE((_data) => {
-  refreshInboxes();
-});
+// Real-time: refresh inbox list when a new email arrives or read status changes
+function silentRefreshInboxes() {
+  api.getInboxes().then((fresh) => {
+    if (fresh && inboxes.value) {
+      // Patch in-place to avoid re-rendering the entire list
+      for (const freshInbox of fresh) {
+        const existing = inboxes.value.find((i) => i.id === freshInbox.id);
+        if (existing) {
+          Object.assign(existing, freshInbox);
+        }
+      }
+      // Add any new inboxes, remove deleted ones
+      const freshIds = new Set(fresh.map((i) => i.id));
+      const existingIds = new Set(inboxes.value.map((i) => i.id));
+      for (const f of fresh) {
+        if (!existingIds.has(f.id)) inboxes.value.push(f);
+      }
+      inboxes.value = inboxes.value.filter((i) => freshIds.has(i.id));
+    } else {
+      inboxes.value = fresh;
+    }
+  });
+}
+
+useSSE(
+  (_data) => {
+    silentRefreshInboxes();
+  },
+  (_data) => {
+    silentRefreshInboxes();
+  },
+);
 
 // ─── Create Inbox ─────────────────────────────────────────
 const showCreateModal = ref(false);

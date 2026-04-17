@@ -1,14 +1,14 @@
-import { getDb, webhooks, webhookLogs, messages } from "@smtp-service/db";
+import { getDb, webhooks, webhookLogs, messages } from "@mailpocket/db";
 import { eq, and } from "drizzle-orm";
 import type Redis from "ioredis";
-import type { Env } from "@smtp-service/env";
+import type { Env } from "@mailpocket/env";
 import {
   Worker,
   type ConnectionOptions,
   type Job,
   QUEUE_NAMES,
   type WebhookDeliveryPayload,
-} from "@smtp-service/queue";
+} from "@mailpocket/queue";
 import type { Queue } from "bullmq";
 
 interface WebhookEvent {

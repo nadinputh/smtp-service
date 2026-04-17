@@ -7,13 +7,13 @@ import rateLimit from "@fastify/rate-limit";
 import { createBullBoard } from "@bull-board/api";
 import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { FastifyAdapter } from "@bull-board/fastify";
-import { getEnv } from "@smtp-service/env";
-import { getDb } from "@smtp-service/db";
+import { getEnv } from "@mailpocket/env";
+import { getDb } from "@mailpocket/db";
 import {
   createIncomingQueue,
   createOutboundQueue,
   createRedisConnection,
-} from "@smtp-service/queue";
+} from "@mailpocket/queue";
 import { sql } from "drizzle-orm";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerInboxRoutes } from "./routes/inboxes.js";

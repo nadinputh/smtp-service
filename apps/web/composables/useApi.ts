@@ -611,6 +611,7 @@ export interface Inbox {
   name: string;
   smtpUsername: string;
   createdAt: string;
+  unreadCount: number;
 }
 
 export interface InboxDetail extends Inbox {

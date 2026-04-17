@@ -259,7 +259,7 @@
         <li v-for="msg in messages" :key="msg.id">
           <NuxtLink
             :to="`/inbox/${inboxId}/message/${msg.id}`"
-            class="block px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+            class="block px-6 py-4 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors"
             :class="[
               route.params.messageId === msg.id
                 ? 'bg-indigo-50 dark:bg-indigo-900/20'
@@ -917,17 +917,53 @@ const newMailNotification = ref<{
 } | null>(null);
 let notificationTimeout: ReturnType<typeof setTimeout>;
 
-useSSE((data) => {
-  if (data.inboxId === inboxId) {
-    fetchMessages();
-    // Show notification toast
-    newMailNotification.value = { from: data.from, subject: data.subject };
-    clearTimeout(notificationTimeout);
-    notificationTimeout = setTimeout(() => {
-      newMailNotification.value = null;
-    }, 5000);
-  }
-});
+useSSE(
+  (data) => {
+    if (data.inboxId === inboxId) {
+      silentRefreshMessages();
+      // Show notification toast
+      newMailNotification.value = { from: data.from, subject: data.subject };
+      clearTimeout(notificationTimeout);
+      notificationTimeout = setTimeout(() => {
+        newMailNotification.value = null;
+      }, 5000);
+    }
+  },
+  (data) => {
+    if (data.inboxId === inboxId) {
+      silentRefreshMessages();
+    }
+  },
+);
+
+function silentRefreshMessages() {
+  api
+    .getInboxMessages(inboxId, {
+      q: searchQuery.value || undefined,
+      status: filterStatus.value || undefined,
+      after: filterAfter.value || undefined,
+      before: filterBefore.value || undefined,
+      page: currentPage.value,
+      limit: 50,
+    })
+    .then((res) => {
+      for (const fresh of res.messages) {
+        const existing = messages.value.find((m) => m.id === fresh.id);
+        if (existing) {
+          Object.assign(existing, fresh);
+        }
+      }
+      // Add new messages, remove deleted ones
+      const freshIds = new Set(res.messages.map((m) => m.id));
+      const existingIds = new Set(messages.value.map((m) => m.id));
+      for (const m of res.messages) {
+        if (!existingIds.has(m.id)) messages.value.unshift(m);
+      }
+      messages.value = messages.value.filter((m) => freshIds.has(m.id));
+      totalMessages.value = res.total;
+    })
+    .catch(() => {});
+}
 
 function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleString(undefined, {

@@ -10,11 +10,11 @@ import {
   domains,
   suppressions,
   inboxes,
-} from "@smtp-service/db";
-import type { StorageClient } from "@smtp-service/storage";
-import { type OutboundEmailPayload } from "@smtp-service/queue";
+} from "@mailpocket/db";
+import type { StorageClient } from "@mailpocket/storage";
+import { type OutboundEmailPayload } from "@mailpocket/queue";
 import { eq, and } from "drizzle-orm";
-import type { Env } from "@smtp-service/env";
+import type { Env } from "@mailpocket/env";
 import type Redis from "ioredis";
 import { injectTracking } from "./tracking.js";
 

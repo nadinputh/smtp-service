@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { generateKeyPairSync } from "node:crypto";
 import { promises as dns } from "node:dns";
-import { getEnv } from "@smtp-service/env";
-import { getDb, domains } from "@smtp-service/db";
+import { getEnv } from "@mailpocket/env";
+import { getDb, domains } from "@mailpocket/db";
 import { eq, and } from "drizzle-orm";
 import { authGuard } from "../middleware/auth.js";
 import { isOwnerOrAdmin, isGlobalAdmin } from "../middleware/access.js";

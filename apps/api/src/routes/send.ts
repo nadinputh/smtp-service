@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import MailComposer from "nodemailer/lib/mail-composer/index.js";
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
-import { getEnv } from "@smtp-service/env";
+import { getEnv } from "@mailpocket/env";
 import {
   getDb,
   inboxes,
@@ -10,13 +10,13 @@ import {
   templates,
   suppressions,
   userQuotas,
-} from "@smtp-service/db";
-import { createStorage } from "@smtp-service/storage";
+} from "@mailpocket/db";
+import { createStorage } from "@mailpocket/storage";
 import {
   createOutboundQueue,
   createRedisConnection,
   type OutboundEmailPayload,
-} from "@smtp-service/queue";
+} from "@mailpocket/queue";
 import { eq, and, inArray } from "drizzle-orm";
 import { authGuard } from "../middleware/auth.js";
 import { resolveInboxRole, hasMinRole } from "../middleware/access.js";
