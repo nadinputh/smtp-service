@@ -81,6 +81,13 @@ export function useApi() {
       );
     },
 
+    async getMessageCompatibility(messageId: string) {
+      return await $fetch<CompatibilityResponse>(
+        `/api/messages/${messageId}/compatibility`,
+        { headers: authHeaders() },
+      );
+    },
+
     async deleteMessage(messageId: string) {
       return await $fetch<{ success: boolean }>(`/api/messages/${messageId}`, {
         method: "DELETE",
@@ -708,6 +715,32 @@ export interface HeadersResponse {
     delay: string | null;
   }[];
   authChecks: { method: string; result: string }[];
+}
+
+export interface CompatibilityClientScore {
+  id: string;
+  name: string;
+  icon: string;
+  category: "desktop" | "web" | "mobile";
+  score: number;
+}
+
+export interface CompatibilityFeature {
+  name: string;
+  category: "css" | "html" | "other";
+  description: string;
+  usageCount: number;
+  clients: Record<string, "full" | "partial" | "none">;
+}
+
+export interface CompatibilityResponse {
+  overallScores: CompatibilityClientScore[];
+  features: CompatibilityFeature[];
+  summary: {
+    totalFeaturesDetected: number;
+    fullyCompatibleClients: number;
+    problematicFeatures: number;
+  };
 }
 
 export interface PaginatedMessages {

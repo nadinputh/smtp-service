@@ -543,6 +543,199 @@
             </ul>
           </div>
         </div>
+
+        <!-- Compatibility -->
+        <div v-if="activeTab === 'compatibility'">
+          <div v-if="compatibilityData === null" class="text-sm text-gray-400">
+            Loading...
+          </div>
+          <template
+            v-else-if="compatibilityData.summary.totalFeaturesDetected === 0"
+          >
+            <div class="text-center py-12">
+              <Icon
+                name="lucide:file-text"
+                class="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-600"
+              />
+              <p class="text-sm text-gray-400 dark:text-gray-500">
+                No HTML content to analyze
+              </p>
+            </div>
+          </template>
+          <template v-else>
+            <!-- Summary -->
+            <div class="mb-6 flex items-center gap-4 text-sm">
+              <div
+                class="flex items-center gap-1.5 text-gray-500 dark:text-gray-400"
+              >
+                <Icon name="lucide:scan-search" class="w-4 h-4" />
+                <span
+                  ><strong class="text-gray-800 dark:text-gray-100">{{
+                    compatibilityData.summary.totalFeaturesDetected
+                  }}</strong>
+                  features detected</span
+                >
+              </div>
+              <div
+                class="flex items-center gap-1.5 text-gray-500 dark:text-gray-400"
+              >
+                <Icon
+                  name="lucide:circle-check"
+                  class="w-4 h-4 text-green-500"
+                />
+                <span
+                  ><strong class="text-gray-800 dark:text-gray-100">{{
+                    compatibilityData.summary.fullyCompatibleClients
+                  }}</strong>
+                  fully compatible clients</span
+                >
+              </div>
+              <div
+                class="flex items-center gap-1.5 text-gray-500 dark:text-gray-400"
+              >
+                <Icon
+                  name="lucide:triangle-alert"
+                  class="w-4 h-4 text-yellow-500"
+                />
+                <span
+                  ><strong class="text-gray-800 dark:text-gray-100">{{
+                    compatibilityData.summary.problematicFeatures
+                  }}</strong>
+                  problematic features</span
+                >
+              </div>
+            </div>
+
+            <!-- Client Score Cards -->
+            <div
+              class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 mb-6"
+            >
+              <div
+                v-for="client in compatibilityData.overallScores"
+                :key="client.id"
+                class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3 text-center"
+              >
+                <div class="flex items-center justify-center gap-1.5 mb-2">
+                  <Icon
+                    :name="client.icon"
+                    class="w-4 h-4 text-gray-500 dark:text-gray-400"
+                  />
+                  <span
+                    class="text-xs font-medium text-gray-700 dark:text-gray-300 truncate"
+                    >{{ client.name }}</span
+                  >
+                </div>
+                <div
+                  class="text-2xl font-bold"
+                  :class="scoreColor(client.score)"
+                >
+                  {{ client.score }}%
+                </div>
+                <div
+                  class="mt-1.5 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5"
+                >
+                  <div
+                    class="h-1.5 rounded-full transition-all"
+                    :class="scoreBarColor(client.score)"
+                    :style="{ width: client.score + '%' }"
+                  />
+                </div>
+                <span
+                  class="text-[10px] text-gray-400 dark:text-gray-500 mt-1 inline-block"
+                  >{{ client.category }}</span
+                >
+              </div>
+            </div>
+
+            <!-- Feature Details Table -->
+            <div class="space-y-4">
+              <details
+                v-for="cat in compatibilityCategories"
+                :key="cat.key"
+                class="group"
+                open
+              >
+                <summary
+                  class="text-xs font-semibold text-gray-400 uppercase cursor-pointer hover:text-gray-600 mb-2"
+                >
+                  {{ cat.label }} ({{ cat.features.length }})
+                </summary>
+                <div class="overflow-x-auto">
+                  <table class="w-full text-sm">
+                    <thead>
+                      <tr class="border-b border-gray-200 dark:border-gray-700">
+                        <th
+                          class="text-left py-2 px-3 text-xs font-semibold text-gray-400 uppercase w-48"
+                        >
+                          Feature
+                        </th>
+                        <th
+                          class="text-center py-2 px-1 text-xs font-semibold text-gray-400 uppercase w-12"
+                        >
+                          Uses
+                        </th>
+                        <th
+                          v-for="client in compatibilityData.overallScores"
+                          :key="client.id"
+                          class="text-center py-2 px-1 text-[10px] font-semibold text-gray-400 uppercase whitespace-nowrap"
+                        >
+                          {{ client.name }}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr
+                        v-for="feat in cat.features"
+                        :key="feat.name"
+                        class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                      >
+                        <td class="py-2 px-3">
+                          <span
+                            class="font-medium text-gray-800 dark:text-gray-100"
+                            >{{ feat.name }}</span
+                          >
+                          <p
+                            class="text-[11px] text-gray-400 dark:text-gray-500"
+                          >
+                            {{ feat.description }}
+                          </p>
+                        </td>
+                        <td
+                          class="text-center py-2 px-1 text-gray-500 dark:text-gray-400 font-mono text-xs"
+                        >
+                          {{ feat.usageCount }}
+                        </td>
+                        <td
+                          v-for="client in compatibilityData.overallScores"
+                          :key="client.id"
+                          class="text-center py-2 px-1"
+                        >
+                          <span
+                            class="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px]"
+                            :class="supportBadgeClass(feat.clients[client.id])"
+                            :title="feat.clients[client.id]"
+                          >
+                            <Icon
+                              v-if="feat.clients[client.id] === 'full'"
+                              name="lucide:check"
+                              class="w-3 h-3"
+                            />
+                            <Icon
+                              v-else-if="feat.clients[client.id] === 'partial'"
+                              name="lucide:minus"
+                              class="w-3 h-3"
+                            />
+                            <Icon v-else name="lucide:x" class="w-3 h-3" />
+                          </span>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            </div>
+          </template>
+        </div>
       </div>
     </div>
 
@@ -603,7 +796,14 @@ const inboxId = route.params.inboxId as string;
 const messageId = route.params.messageId as string;
 
 const activeTab = ref<
-  "html" | "text" | "attachments" | "delivery" | "source" | "headers" | "spam"
+  | "html"
+  | "text"
+  | "attachments"
+  | "delivery"
+  | "source"
+  | "headers"
+  | "spam"
+  | "compatibility"
 >("html");
 
 // ─── HTML preview background toggle ──────────────────────
@@ -628,6 +828,7 @@ const tabs = [
   { key: "headers" as const, label: "Headers" },
   { key: "source" as const, label: "Source" },
   { key: "spam" as const, label: "Spam" },
+  { key: "compatibility" as const, label: "Compatibility" },
 ];
 
 const deliveryLogs = ref<Awaited<
@@ -639,6 +840,10 @@ const headersData = ref<Awaited<
   ReturnType<typeof api.getMessageHeaders>
 > | null>(null);
 
+const compatibilityData = ref<Awaited<
+  ReturnType<typeof api.getMessageCompatibility>
+> | null>(null);
+
 watch(activeTab, async (tab) => {
   if (tab === "delivery" && deliveryLogs.value === null) {
     deliveryLogs.value = await api.getDeliveryLogs(messageId);
@@ -648,6 +853,9 @@ watch(activeTab, async (tab) => {
   }
   if (tab === "headers" && headersData.value === null) {
     headersData.value = await api.getMessageHeaders(messageId);
+  }
+  if (tab === "compatibility" && compatibilityData.value === null) {
+    compatibilityData.value = await api.getMessageCompatibility(messageId);
   }
 });
 
@@ -851,4 +1059,42 @@ function authBadgeClass(result: string): string {
     return "bg-red-100 text-red-700";
   return "bg-gray-100 text-gray-500";
 }
+
+// ─── Compatibility Helpers ────────────────────────────────
+function scoreColor(score: number): string {
+  if (score >= 80) return "text-green-600 dark:text-green-400";
+  if (score >= 60) return "text-yellow-600 dark:text-yellow-400";
+  return "text-red-600 dark:text-red-400";
+}
+
+function scoreBarColor(score: number): string {
+  if (score >= 80) return "bg-green-500";
+  if (score >= 60) return "bg-yellow-500";
+  return "bg-red-500";
+}
+
+function supportBadgeClass(level: string): string {
+  if (level === "full")
+    return "bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-400";
+  if (level === "partial")
+    return "bg-yellow-100 dark:bg-yellow-900/40 text-yellow-600 dark:text-yellow-400";
+  return "bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400";
+}
+
+const compatibilityCategories = computed(() => {
+  if (!compatibilityData.value) return [];
+  const cats = [
+    { key: "css", label: "CSS Features" },
+    { key: "html", label: "HTML Features" },
+    { key: "other", label: "Other Features" },
+  ];
+  return cats
+    .map((c) => ({
+      ...c,
+      features: compatibilityData.value!.features.filter(
+        (f) => f.category === c.key,
+      ),
+    }))
+    .filter((c) => c.features.length > 0);
+});
 </script>

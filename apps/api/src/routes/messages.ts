@@ -10,6 +10,7 @@ import MailComposer from "nodemailer/lib/mail-composer/index.js";
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import Redis from "ioredis";
+import { analyzeCompatibility } from "../lib/html-analyzer.js";
 import {
   createOutboundQueue,
   createRedisConnection,
@@ -351,6 +352,40 @@ export function registerMessageRoutes(app: FastifyInstance) {
       }
 
       return { headers: allHeaders, groups, hops, authChecks };
+    },
+  );
+
+  // Analyze email HTML compatibility across email clients
+  app.get<{ Params: { id: string } }>(
+    "/api/messages/:id/compatibility",
+    { preHandler: [authGuard, requireMessageRole("viewer")] },
+    async (request, reply) => {
+      const { id } = request.params;
+      const [message] = await db
+        .select({ html: messages.html })
+        .from(messages)
+        .where(eq(messages.id, id))
+        .limit(1);
+
+      if (!message) {
+        return reply.status(404).send({ error: "Message not found" });
+      }
+
+      if (!message.html) {
+        return reply
+          .status(200)
+          .send({
+            overallScores: [],
+            features: [],
+            summary: {
+              totalFeaturesDetected: 0,
+              fullyCompatibleClients: 0,
+              problematicFeatures: 0,
+            },
+          });
+      }
+
+      return analyzeCompatibility(message.html);
     },
   );
 
