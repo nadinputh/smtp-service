@@ -5,12 +5,7 @@ import { simpleParser, type ParsedMail } from "mailparser";
 import { getEnv } from "@smtp-service/env";
 import { getDb, messages, userQuotas } from "@smtp-service/db";
 import { lt, lte } from "drizzle-orm";
-import {
-  getStorageClient,
-  getObjectAsBuffer,
-  putObject,
-  removeObjects,
-} from "@smtp-service/storage";
+import { createStorage } from "@smtp-service/storage";
 import {
   QUEUE_NAMES,
   createRedisConnection,
@@ -35,14 +30,23 @@ const env = getEnv();
 
 // ─── Initialize dependencies ─────────────────────────────
 const db = getDb(env.DATABASE_URL);
-const storage = getStorageClient({
-  endPoint: env.MINIO_ENDPOINT,
-  port: env.MINIO_PORT,
-  accessKey: env.MINIO_ACCESS_KEY,
-  secretKey: env.MINIO_SECRET_KEY,
-  useSSL: env.MINIO_USE_SSL,
-  bucket: env.MINIO_BUCKET,
-});
+const storage = createStorage(
+  env.STORAGE_DRIVER === "local"
+    ? {
+        driver: "local",
+        basePath: env.STORAGE_LOCAL_PATH,
+        bucket: env.MINIO_BUCKET,
+      }
+    : {
+        driver: "s3",
+        endPoint: env.MINIO_ENDPOINT,
+        port: env.MINIO_PORT,
+        accessKey: env.MINIO_ACCESS_KEY!,
+        secretKey: env.MINIO_SECRET_KEY!,
+        useSSL: env.MINIO_USE_SSL,
+        bucket: env.MINIO_BUCKET,
+      },
+);
 const redisConnection = createRedisConnection({
   host: env.REDIS_HOST,
   port: env.REDIS_PORT,
@@ -61,7 +65,7 @@ async function processIncomingEmail(job: Job<IncomingEmailPayload>) {
   console.log(`Processing incoming email: ${rawKey}`);
 
   // 1. Download the raw .eml from MinIO
-  const rawBuffer = await getObjectAsBuffer(storage, env.MINIO_BUCKET, rawKey);
+  const rawBuffer = await storage.getObjectAsBuffer(rawKey);
 
   // 2. Parse the MIME content
   const parsed: ParsedMail = await simpleParser(rawBuffer);
@@ -80,14 +84,7 @@ async function processIncomingEmail(job: Job<IncomingEmailPayload>) {
   if (parsed.attachments?.length) {
     for (const att of parsed.attachments) {
       const attKey = `attachments/${inboxId}/${randomUUID()}/${att.filename ?? "unnamed"}`;
-      await putObject(
-        storage,
-        env.MINIO_BUCKET,
-        attKey,
-        att.content,
-        att.size,
-        att.contentType,
-      );
+      await storage.putObject(attKey, att.content, att.size, att.contentType);
       attachmentRefs.push({
         filename: att.filename ?? "unnamed",
         contentType: att.contentType,
@@ -239,7 +236,7 @@ async function processCleanup(job: Job<CleanupPayload>) {
   }
 
   // Delete from MinIO
-  await removeObjects(storage, env.MINIO_BUCKET, storageKeys);
+  await storage.removeObjects(storageKeys);
 
   // Delete from PostgreSQL (cascade will handle related records)
   await db.delete(messages).where(lt(messages.createdAt, cutoff));

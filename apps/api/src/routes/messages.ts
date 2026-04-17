@@ -1,13 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { getEnv } from "@smtp-service/env";
 import { getDb, messages, inboxes } from "@smtp-service/db";
-import {
-  getStorageClient,
-  getObject,
-  getObjectAsBuffer,
-  removeObject,
-  putObject,
-} from "@smtp-service/storage";
+import { createStorage } from "@smtp-service/storage";
 import { eq, desc, and, ilike, gte, lte, sql, count } from "drizzle-orm";
 import { authGuard } from "../middleware/auth.js";
 import { requireInboxRole, requireMessageRole } from "../middleware/access.js";
@@ -24,14 +18,23 @@ import {
 export function registerMessageRoutes(app: FastifyInstance) {
   const env = getEnv();
   const db = getDb(env.DATABASE_URL);
-  const storage = getStorageClient({
-    endPoint: env.MINIO_ENDPOINT,
-    port: env.MINIO_PORT,
-    accessKey: env.MINIO_ACCESS_KEY,
-    secretKey: env.MINIO_SECRET_KEY,
-    useSSL: env.MINIO_USE_SSL,
-    bucket: env.MINIO_BUCKET,
-  });
+  const storage = createStorage(
+    env.STORAGE_DRIVER === "local"
+      ? {
+          driver: "local",
+          basePath: env.STORAGE_LOCAL_PATH,
+          bucket: env.MINIO_BUCKET,
+        }
+      : {
+          driver: "s3",
+          endPoint: env.MINIO_ENDPOINT,
+          port: env.MINIO_PORT,
+          accessKey: env.MINIO_ACCESS_KEY!,
+          secretKey: env.MINIO_SECRET_KEY!,
+          useSSL: env.MINIO_USE_SSL,
+          bucket: env.MINIO_BUCKET,
+        },
+  );
 
   const redisConn = createRedisConnection({
     host: env.REDIS_HOST,
@@ -165,7 +168,7 @@ export function registerMessageRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Message not found" });
       }
 
-      const stream = await getObject(storage, env.MINIO_BUCKET, message.rawKey);
+      const stream = await storage.getObject(message.rawKey);
       reply.header("Content-Type", "message/rfc822");
       reply.header("Content-Disposition", `attachment; filename="${id}.eml"`);
       return reply.send(stream);
@@ -188,11 +191,7 @@ export function registerMessageRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Message not found" });
       }
 
-      const buffer = await getObjectAsBuffer(
-        storage,
-        env.MINIO_BUCKET,
-        message.rawKey,
-      );
+      const buffer = await storage.getObjectAsBuffer(message.rawKey);
       reply.header("Content-Type", "text/plain; charset=utf-8");
       return reply.send(buffer.toString("utf-8"));
     },
@@ -214,11 +213,7 @@ export function registerMessageRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Message not found" });
       }
 
-      const buffer = await getObjectAsBuffer(
-        storage,
-        env.MINIO_BUCKET,
-        message.rawKey,
-      );
+      const buffer = await storage.getObjectAsBuffer(message.rawKey);
       const parsed = await simpleParser(buffer);
 
       // Convert headers to a flat array of {key, value}
@@ -374,12 +369,12 @@ export function registerMessageRoutes(app: FastifyInstance) {
       }
 
       // Remove raw .eml from storage
-      await removeObject(storage, env.MINIO_BUCKET, message.rawKey);
+      await storage.removeObject(message.rawKey);
 
       // Remove attachments from storage
       if (message.attachments) {
         for (const att of message.attachments) {
-          await removeObject(storage, env.MINIO_BUCKET, att.storageKey);
+          await storage.removeObject(att.storageKey);
         }
       }
 
@@ -409,10 +404,10 @@ export function registerMessageRoutes(app: FastifyInstance) {
 
       // Remove storage objects
       for (const msg of inboxMessages) {
-        await removeObject(storage, env.MINIO_BUCKET, msg.rawKey);
+        await storage.removeObject(msg.rawKey);
         if (msg.attachments) {
           for (const att of msg.attachments) {
-            await removeObject(storage, env.MINIO_BUCKET, att.storageKey);
+            await storage.removeObject(att.storageKey);
           }
         }
       }
@@ -448,11 +443,7 @@ export function registerMessageRoutes(app: FastifyInstance) {
       }
 
       // Download the raw .eml
-      const rawBuffer = await getObjectAsBuffer(
-        storage,
-        env.MINIO_BUCKET,
-        message.rawKey,
-      );
+      const rawBuffer = await storage.getObjectAsBuffer(message.rawKey);
 
       // Build a forwarding MIME envelope
       const fromAddr = `forwarded@${env.API_HOST !== "0.0.0.0" ? env.API_HOST : "smtp-service.local"}`;
@@ -482,12 +473,10 @@ export function registerMessageRoutes(app: FastifyInstance) {
         });
       });
 
-      // Store in MinIO
+      // Store forwarded message
       const fwdMessageId = randomUUID();
       const rawKey = `outbound/${fwdMessageId}.eml`;
-      await putObject(
-        storage,
-        env.MINIO_BUCKET,
+      await storage.putObject(
         rawKey,
         Readable.from(fwdBuffer),
         fwdBuffer.length,
@@ -593,7 +582,7 @@ export function registerMessageRoutes(app: FastifyInstance) {
       }
 
       const att = message.attachments[idx];
-      const stream = await getObject(storage, env.MINIO_BUCKET, att.storageKey);
+      const stream = await storage.getObject(att.storageKey);
       reply.header("Content-Type", att.contentType);
       reply.header(
         "Content-Disposition",
@@ -656,7 +645,10 @@ export function registerMessageRoutes(app: FastifyInstance) {
   );
 
   // ─── Batch mark messages as read/unread ────────────────
-  app.put<{ Params: { id: string }; Body: { messageIds: string[]; isRead: boolean } }>(
+  app.put<{
+    Params: { id: string };
+    Body: { messageIds: string[]; isRead: boolean };
+  }>(
     "/api/inboxes/:id/messages/read",
     { preHandler: [authGuard, requireInboxRole("viewer")] },
     async (request, reply) => {
@@ -664,7 +656,9 @@ export function registerMessageRoutes(app: FastifyInstance) {
       const { messageIds, isRead } = request.body;
 
       if (!Array.isArray(messageIds) || messageIds.length === 0) {
-        return reply.status(400).send({ error: "messageIds array is required" });
+        return reply
+          .status(400)
+          .send({ error: "messageIds array is required" });
       }
 
       await db

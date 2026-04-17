@@ -11,7 +11,7 @@ import {
   suppressions,
   userQuotas,
 } from "@smtp-service/db";
-import { getStorageClient, putObject } from "@smtp-service/storage";
+import { createStorage } from "@smtp-service/storage";
 import {
   createOutboundQueue,
   createRedisConnection,
@@ -80,14 +80,23 @@ export function registerSendRoutes(app: FastifyInstance) {
   const env = getEnv();
   const db = getDb(env.DATABASE_URL);
 
-  const storage = getStorageClient({
-    endPoint: env.MINIO_ENDPOINT,
-    port: env.MINIO_PORT,
-    accessKey: env.MINIO_ACCESS_KEY,
-    secretKey: env.MINIO_SECRET_KEY,
-    useSSL: env.MINIO_USE_SSL,
-    bucket: env.MINIO_BUCKET,
-  });
+  const storage = createStorage(
+    env.STORAGE_DRIVER === "local"
+      ? {
+          driver: "local",
+          basePath: env.STORAGE_LOCAL_PATH,
+          bucket: env.MINIO_BUCKET,
+        }
+      : {
+          driver: "s3",
+          endPoint: env.MINIO_ENDPOINT,
+          port: env.MINIO_PORT,
+          accessKey: env.MINIO_ACCESS_KEY!,
+          secretKey: env.MINIO_SECRET_KEY!,
+          useSSL: env.MINIO_USE_SSL,
+          bucket: env.MINIO_BUCKET,
+        },
+  );
 
   const redisConn = createRedisConnection({
     host: env.REDIS_HOST,
@@ -259,9 +268,7 @@ export function registerSendRoutes(app: FastifyInstance) {
       const messageId = randomUUID();
       const rawKey = `outbound/${messageId}.eml`;
 
-      await putObject(
-        storage,
-        env.MINIO_BUCKET,
+      await storage.putObject(
         rawKey,
         Readable.from(rawBuffer),
         rawBuffer.length,
@@ -396,9 +403,7 @@ export function registerSendRoutes(app: FastifyInstance) {
       const messageId = randomUUID();
       const rawKey = `outbound/${messageId}.eml`;
 
-      await putObject(
-        storage,
-        env.MINIO_BUCKET,
+      await storage.putObject(
         rawKey,
         Readable.from(rawBuffer),
         rawBuffer.length,
@@ -568,9 +573,7 @@ export function registerSendRoutes(app: FastifyInstance) {
         const messageId = randomUUID();
         const rawKey = `outbound/${messageId}.eml`;
 
-        await putObject(
-          storage,
-          env.MINIO_BUCKET,
+        await storage.putObject(
           rawKey,
           Readable.from(rawBuffer),
           rawBuffer.length,

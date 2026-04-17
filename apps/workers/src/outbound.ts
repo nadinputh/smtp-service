@@ -11,14 +11,12 @@ import {
   suppressions,
   inboxes,
 } from "@smtp-service/db";
-import { getObjectAsBuffer, getStorageClient } from "@smtp-service/storage";
+import type { StorageClient } from "@smtp-service/storage";
 import { type OutboundEmailPayload } from "@smtp-service/queue";
 import { eq, and } from "drizzle-orm";
 import type { Env } from "@smtp-service/env";
 import type Redis from "ioredis";
 import { injectTracking } from "./tracking.js";
-
-type StorageClient = ReturnType<typeof getStorageClient>;
 
 // ─── MX Resolution ────────────────────────────────────────
 async function resolveMx(domain: string): Promise<string> {
@@ -143,7 +141,7 @@ export function createOutboundProcessor(
     console.log(`📤 Outbound delivery: ${messageId} → ${to.join(", ")}`);
 
     // 1. Download the raw .eml from MinIO
-    let rawBuffer = await getObjectAsBuffer(storage, env.MINIO_BUCKET, rawKey);
+    let rawBuffer = await storage.getObjectAsBuffer(rawKey);
 
     // 2. Inject click/open tracking into HTML body
     try {

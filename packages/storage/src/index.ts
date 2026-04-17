@@ -1,101 +1,24 @@
-import * as Minio from "minio";
-import { Readable } from "node:stream";
+import { S3Storage } from "./s3.js";
+import { LocalStorage } from "./local.js";
+import type { StorageClient, StorageConfig } from "./types.js";
 
-let _client: Minio.Client | undefined;
+export type { StorageClient, StorageConfig } from "./types.js";
+export type { S3StorageConfig, LocalStorageConfig } from "./types.js";
 
-export interface StorageConfig {
-  endPoint: string;
-  port: number;
-  accessKey: string;
-  secretKey: string;
-  useSSL: boolean;
-  bucket: string;
-}
+let _instance: StorageClient | undefined;
 
-let _bucket: string;
-
-export function getStorageClient(config: StorageConfig): Minio.Client {
-  if (!_client) {
-    _client = new Minio.Client({
-      endPoint: config.endPoint,
-      port: config.port,
-      accessKey: config.accessKey,
-      secretKey: config.secretKey,
-      useSSL: config.useSSL,
-      pathStyle: true,
-    });
-    _bucket = config.bucket;
-  }
-  return _client;
-}
-
-export async function ensureBucket(client: Minio.Client, bucket: string) {
-  try {
-    const exists = await client.bucketExists(bucket);
-    if (!exists) {
-      await client.makeBucket(bucket);
-      console.log(`✅ Created MinIO bucket: ${bucket}`);
+export function createStorage(config: StorageConfig): StorageClient {
+  if (!_instance) {
+    switch (config.driver) {
+      case "s3":
+        _instance = new S3Storage(config);
+        break;
+      case "local":
+        _instance = new LocalStorage(config);
+        break;
+      default:
+        throw new Error(`Unknown storage driver: ${(config as any).driver}`);
     }
-  } catch (err: any) {
-    // bucketExists throws S3Error on access denied / invalid creds
-    if (
-      err?.code === "AccessDenied" ||
-      err?.message?.includes("Access Denied")
-    ) {
-      throw new Error(
-        `MinIO access denied — check MINIO_ACCESS_KEY and MINIO_SECRET_KEY. Original: ${err.message}`,
-      );
-    }
-    throw err;
   }
-}
-
-export async function putObject(
-  client: Minio.Client,
-  bucket: string,
-  key: string,
-  stream: Readable | Buffer,
-  size?: number,
-  contentType?: string,
-): Promise<void> {
-  const metaData = contentType ? { "Content-Type": contentType } : {};
-  await client.putObject(bucket, key, stream, size, metaData);
-}
-
-export async function getObject(
-  client: Minio.Client,
-  bucket: string,
-  key: string,
-): Promise<Readable> {
-  return client.getObject(bucket, key);
-}
-
-export async function getObjectAsBuffer(
-  client: Minio.Client,
-  bucket: string,
-  key: string,
-): Promise<Buffer> {
-  const stream = await getObject(client, bucket, key);
-  const chunks: Buffer[] = [];
-  for await (const chunk of stream) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-  return Buffer.concat(chunks);
-}
-
-export async function removeObject(
-  client: Minio.Client,
-  bucket: string,
-  key: string,
-): Promise<void> {
-  await client.removeObject(bucket, key);
-}
-
-export async function removeObjects(
-  client: Minio.Client,
-  bucket: string,
-  keys: string[],
-): Promise<void> {
-  if (keys.length === 0) return;
-  await client.removeObjects(bucket, keys);
+  return _instance;
 }

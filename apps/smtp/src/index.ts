@@ -3,11 +3,7 @@ dotenv.config({ path: "../../.env" });
 import { SMTPServer } from "smtp-server";
 import { getEnv } from "@smtp-service/env";
 import { getDb, inboxes } from "@smtp-service/db";
-import {
-  getStorageClient,
-  ensureBucket,
-  putObject,
-} from "@smtp-service/storage";
+import { createStorage } from "@smtp-service/storage";
 import {
   createIncomingQueue,
   createRedisConnection,
@@ -29,14 +25,23 @@ const ports = env.SMTP_PORTS
 
 // ─── Initialize dependencies ─────────────────────────────
 const db = getDb(env.DATABASE_URL);
-const storage = getStorageClient({
-  endPoint: env.MINIO_ENDPOINT,
-  port: env.MINIO_PORT,
-  accessKey: env.MINIO_ACCESS_KEY,
-  secretKey: env.MINIO_SECRET_KEY,
-  useSSL: env.MINIO_USE_SSL,
-  bucket: env.MINIO_BUCKET,
-});
+const storage = createStorage(
+  env.STORAGE_DRIVER === "local"
+    ? {
+        driver: "local",
+        basePath: env.STORAGE_LOCAL_PATH,
+        bucket: env.MINIO_BUCKET,
+      }
+    : {
+        driver: "s3",
+        endPoint: env.MINIO_ENDPOINT,
+        port: env.MINIO_PORT,
+        accessKey: env.MINIO_ACCESS_KEY!,
+        secretKey: env.MINIO_SECRET_KEY!,
+        useSSL: env.MINIO_USE_SSL,
+        bucket: env.MINIO_BUCKET,
+      },
+);
 const redisConnection = createRedisConnection({
   host: env.REDIS_HOST,
   port: env.REDIS_PORT,
@@ -44,7 +49,7 @@ const redisConnection = createRedisConnection({
 });
 const incomingQueue = createIncomingQueue(redisConnection);
 
-await ensureBucket(storage, env.MINIO_BUCKET);
+await storage.ensureBucket();
 
 // ─── SMTP Server ──────────────────────────────────────────
 const smtpOptions: ConstructorParameters<typeof SMTPServer>[0] = {
@@ -87,14 +92,7 @@ const smtpOptions: ConstructorParameters<typeof SMTPServer>[0] = {
 
       try {
         // Upload raw .eml to MinIO
-        await putObject(
-          storage,
-          env.MINIO_BUCKET,
-          rawKey,
-          passthrough,
-          size,
-          "message/rfc822",
-        );
+        await storage.putObject(rawKey, passthrough, size, "message/rfc822");
 
         // Resolve inbox ID: authenticated user's inbox or catch-all
         const user = (session as any).user as { inboxId: string } | undefined;

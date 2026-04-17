@@ -1,0 +1,43 @@
+# All-in-one deployment: single container with PostgreSQL + Redis + App
+# Usage: docker compose -f docker-compose.allinone.yml up -d
+
+services:
+  smtp-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.allinone
+    ports:
+      - "3000:3000"   # Web UI
+      - "3002:3002"   # API
+      - "2525:2525"   # SMTP
+      - "1025:1025"   # SMTP (alternate)
+    environment:
+      # PostgreSQL (internal)
+      PG_USER: smtp
+      PG_PASSWORD: smtp_password
+      PG_DB: smtp_service
+
+      # Redis (internal)
+      REDIS_PASSWORD: ""
+
+      # Storage driver: "local" (default, no MinIO needed) or "s3"
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
+      STORAGE_LOCAL_PATH: data/
+
+      # App config — override via .env file or environment
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-secure-secret}
+      APP_MODE: ${APP_MODE:-testing}
+
+      # S3/MinIO (only needed when STORAGE_DRIVER=s3)
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-localhost}
+      MINIO_PORT: ${MINIO_PORT:-9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-}
+      MINIO_BUCKET: ${MINIO_BUCKET:-emails}
+      MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
+    volumes:
+      - smtp_data:/data
+    restart: unless-stopped
+
+volumes:
+  smtp_data:

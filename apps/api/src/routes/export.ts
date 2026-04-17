@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { getEnv } from "@smtp-service/env";
 import { getDb, messages, inboxes } from "@smtp-service/db";
-import { getStorageClient, getObjectAsBuffer } from "@smtp-service/storage";
+import { createStorage, type StorageClient } from "@smtp-service/storage";
 import { eq, and } from "drizzle-orm";
 import { authGuard } from "../middleware/auth.js";
 import { requireInboxRole } from "../middleware/access.js";
@@ -11,14 +11,23 @@ import { Readable, PassThrough } from "node:stream";
 export function registerExportRoutes(app: FastifyInstance) {
   const env = getEnv();
   const db = getDb(env.DATABASE_URL);
-  const storage = getStorageClient({
-    endPoint: env.MINIO_ENDPOINT,
-    port: env.MINIO_PORT,
-    accessKey: env.MINIO_ACCESS_KEY,
-    secretKey: env.MINIO_SECRET_KEY,
-    useSSL: env.MINIO_USE_SSL,
-    bucket: env.MINIO_BUCKET,
-  });
+  const storage = createStorage(
+    env.STORAGE_DRIVER === "local"
+      ? {
+          driver: "local",
+          basePath: env.STORAGE_LOCAL_PATH,
+          bucket: env.MINIO_BUCKET,
+        }
+      : {
+          driver: "s3",
+          endPoint: env.MINIO_ENDPOINT,
+          port: env.MINIO_PORT,
+          accessKey: env.MINIO_ACCESS_KEY!,
+          secretKey: env.MINIO_SECRET_KEY!,
+          useSSL: env.MINIO_USE_SSL,
+          bucket: env.MINIO_BUCKET,
+        },
+  );
 
   // ─── Export Messages ────────────────────────────────────
   app.get<{ Params: { id: string }; Querystring: { format?: string } }>(
@@ -48,21 +57,9 @@ export function registerExportRoutes(app: FastifyInstance) {
       if (format === "csv") {
         return exportCsv(reply, inbox.name, inboxMessages);
       } else if (format === "mbox") {
-        return exportMbox(
-          reply,
-          inbox.name,
-          inboxMessages,
-          storage,
-          env.MINIO_BUCKET,
-        );
+        return exportMbox(reply, inbox.name, inboxMessages, storage);
       } else if (format === "eml") {
-        return exportEmlZip(
-          reply,
-          inbox.name,
-          inboxMessages,
-          storage,
-          env.MINIO_BUCKET,
-        );
+        return exportEmlZip(reply, inbox.name, inboxMessages, storage);
       } else {
         return reply
           .status(400)
@@ -96,8 +93,7 @@ async function exportMbox(
   reply: any,
   inboxName: string,
   msgs: any[],
-  storage: any,
-  bucket: string,
+  storage: StorageClient,
 ) {
   reply.header("Content-Type", "application/mbox");
   reply.header(
@@ -110,7 +106,7 @@ async function exportMbox(
 
   for (const msg of msgs) {
     try {
-      const buffer = await getObjectAsBuffer(storage, bucket, msg.rawKey);
+      const buffer = await storage.getObjectAsBuffer(msg.rawKey);
       const from = msg.from || "unknown@unknown";
       const date = msg.createdAt
         ? new Date(msg.createdAt).toUTCString()
@@ -133,8 +129,7 @@ async function exportEmlZip(
   reply: any,
   inboxName: string,
   msgs: any[],
-  storage: any,
-  bucket: string,
+  storage: StorageClient,
 ) {
   reply.header("Content-Type", "application/zip");
   reply.header(
@@ -152,7 +147,7 @@ async function exportEmlZip(
   for (let i = 0; i < msgs.length; i++) {
     const msg = msgs[i];
     try {
-      const buffer = await getObjectAsBuffer(storage, bucket, msg.rawKey);
+      const buffer = await storage.getObjectAsBuffer(msg.rawKey);
       const filename = `${(msg.subject || "no-subject").replace(/[^a-zA-Z0-9\-_ ]/g, "").slice(0, 50)}-${i + 1}.eml`;
       archive.append(buffer, { name: filename });
     } catch {
