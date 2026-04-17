@@ -60,7 +60,13 @@ export REDIS_PASSWORD="${REDIS_PASSWORD:-}"
 
 # Run drizzle migrations
 cd /app/packages/db
-node --import tsx ../../node_modules/.bin/drizzle-kit migrate 2>/dev/null && echo "✅ Migrations applied" || echo "⚠️  Migrations skipped (may already be up to date)"
+pnpm drizzle-kit migrate && echo "✅ Migrations applied" || echo "⚠️  Migrations failed"
+
+# Run seed (creates admin user if ADMIN_PASSWORD is set)
+if [ -n "${ADMIN_PASSWORD:-}" ]; then
+  cd /app/packages/db
+  node --import tsx src/seed.ts && echo "✅ Seed completed" || echo "⚠️  Seed failed"
+fi
 
 cd /app
 

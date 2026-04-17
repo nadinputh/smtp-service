@@ -11,8 +11,8 @@ const envSchema = z
     REDIS_PASSWORD: z.string().optional(),
 
     // Storage
-    STORAGE_DRIVER: z.enum(["s3", "local"]).default("s3"),
-    STORAGE_LOCAL_PATH: z.string().default("./.data/storage"),
+    STORAGE_DRIVER: z.enum(["s3", "local"]).default("local"),
+    STORAGE_LOCAL_PATH: z.string().default("/data/"),
 
     // MinIO / S3 (required when STORAGE_DRIVER=s3)
     MINIO_ENDPOINT: z.string().default("localhost"),
