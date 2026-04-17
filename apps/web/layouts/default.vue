@@ -366,6 +366,7 @@ const api = useApi();
 const { user, logout } = useAuth();
 const darkMode = useDarkMode();
 const sidebar = useSidebar();
+// darkMode.init() is called in app.vue so it works on all pages (including layout: false)
 
 // ─── Navigation data ──────────────────────────────────────
 const mailNav = [
@@ -393,10 +394,6 @@ const adminNav = [
 
 // ─── Profile popover ──────────────────────────────────────
 const showProfileMenu = ref(false);
-
-onMounted(() => {
-  darkMode.init();
-});
 
 // Close sidebar & profile popover on route change
 watch(
