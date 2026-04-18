@@ -54,11 +54,12 @@
               </a>
             </div>
           </div>
-          <UBtn variant="secondary" size="sm" @click="showCreds = !showCreds">
+          <UBtn v-if="isEditorOrAbove" variant="secondary" size="sm" @click="showCreds = !showCreds">
             <Icon name="lucide:key" class="w-4 h-4" />
             SMTP Credentials
           </UBtn>
           <UBtn
+            v-if="isOwner"
             variant="danger"
             size="sm"
             :disabled="deleting"
@@ -370,7 +371,7 @@
     <div v-if="activeTab === 'webhooks'" class="flex-1 overflow-y-auto p-6">
       <div class="flex items-center justify-between mb-4">
         <p class="text-sm text-gray-500">Event notifications for this inbox</p>
-        <UBtn size="sm" @click="showWebhookModal = true">
+        <UBtn v-if="isEditorOrAbove" size="sm" @click="showWebhookModal = true">
           <Icon name="lucide:plus" class="w-4 h-4" /> Add Webhook
         </UBtn>
       </div>
@@ -417,6 +418,7 @@
                 {{ expandedWebhook === wh.id ? "Hide" : "Logs" }}
               </UBtn>
               <UBtn
+                v-if="isEditorOrAbove"
                 variant="danger"
                 size="xs"
                 @click="handleDeleteWebhook(wh.id)"
@@ -489,7 +491,7 @@
         <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300">
           Inbox Members
         </h3>
-        <UBtn size="sm" @click="showInviteModal = true"> Invite Member </UBtn>
+        <UBtn v-if="isOwner" size="sm" @click="showInviteModal = true"> Invite Member </UBtn>
       </div>
 
       <div v-if="membersLoading" class="text-sm text-gray-400">Loading...</div>
@@ -526,7 +528,7 @@
             {{ member.role }}
           </span>
           <select
-            v-if="member.role !== 'owner' && member.id !== 'owner'"
+            v-if="isOwner && member.role !== 'owner' && member.id !== 'owner'"
             :value="member.role"
             @change="
               handleUpdateRole(
@@ -540,7 +542,7 @@
             <option value="viewer">Viewer</option>
           </select>
           <UBtn
-            v-if="member.role !== 'owner' && member.id !== 'owner'"
+            v-if="isOwner && member.role !== 'owner' && member.id !== 'owner'"
             variant="danger"
             size="xs"
             @click="handleRemoveMember(member.id)"
@@ -556,7 +558,7 @@
       <div
         v-if="showInviteModal"
         class="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
-        @click.self="showInviteModal = false"
+        @click.self="closeInviteModal"
       >
         <div
           class="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-sm p-6"
@@ -567,13 +569,78 @@
             Invite Member
           </h2>
           <form @submit.prevent="handleInviteMember" class="space-y-3">
-            <input
-              v-model="inviteEmail"
-              type="email"
-              required
-              placeholder="user@example.com"
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
+            <div>
+              <label class="block text-sm text-gray-600 dark:text-gray-400 mb-1">
+                Search User
+              </label>
+              <!-- Selected user chip -->
+              <div
+                v-if="inviteSelectedUser"
+                class="flex items-center gap-2 px-3 py-2 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-lg"
+              >
+                <div
+                  class="w-7 h-7 rounded-full bg-indigo-100 dark:bg-indigo-800 flex items-center justify-center text-xs font-bold text-indigo-600 dark:text-indigo-300 shrink-0"
+                >
+                  {{ (inviteSelectedUser.name || inviteSelectedUser.email)[0].toUpperCase() }}
+                </div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium text-gray-800 dark:text-gray-100 truncate">
+                    {{ inviteSelectedUser.name || inviteSelectedUser.email }}
+                  </p>
+                  <p v-if="inviteSelectedUser.name" class="text-xs text-gray-500 dark:text-gray-400 truncate">
+                    {{ inviteSelectedUser.email }}
+                  </p>
+                </div>
+                <button type="button" @click="clearInviteSelectedUser"
+                  class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                  <Icon name="lucide:x" class="w-4 h-4" />
+                </button>
+              </div>
+              <!-- Search input -->
+              <div v-else class="relative">
+                <input
+                  v-model="inviteSearchQuery"
+                  type="text"
+                  placeholder="Search by name or email..."
+                  @input="debouncedInviteSearch"
+                  @focus="showInviteSearchResults = true"
+                  class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <!-- Search results dropdown -->
+                <div
+                  v-if="showInviteSearchResults && inviteSearchQuery.length >= 2"
+                  class="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-40 overflow-y-auto z-10"
+                >
+                  <div v-if="inviteSearching" class="px-3 py-2 text-xs text-gray-400">
+                    Searching...
+                  </div>
+                  <div v-else-if="!inviteSearchResults.length" class="px-3 py-2 text-xs text-gray-400">
+                    No users found
+                  </div>
+                  <button
+                    v-for="u in inviteSearchResults"
+                    :key="u.id"
+                    type="button"
+                    @click="selectInviteUser(u)"
+                    class="w-full text-left px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 transition-colors"
+                  >
+                    <div
+                      class="w-7 h-7 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-xs font-bold text-gray-500 dark:text-gray-400 shrink-0"
+                    >
+                      {{ (u.name || u.email)[0].toUpperCase() }}
+                    </div>
+                    <div class="min-w-0">
+                      <p class="text-sm text-gray-800 dark:text-gray-200 truncate">
+                        {{ u.name || u.email }}
+                      </p>
+                      <p v-if="u.name" class="text-xs text-gray-400 truncate">
+                        {{ u.email }}
+                      </p>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            </div>
             <select
               v-model="inviteRole"
               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -588,11 +655,11 @@
               <UBtn
                 type="button"
                 variant="ghost"
-                @click="showInviteModal = false"
+                @click="closeInviteModal"
               >
                 Cancel
               </UBtn>
-              <UBtn type="submit" :disabled="inviting">
+              <UBtn type="submit" :disabled="inviting || !inviteSelectedUser">
                 {{ inviting ? "Inviting..." : "Invite" }}
               </UBtn>
             </div>
@@ -907,6 +974,11 @@ const { data: inboxDetail } = useAsyncData(`inbox-detail-${inboxId}`, () =>
 const inbox = computed(() => inboxDetail.value);
 useHead({ title: computed(() => inbox.value?.name ?? "Inbox") });
 
+// Role-based access
+const inboxRole = computed(() => inboxDetail.value?.currentUserRole ?? "viewer");
+const isOwner = computed(() => inboxRole.value === "owner");
+const isEditorOrAbove = computed(() => inboxRole.value === "owner" || inboxRole.value === "editor");
+
 // Initial fetch
 fetchMessages();
 
@@ -1050,10 +1122,56 @@ import type { InboxMember } from "~/composables/useApi";
 const members = ref<InboxMember[]>([]);
 const membersLoading = ref(false);
 const showInviteModal = ref(false);
-const inviteEmail = ref("");
 const inviteRole = ref("viewer");
 const inviting = ref(false);
 const inviteError = ref("");
+
+// User search state for invite
+const inviteSearchQuery = ref("");
+const inviteSearchResults = ref<{ id: string; email: string; name: string | null }[]>([]);
+const inviteSelectedUser = ref<{ id: string; email: string; name: string | null } | null>(null);
+const inviteSearching = ref(false);
+const showInviteSearchResults = ref(false);
+let inviteSearchTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function debouncedInviteSearch() {
+  if (inviteSearchTimeout) clearTimeout(inviteSearchTimeout);
+  inviteSelectedUser.value = null;
+  if (inviteSearchQuery.value.length < 2) {
+    inviteSearchResults.value = [];
+    return;
+  }
+  inviteSearching.value = true;
+  inviteSearchTimeout = setTimeout(async () => {
+    try {
+      inviteSearchResults.value = await api.searchUsers(inviteSearchQuery.value);
+    } catch {
+      inviteSearchResults.value = [];
+    } finally {
+      inviteSearching.value = false;
+    }
+  }, 300);
+}
+
+function selectInviteUser(user: { id: string; email: string; name: string | null }) {
+  inviteSelectedUser.value = user;
+  showInviteSearchResults.value = false;
+  inviteSearchQuery.value = "";
+  inviteSearchResults.value = [];
+}
+
+function clearInviteSelectedUser() {
+  inviteSelectedUser.value = null;
+  inviteSearchQuery.value = "";
+  inviteSearchResults.value = [];
+}
+
+function closeInviteModal() {
+  showInviteModal.value = false;
+  clearInviteSelectedUser();
+  inviteRole.value = "viewer";
+  inviteError.value = "";
+}
 
 async function loadMembers() {
   if (members.value.length) return;
@@ -1068,13 +1186,12 @@ async function loadMembers() {
 }
 
 async function handleInviteMember() {
+  if (!inviteSelectedUser.value) return;
   inviteError.value = "";
   inviting.value = true;
   try {
-    await api.addInboxMember(inboxId, inviteEmail.value, inviteRole.value);
-    showInviteModal.value = false;
-    inviteEmail.value = "";
-    inviteRole.value = "viewer";
+    await api.addInboxMember(inboxId, inviteSelectedUser.value.email, inviteRole.value);
+    closeInviteModal();
     members.value = await api.getInboxMembers(inboxId);
   } catch (e: any) {
     inviteError.value = e?.data?.error || "Failed to invite member";

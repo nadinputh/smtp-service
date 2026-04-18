@@ -11,3 +11,5 @@ export { suppressions } from "./suppressions.js";
 export { inboxMembers } from "./inbox-members.js";
 export { userQuotas } from "./user-quotas.js";
 export { teams, teamMembers } from "./teams.js";
+export { teamActivityLog } from "./team-activity-log.js";
+export { teamInvitations } from "./team-invitations.js";

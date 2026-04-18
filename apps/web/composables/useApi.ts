@@ -18,11 +18,22 @@ export function useApi() {
       });
     },
 
-    async createInbox(name: string) {
+    async createInbox(name: string, teamId?: string) {
       return await $fetch<InboxDetail>("/api/inboxes", {
         method: "POST",
         headers: authHeaders(),
-        body: { name },
+        body: { name, teamId },
+      });
+    },
+
+    async updateInbox(
+      inboxId: string,
+      data: { name?: string; teamId?: string | null },
+    ) {
+      return await $fetch<InboxDetail>(`/api/inboxes/${inboxId}`, {
+        method: "PUT",
+        headers: authHeaders(),
+        body: data,
       });
     },
 
@@ -580,6 +591,78 @@ export function useApi() {
       });
     },
 
+    async getTeamInboxes(teamId: string) {
+      return await $fetch<TeamInbox[]>(`/api/teams/${teamId}/inboxes`, {
+        headers: authHeaders(),
+      });
+    },
+
+    async getTeamActivity(teamId: string, limit?: number) {
+      const query: Record<string, string> = {};
+      if (limit) query.limit = String(limit);
+      return await $fetch<TeamActivity[]>(`/api/teams/${teamId}/activity`, {
+        headers: authHeaders(),
+        query,
+      });
+    },
+
+    async sendTeamInvitation(teamId: string, email: string, role?: string) {
+      return await $fetch<TeamInvitation>(`/api/teams/${teamId}/invitations`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: { email, role },
+      });
+    },
+
+    async getTeamInvitations(teamId: string) {
+      return await $fetch<TeamInvitationDetail[]>(
+        `/api/teams/${teamId}/invitations`,
+        { headers: authHeaders() },
+      );
+    },
+
+    async revokeTeamInvitation(teamId: string, invitationId: string) {
+      return await $fetch<void>(
+        `/api/teams/${teamId}/invitations/${invitationId}`,
+        { method: "DELETE", headers: authHeaders() },
+      );
+    },
+
+    async getMyInvitations() {
+      return await $fetch<MyInvitation[]>("/api/teams/my-invitations", {
+        headers: authHeaders(),
+      });
+    },
+
+    async acceptInvitation(invitationId: string) {
+      return await $fetch<{ success: boolean; teamId: string }>(
+        `/api/teams/invitations/${invitationId}/accept`,
+        { method: "POST", headers: authHeaders() },
+      );
+    },
+
+    async declineInvitation(invitationId: string) {
+      return await $fetch<void>(`/api/teams/invitations/${invitationId}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+    },
+
+    async getAdminTeams(params?: {
+      page?: number;
+      limit?: number;
+      search?: string;
+    }) {
+      const query: Record<string, string> = {};
+      if (params?.page) query.page = String(params.page);
+      if (params?.limit) query.limit = String(params.limit);
+      if (params?.search) query.search = params.search;
+      return await $fetch<PaginatedTeams>("/api/admin/teams", {
+        headers: authHeaders(),
+        query,
+      });
+    },
+
     // ─── Read Status ──────────────────────────────────────
     async markMessageRead(messageId: string) {
       return await $fetch<{ success: boolean }>(
@@ -619,12 +702,15 @@ export interface Inbox {
   smtpUsername: string;
   createdAt: string;
   unreadCount: number;
+  teamId: string | null;
+  teamName: string | null;
 }
 
 export interface InboxDetail extends Inbox {
   userId: string;
   smtpPassword: string;
   updatedAt: string;
+  currentUserRole?: string;
 }
 
 export interface Message {
@@ -874,6 +960,7 @@ export interface Team {
   ownerId: string;
   createdAt: string;
   updatedAt: string;
+  currentUserRole?: string;
 }
 
 export interface TeamMember {
@@ -883,4 +970,71 @@ export interface TeamMember {
   email: string;
   name: string | null;
   createdAt: string;
+}
+
+export interface TeamInbox {
+  id: string;
+  name: string;
+  smtpUsername: string;
+  createdAt: string;
+}
+
+export interface TeamActivity {
+  id: string;
+  action: string;
+  meta: Record<string, unknown> | null;
+  createdAt: string;
+  actorEmail: string;
+  actorName: string | null;
+}
+
+export interface TeamInvitation {
+  id: string;
+  teamId: string;
+  email: string;
+  role: string;
+  token: string;
+  expiresAt: string;
+  createdAt: string;
+}
+
+export interface TeamInvitationDetail {
+  id: string;
+  email: string;
+  role: string;
+  expiresAt: string;
+  createdAt: string;
+  inviterEmail: string;
+  inviterName: string | null;
+}
+
+export interface MyInvitation {
+  id: string;
+  teamId: string;
+  teamName: string;
+  role: string;
+  expiresAt: string;
+  createdAt: string;
+  inviterEmail: string;
+  inviterName: string | null;
+}
+
+export interface AdminTeam {
+  id: string;
+  name: string;
+  ownerId: string;
+  ownerEmail: string;
+  ownerName: string | null;
+  createdAt: string;
+  memberCount: number;
+}
+
+export interface PaginatedTeams {
+  data: AdminTeam[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    pages: number;
+  };
 }

@@ -163,3 +163,22 @@ const servers = ports.map((port) => {
 if (isTesting) {
   console.log("🧪 Catch-all mode enabled — authentication is optional");
 }
+
+// ─── Graceful shutdown ────────────────────────────────────
+function shutdown() {
+  console.log("\n🛑 Shutting down SMTP server(s)…");
+  Promise.all(
+    servers.map(
+      (server) => new Promise<void>((resolve) => server.close(() => resolve())),
+    ),
+  )
+    .then(() => redisConnection.quit())
+    .then(() => {
+      console.log("✅ SMTP shutdown complete");
+      process.exit(0);
+    })
+    .catch(() => process.exit(0));
+}
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);

@@ -111,3 +111,19 @@ app.listen({ port: env.API_PORT, host: env.API_HOST }, (err, address) => {
   }
   console.log(`🚀 API server listening on ${address}`);
 });
+
+// ─── Graceful shutdown ────────────────────────────────────
+function shutdown() {
+  console.log("\n🛑 Shutting down API server…");
+  app
+    .close()
+    .then(() => redisForQueues.quit())
+    .then(() => {
+      console.log("✅ API shutdown complete");
+      process.exit(0);
+    })
+    .catch(() => process.exit(0));
+}
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);

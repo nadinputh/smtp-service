@@ -65,6 +65,13 @@
             >
               <Icon name="lucide:inbox" class="w-4 h-4 shrink-0" />
               <span class="truncate flex-1">{{ inbox.name }}</span>
+              <span
+                v-if="inbox.teamName"
+                class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 font-medium shrink-0"
+                :title="`Team: ${inbox.teamName}`"
+              >
+                {{ inbox.teamName }}
+              </span>
               <Transition
                 enter-active-class="transition-all duration-200 ease-out"
                 leave-active-class="transition-all duration-150 ease-in"
@@ -338,6 +345,24 @@
               placeholder="Inbox name"
               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             />
+            <label
+              class="block text-sm text-gray-600 dark:text-gray-400 mt-3 mb-1"
+            >
+              Team (optional)
+            </label>
+            <select
+              v-model="newInboxTeamId"
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            >
+              <option value="">No team</option>
+              <option
+                v-for="team in userTeams"
+                :key="team.id"
+                :value="team.id"
+              >
+                {{ team.name }}
+              </option>
+            </select>
             <p v-if="createError" class="text-sm text-red-600 mt-2">
               {{ createError }}
             </p>
@@ -357,6 +382,72 @@
         </div>
       </div>
     </Teleport>
+
+    <!-- Toast notifications -->
+    <Teleport to="body">
+      <div class="fixed bottom-6 right-6 z-[100] flex flex-col-reverse gap-3 pointer-events-none">
+        <TransitionGroup
+          enter-active-class="transition duration-300 ease-out"
+          enter-from-class="translate-y-3 opacity-0 scale-95"
+          enter-to-class="translate-y-0 opacity-100 scale-100"
+          leave-active-class="transition duration-200 ease-in"
+          leave-from-class="translate-y-0 opacity-100 scale-100"
+          leave-to-class="translate-y-3 opacity-0 scale-95"
+        >
+          <div
+            v-for="t in toasts"
+            :key="t.id"
+            class="pointer-events-auto flex items-center gap-3 pl-4 pr-3 py-3 rounded-xl shadow-xl ring-1 ring-black/5 dark:ring-white/10 backdrop-blur-sm max-w-xs relative overflow-hidden"
+            :class="{
+              'bg-white/95 dark:bg-gray-800/95': true,
+            }"
+          >
+            <!-- Icon -->
+            <div
+              class="shrink-0 w-5 h-5 rounded-full flex items-center justify-center"
+              :class="{
+                'text-green-500': t.type === 'success',
+                'text-red-500': t.type === 'error',
+                'text-blue-500': t.type === 'info',
+              }"
+            >
+              <Icon
+                :name="
+                  t.type === 'success'
+                    ? 'lucide:check-circle-2'
+                    : t.type === 'error'
+                      ? 'lucide:x-circle'
+                      : 'lucide:info'
+                "
+                class="w-5 h-5"
+              />
+            </div>
+            <!-- Message -->
+            <p class="text-sm text-gray-700 dark:text-gray-200 leading-snug flex-1 min-w-0">
+              {{ t.message }}
+            </p>
+            <!-- Dismiss -->
+            <button
+              @click="toastDismiss(t.id)"
+              class="shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+            >
+              <Icon name="lucide:x" class="w-3.5 h-3.5" />
+            </button>
+            <!-- Progress bar -->
+            <div class="absolute bottom-0 left-0 h-0.5 rounded-full"
+              :class="{
+                'bg-green-500/40': t.type === 'success',
+                'bg-red-500/40': t.type === 'error',
+                'bg-blue-500/40': t.type === 'info',
+              }"
+              :style="{
+                animation: `toast-progress ${t.duration}ms linear forwards`,
+              }"
+            />
+          </div>
+        </TransitionGroup>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -366,6 +457,7 @@ const api = useApi();
 const { user, logout } = useAuth();
 const darkMode = useDarkMode();
 const sidebar = useSidebar();
+const { toasts, dismiss: toastDismiss } = useToast();
 // darkMode.init() is called in app.vue so it works on all pages (including layout: false)
 
 // ─── Navigation data ──────────────────────────────────────
@@ -390,6 +482,7 @@ const manageNav = [
 
 const adminNav = [
   { to: "/admin/users", icon: "lucide:shield", label: "User Management" },
+  { to: "/admin/teams", icon: "lucide:users-round", label: "Team Management" },
 ];
 
 // ─── Profile popover ──────────────────────────────────────
@@ -446,16 +539,34 @@ useSSE(
 // ─── Create Inbox ─────────────────────────────────────────
 const showCreateModal = ref(false);
 const newInboxName = ref("");
+const newInboxTeamId = ref("");
 const creating = ref(false);
 const createError = ref("");
+
+// Fetch teams for the inbox creation dropdown
+const userTeams = ref<{ id: string; name: string }[]>([]);
+
+watch(showCreateModal, async (open) => {
+  if (open) {
+    try {
+      userTeams.value = await api.getTeams();
+    } catch {
+      userTeams.value = [];
+    }
+  }
+});
 
 async function handleCreateInbox() {
   createError.value = "";
   creating.value = true;
   try {
-    const inbox = await api.createInbox(newInboxName.value);
+    const inbox = await api.createInbox(
+      newInboxName.value,
+      newInboxTeamId.value || undefined,
+    );
     showCreateModal.value = false;
     newInboxName.value = "";
+    newInboxTeamId.value = "";
     await refreshInboxes();
     navigateTo(`/inbox/${inbox.id}`);
   } catch (e: any) {

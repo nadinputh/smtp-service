@@ -24,7 +24,7 @@
         </div>
       </div>
 
-      <!-- Loading -->
+      <!-- Initial loading -->
       <div v-if="loading" class="text-center text-gray-400 py-20">
         Loading analytics...
       </div>
@@ -51,25 +51,36 @@
         <form
           v-if="showInlineCreate"
           @submit.prevent="handleCreateFirstInbox"
-          class="flex items-center gap-2 w-full max-w-sm"
+          class="flex flex-col items-center gap-3 w-full max-w-sm"
         >
           <input
             v-model="firstInboxName"
             type="text"
             required
             placeholder="Inbox name"
-            class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
           />
-          <UBtn type="submit" :disabled="creatingFirst">
-            {{ creatingFirst ? "Creating..." : "Create" }}
-          </UBtn>
-          <UBtn
-            type="button"
-            variant="ghost"
-            @click="showInlineCreate = false"
+          <select
+            v-model="firstInboxTeamId"
+            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
           >
-            Cancel
-          </UBtn>
+            <option value="">No team (personal)</option>
+            <option v-for="t in firstInboxTeams" :key="t.id" :value="t.id">
+              {{ t.name }}
+            </option>
+          </select>
+          <div class="flex items-center gap-2">
+            <UBtn type="submit" :disabled="creatingFirst">
+              {{ creatingFirst ? "Creating..." : "Create" }}
+            </UBtn>
+            <UBtn
+              type="button"
+              variant="ghost"
+              @click="showInlineCreate = false"
+            >
+              Cancel
+            </UBtn>
+          </div>
         </form>
         <UBtn v-else @click="showInlineCreate = true">
           Create your first inbox
@@ -91,7 +102,7 @@
               Total Messages
             </p>
             <p class="text-3xl font-bold text-gray-800 dark:text-gray-100 mt-1">
-              {{ overview?.totalMessages ?? 0 }}
+              {{ animatedTotal }}
             </p>
             <p class="text-xs text-gray-400 mt-1">
               {{ overview?.period.total ?? 0 }} in last
@@ -107,7 +118,7 @@
               Delivered
             </p>
             <p class="text-3xl font-bold text-green-600 mt-1">
-              {{ overview?.totalDelivered ?? 0 }}
+              {{ animatedDelivered }}
             </p>
             <p class="text-xs text-gray-400 mt-1">
               {{ overview?.deliveryRate ?? 0 }}% delivery rate
@@ -122,7 +133,7 @@
               Bounced
             </p>
             <p class="text-3xl font-bold text-red-600 mt-1">
-              {{ overview?.totalBounced ?? 0 }}
+              {{ animatedBounced }}
             </p>
             <p class="text-xs text-gray-400 mt-1">
               {{ overview?.bounceRate ?? 0 }}% bounce rate
@@ -137,7 +148,7 @@
               Received
             </p>
             <p class="text-3xl font-bold text-indigo-600 mt-1">
-              {{ overview?.totalReceived ?? 0 }}
+              {{ animatedReceived }}
             </p>
             <p class="text-xs text-gray-400 mt-1">
               {{ overview?.period.received ?? 0 }} in period
@@ -454,17 +465,60 @@ const topRecipients = ref<{
 const usage = ref<AccountUsage | null>(null);
 const loading = ref(true);
 
+function useAnimatedNumber(source: () => number, duration = 400) {
+  const displayed = ref(0);
+  let raf: number | null = null;
+
+  watch(source, (to, from) => {
+    if (raf) cancelAnimationFrame(raf);
+    const start = performance.now();
+    const diff = to - (from ?? 0);
+    if (diff === 0) { displayed.value = to; return; }
+
+    function step(now: number) {
+      const t = Math.min((now - start) / duration, 1);
+      const ease = 1 - Math.pow(1 - t, 3); // ease-out cubic
+      displayed.value = Math.round((from ?? 0) + diff * ease);
+      if (t < 1) raf = requestAnimationFrame(step);
+    }
+    raf = requestAnimationFrame(step);
+  }, { immediate: true });
+
+  return displayed;
+}
+
+const animatedTotal = useAnimatedNumber(() => overview.value?.totalMessages ?? 0);
+const animatedDelivered = useAnimatedNumber(() => overview.value?.totalDelivered ?? 0);
+const animatedBounced = useAnimatedNumber(() => overview.value?.totalBounced ?? 0);
+const animatedReceived = useAnimatedNumber(() => overview.value?.totalReceived ?? 0);
+
 const showInlineCreate = ref(false);
 const firstInboxName = ref("");
+const firstInboxTeamId = ref("");
+const firstInboxTeams = ref<{ id: string; name: string }[]>([]);
 const creatingFirst = ref(false);
 const firstCreateError = ref("");
+
+watch(showInlineCreate, async (open) => {
+  if (open) {
+    try {
+      firstInboxTeams.value = await api.getTeams();
+    } catch {
+      firstInboxTeams.value = [];
+    }
+  }
+});
 
 async function handleCreateFirstInbox() {
   firstCreateError.value = "";
   creatingFirst.value = true;
   try {
-    const inbox = await api.createInbox(firstInboxName.value);
+    const inbox = await api.createInbox(
+      firstInboxName.value,
+      firstInboxTeamId.value || undefined,
+    );
     firstInboxName.value = "";
+    firstInboxTeamId.value = "";
     showInlineCreate.value = false;
     await refreshNuxtData("inboxes");
     navigateTo(`/inbox/${inbox.id}`);
@@ -561,7 +615,21 @@ async function loadData() {
   }
 }
 
-watch(selectedPeriod, () => loadData());
+watch(selectedPeriod, async () => {
+  try {
+    const [ov, ts, br] = await Promise.all([
+      api.getAnalyticsOverview(selectedPeriod.value),
+      api.getAnalyticsTimeseries(selectedMetric.value, selectedPeriod.value),
+      api.getAnalyticsBounceRate(selectedPeriod.value),
+    ]);
+    overview.value = ov;
+    timeseries.value = ts;
+    bounceData.value = br;
+  } catch (e) {
+    console.error("Failed to load analytics", e);
+  }
+});
+
 watch(selectedMetric, async () => {
   try {
     timeseries.value = await api.getAnalyticsTimeseries(
@@ -572,6 +640,28 @@ watch(selectedMetric, async () => {
     console.error("Failed to load timeseries", e);
   }
 });
+
+async function refreshAnalytics() {
+  try {
+    const [ov, ts, br, tr] = await Promise.all([
+      api.getAnalyticsOverview(selectedPeriod.value),
+      api.getAnalyticsTimeseries(selectedMetric.value, selectedPeriod.value),
+      api.getAnalyticsBounceRate(selectedPeriod.value),
+      api.getAnalyticsTopRecipients(),
+    ]);
+    overview.value = ov;
+    timeseries.value = ts;
+    bounceData.value = br;
+    topRecipients.value = tr;
+  } catch (e) {
+    console.error("Failed to refresh analytics", e);
+  }
+}
+
+useSSE(
+  () => refreshAnalytics(),
+  () => refreshAnalytics(),
+);
 
 onMounted(() => loadData());
 </script>
