@@ -29,6 +29,56 @@
         Loading analytics...
       </div>
 
+      <!-- Empty state: no inboxes -->
+      <div
+        v-else-if="usage && usage.currentInboxes === 0"
+        class="flex flex-col items-center justify-center py-24"
+      >
+        <div
+          class="w-16 h-16 rounded-full bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center mb-6"
+        >
+          <Icon
+            name="lucide:inbox"
+            class="w-8 h-8 text-indigo-500 dark:text-indigo-400"
+          />
+        </div>
+        <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-2">
+          No inboxes yet
+        </h2>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-6 text-center max-w-sm">
+          Create your first inbox to start sending and receiving emails. Analytics will appear here once you have messages.
+        </p>
+        <form
+          v-if="showInlineCreate"
+          @submit.prevent="handleCreateFirstInbox"
+          class="flex items-center gap-2 w-full max-w-sm"
+        >
+          <input
+            v-model="firstInboxName"
+            type="text"
+            required
+            placeholder="Inbox name"
+            class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+          />
+          <UBtn type="submit" :disabled="creatingFirst">
+            {{ creatingFirst ? "Creating..." : "Create" }}
+          </UBtn>
+          <UBtn
+            type="button"
+            variant="ghost"
+            @click="showInlineCreate = false"
+          >
+            Cancel
+          </UBtn>
+        </form>
+        <UBtn v-else @click="showInlineCreate = true">
+          Create your first inbox
+        </UBtn>
+        <p v-if="firstCreateError" class="text-sm text-red-600 mt-3">
+          {{ firstCreateError }}
+        </p>
+      </div>
+
       <template v-else>
         <!-- Summary Cards -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
@@ -403,6 +453,27 @@ const topRecipients = ref<{
 } | null>(null);
 const usage = ref<AccountUsage | null>(null);
 const loading = ref(true);
+
+const showInlineCreate = ref(false);
+const firstInboxName = ref("");
+const creatingFirst = ref(false);
+const firstCreateError = ref("");
+
+async function handleCreateFirstInbox() {
+  firstCreateError.value = "";
+  creatingFirst.value = true;
+  try {
+    const inbox = await api.createInbox(firstInboxName.value);
+    firstInboxName.value = "";
+    showInlineCreate.value = false;
+    await refreshNuxtData("inboxes");
+    navigateTo(`/inbox/${inbox.id}`);
+  } catch (e: any) {
+    firstCreateError.value = e?.data?.error || "Failed to create inbox";
+  } finally {
+    creatingFirst.value = false;
+  }
+}
 
 const chartWidth = 600;
 const chartHeight = 200;
