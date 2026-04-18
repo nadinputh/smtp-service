@@ -172,7 +172,7 @@ function shutdown() {
       (server) => new Promise<void>((resolve) => server.close(() => resolve())),
     ),
   )
-    .then(() => redisConnection.quit())
+    .then(() => incomingQueue.close())
     .then(() => {
       console.log("✅ SMTP shutdown complete");
       process.exit(0);

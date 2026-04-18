@@ -117,7 +117,6 @@ function shutdown() {
   console.log("\n🛑 Shutting down API server…");
   app
     .close()
-    .then(() => redisForQueues.quit())
     .then(() => {
       console.log("✅ API shutdown complete");
       process.exit(0);
