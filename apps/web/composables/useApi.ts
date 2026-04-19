@@ -663,6 +663,84 @@ export function useApi() {
       });
     },
 
+    // ─── Admin: Inbox Management ────────────────────────────
+    async getAdminInboxes(params?: {
+      page?: number;
+      limit?: number;
+      search?: string;
+    }) {
+      const query: Record<string, string> = {};
+      if (params?.page) query.page = String(params.page);
+      if (params?.limit) query.limit = String(params.limit);
+      if (params?.search) query.search = params.search;
+      return await $fetch<PaginatedAdminInboxes>("/api/admin/inboxes", {
+        headers: authHeaders(),
+        query,
+      });
+    },
+
+    async getAdminInbox(inboxId: string) {
+      return await $fetch<AdminInboxDetail>(`/api/admin/inboxes/${inboxId}`, {
+        headers: authHeaders(),
+      });
+    },
+
+    async updateAdminInbox(
+      inboxId: string,
+      data: { name?: string; userId?: string; teamId?: string | null },
+    ) {
+      return await $fetch<AdminInboxDetail>(`/api/admin/inboxes/${inboxId}`, {
+        method: "PUT",
+        headers: authHeaders(),
+        body: data,
+      });
+    },
+
+    async deleteAdminInbox(inboxId: string) {
+      return await $fetch<void>(`/api/admin/inboxes/${inboxId}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+    },
+
+    // ─── Admin: Analytics ───────────────────────────────────
+    async getAdminAnalyticsOverview(period?: string) {
+      const query: Record<string, string> = {};
+      if (period) query.period = period;
+      return await $fetch<AdminAnalyticsOverview>(
+        "/api/admin/analytics/overview",
+        { headers: authHeaders(), query },
+      );
+    },
+
+    async getAdminAnalyticsTimeseries(metric?: string, period?: string) {
+      const query: Record<string, string> = {};
+      if (metric) query.metric = metric;
+      if (period) query.period = period;
+      return await $fetch<TimeseriesData>("/api/admin/analytics/timeseries", {
+        headers: authHeaders(),
+        query,
+      });
+    },
+
+    async getAdminAnalyticsTopUsers(limit?: number) {
+      const query: Record<string, string> = {};
+      if (limit) query.limit = String(limit);
+      return await $fetch<{ users: AdminTopUser[] }>(
+        "/api/admin/analytics/top-users",
+        { headers: authHeaders(), query },
+      );
+    },
+
+    async getAdminAnalyticsTopInboxes(limit?: number) {
+      const query: Record<string, string> = {};
+      if (limit) query.limit = String(limit);
+      return await $fetch<{ inboxes: AdminTopInbox[] }>(
+        "/api/admin/analytics/top-inboxes",
+        { headers: authHeaders(), query },
+      );
+    },
+
     // ─── Read Status ──────────────────────────────────────
     async markMessageRead(messageId: string) {
       return await $fetch<{ success: boolean }>(
@@ -1037,4 +1115,71 @@ export interface PaginatedTeams {
     total: number;
     pages: number;
   };
+}
+
+export interface AdminInbox {
+  id: string;
+  name: string;
+  smtpUsername: string;
+  userId: string;
+  teamId: string | null;
+  createdAt: string;
+  ownerEmail: string;
+  ownerName: string | null;
+  teamName: string | null;
+  messageCount: number;
+}
+
+export interface AdminInboxDetail extends AdminInbox {
+  smtpPassword: string;
+  updatedAt: string;
+}
+
+export interface PaginatedAdminInboxes {
+  data: AdminInbox[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    pages: number;
+  };
+}
+
+export interface AdminAnalyticsOverview {
+  totalUsers: number;
+  totalInboxes: number;
+  totalTeams: number;
+  totalMessages: number;
+  totalSent: number;
+  totalDelivered: number;
+  totalBounced: number;
+  totalReceived: number;
+  deliveryRate: number;
+  bounceRate: number;
+  period: {
+    days: number;
+    total: number;
+    sent: number;
+    delivered: number;
+    bounced: number;
+    received: number;
+  };
+}
+
+export interface AdminTopUser {
+  id: string;
+  email: string;
+  name: string | null;
+  inboxCount: number;
+  messageCount: number;
+}
+
+export interface AdminTopInbox {
+  id: string;
+  name: string;
+  smtpUsername: string;
+  ownerEmail: string;
+  ownerName: string | null;
+  teamName: string | null;
+  messageCount: number;
 }

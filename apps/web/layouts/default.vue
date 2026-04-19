@@ -355,11 +355,7 @@
               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             >
               <option value="">No team</option>
-              <option
-                v-for="team in userTeams"
-                :key="team.id"
-                :value="team.id"
-              >
+              <option v-for="team in userTeams" :key="team.id" :value="team.id">
                 {{ team.name }}
               </option>
             </select>
@@ -385,7 +381,9 @@
 
     <!-- Toast notifications -->
     <Teleport to="body">
-      <div class="fixed bottom-6 right-6 z-[100] flex flex-col-reverse gap-3 pointer-events-none">
+      <div
+        class="fixed bottom-6 right-6 z-[100] flex flex-col-reverse gap-3 pointer-events-none"
+      >
         <TransitionGroup
           enter-active-class="transition duration-300 ease-out"
           enter-from-class="translate-y-3 opacity-0 scale-95"
@@ -423,7 +421,9 @@
               />
             </div>
             <!-- Message -->
-            <p class="text-sm text-gray-700 dark:text-gray-200 leading-snug flex-1 min-w-0">
+            <p
+              class="text-sm text-gray-700 dark:text-gray-200 leading-snug flex-1 min-w-0"
+            >
               {{ t.message }}
             </p>
             <!-- Dismiss -->
@@ -434,7 +434,8 @@
               <Icon name="lucide:x" class="w-3.5 h-3.5" />
             </button>
             <!-- Progress bar -->
-            <div class="absolute bottom-0 left-0 h-0.5 rounded-full"
+            <div
+              class="absolute bottom-0 left-0 h-0.5 rounded-full"
               :class="{
                 'bg-green-500/40': t.type === 'success',
                 'bg-red-500/40': t.type === 'error',
@@ -481,7 +482,9 @@ const manageNav = [
 ];
 
 const adminNav = [
+  { to: "/admin/analytics", icon: "lucide:bar-chart-3", label: "Analytics" },
   { to: "/admin/users", icon: "lucide:shield", label: "User Management" },
+  { to: "/admin/inboxes", icon: "lucide:inbox", label: "Inbox Management" },
   { to: "/admin/teams", icon: "lucide:users-round", label: "Team Management" },
 ];
 
