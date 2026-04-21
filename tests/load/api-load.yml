@@ -1,0 +1,181 @@
+# Load Testing Suite
+#
+# Uses Artillery for declarative HTTP load testing against the API.
+#
+# Run:
+#   npx artillery run tests/load/api-load.yml
+#   npx artillery run tests/load/api-load.yml --output report.json
+#   npx artillery report report.json   # generates HTML report
+
+config:
+  target: "http://localhost:3002"
+  processor: "./load-helpers.js"
+  phases:
+    # Phase 1: Warm-up — ramp from 1 to 3 users/sec over 15s
+    - name: "Warm-up"
+      duration: 15
+      arrivalRate: 1
+      rampTo: 3
+
+    # Phase 2: Sustained load — 5 users/sec for 30s
+    - name: "Sustained load"
+      duration: 30
+      arrivalRate: 5
+
+    # Phase 3: Stress — ramp to 12 users/sec over 20s
+    - name: "Stress"
+      duration: 20
+      arrivalRate: 8
+      rampTo: 12
+
+    # Phase 4: Spike — 20 users/sec for 10s
+    - name: "Spike"
+      duration: 10
+      arrivalRate: 20
+
+  defaults:
+    headers:
+      Content-Type: "application/json"
+
+  # Thresholds — fail if these are not met
+  ensure:
+    thresholds:
+      - http.response_time.p95: 3000 # p95 < 3s
+      - http.response_time.p99: 10000 # p99 < 10s
+      - http.codes.500: 0 # zero 500 errors
+
+# ────────────────────────────────────────────────────────────
+# Scenarios
+# ────────────────────────────────────────────────────────────
+scenarios:
+  # ── Health Check ──────────────────────────────────────────
+  - name: "Health check"
+    weight: 10
+    flow:
+      - get:
+          url: "/health"
+
+  # ── Registration + Login flow ─────────────────────────────
+  - name: "Register & login"
+    weight: 5
+    flow:
+      - function: "generateCredentials"
+      - post:
+          url: "/api/auth/register"
+          json:
+            email: "{{ email }}"
+            password: "{{ password }}"
+          capture:
+            - json: "$.token"
+              as: "token"
+      - post:
+          url: "/api/auth/login"
+          json:
+            email: "{{ email }}"
+            password: "{{ password }}"
+
+  # ── Authenticated inbox operations ────────────────────────
+  - name: "Inbox CRUD"
+    weight: 30
+    flow:
+      # Register to get a token
+      - function: "generateCredentials"
+      - post:
+          url: "/api/auth/register"
+          json:
+            email: "{{ email }}"
+            password: "{{ password }}"
+          capture:
+            - json: "$.token"
+              as: "token"
+      # List inboxes
+      - get:
+          url: "/api/inboxes"
+          headers:
+            Authorization: "Bearer {{ token }}"
+      # Create inbox
+      - post:
+          url: "/api/inboxes"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          json:
+            name: "Load Test Inbox {{ $randomString() }}"
+          capture:
+            - json: "$.id"
+              as: "inboxId"
+      # Get inbox detail
+      - get:
+          url: "/api/inboxes/{{ inboxId }}"
+          headers:
+            Authorization: "Bearer {{ token }}"
+      # List messages
+      - get:
+          url: "/api/inboxes/{{ inboxId }}/messages"
+          headers:
+            Authorization: "Bearer {{ token }}"
+      # Delete inbox
+      - delete:
+          url: "/api/inboxes/{{ inboxId }}"
+          headers:
+            Authorization: "Bearer {{ token }}"
+
+  # ── Unauthenticated requests (should all 401) ────────────
+  - name: "Unauthenticated rejection"
+    weight: 15
+    flow:
+      - get:
+          url: "/api/inboxes"
+      - get:
+          url: "/api/keys"
+      - get:
+          url: "/api/admin/users"
+
+  # ── Tracking endpoints (high traffic) ─────────────────────
+  - name: "Tracking pixel"
+    weight: 20
+    flow:
+      - get:
+          url: "/t/open/00000000-0000-0000-0000-000000000000"
+
+  # ── Domains ───────────────────────────────────────────────
+  - name: "Domain operations"
+    weight: 10
+    flow:
+      - function: "generateCredentials"
+      - post:
+          url: "/api/auth/register"
+          json:
+            email: "{{ email }}"
+            password: "{{ password }}"
+          capture:
+            - json: "$.token"
+              as: "token"
+      - get:
+          url: "/api/domains"
+          headers:
+            Authorization: "Bearer {{ token }}"
+      - post:
+          url: "/api/domains"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          json:
+            domain: "{{ $randomString() }}.loadtest.local"
+          afterResponse: "captureDomain"
+
+  # ── Rate limiting stress ──────────────────────────────────
+  - name: "Rate limit test"
+    weight: 10
+    flow:
+      - loop:
+          - post:
+              url: "/api/auth/login"
+              json:
+                email: "nonexistent@rate.test"
+                password: "WrongP4ss!"
+        count: 15
+      # After many rapid requests, we should be rate-limited
+      - post:
+          url: "/api/auth/login"
+          json:
+            email: "nonexistent@rate.test"
+            password: "WrongP4ss!"

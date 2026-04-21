@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 dotenv.config({ path: "../../.env" });
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import helmet from "@fastify/helmet";
 import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
 import { createBullBoard } from "@bull-board/api";
@@ -37,10 +38,44 @@ import { requireAdmin } from "./middleware/access.js";
 
 const env = getEnv();
 
-const app = Fastify({ logger: true });
+const app = Fastify({
+  logger: true,
+  trustProxy: env.APP_MODE === "production",
+});
 
-await app.register(cors, { origin: true });
+// ─── Security Headers ─────────────────────────────────────
+await app.register(helmet, {
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:"],
+      connectSrc: ["'self'"],
+      frameSrc: ["'none'"],
+      objectSrc: ["'none'"],
+    },
+  },
+  crossOriginEmbedderPolicy: false, // Allow embedding tracking pixel
+});
+
+// ─── CORS ─────────────────────────────────────────────────
+const allowedOrigins = env.CORS_ORIGINS
+  ? env.CORS_ORIGINS.split(",").map((o) => o.trim())
+  : env.APP_MODE === "production"
+    ? [] // No open CORS in production
+    : true; // Permissive in testing mode
+
+await app.register(cors, {
+  origin: allowedOrigins,
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+});
+
 await app.register(multipart, { limits: { fileSize: 25 * 1024 * 1024 } });
+
+// ─── Global Rate Limiting ─────────────────────────────────
 await app.register(rateLimit, {
   max: 100, // 100 requests per window
   timeWindow: 60000, // 1 minute
@@ -52,7 +87,7 @@ await app.register(rateLimit, {
 
 // ─── Routes ───────────────────────────────────────────────
 // Health check — verifies DB connectivity
-app.get("/health", async () => {
+app.get("/health", { config: { rateLimit: false } }, async () => {
   const db = getDb(env.DATABASE_URL);
   try {
     await db.execute(sql`SELECT 1`);

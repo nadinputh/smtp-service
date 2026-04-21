@@ -14,12 +14,21 @@
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
-    "test:watch": "vitest watch"
+    "test:watch": "vitest watch",
+    "test:e2e": "vitest run tests/e2e/",
+    "test:pentest": "vitest run tests/pentest/",
+    "test:integration": "vitest run apps/api/tests/api.integration.test.ts",
+    "test:matrix:local": "bash scripts/test-matrix-local.sh",
+    "test:matrix:local:fast": "bash scripts/test-matrix-local.sh --skip-load",
+    "test:security": "vitest run tests/e2e/ tests/pentest/",
+    "test:load": "npx artillery run tests/load/api-load.yml",
+    "test:load:report": "npx artillery run tests/load/api-load.yml --output load-report.json && npx artillery report load-report.json"
   },
   "engines": {
     "node": ">=20"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@types/node": "^25.5.2",
     "dotenv": "^17.4.0",
     "tsx": "^4.21.0",

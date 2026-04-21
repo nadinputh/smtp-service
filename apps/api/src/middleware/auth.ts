@@ -113,13 +113,20 @@ async function verifyOAuth2Token(token: string): Promise<JwtPayload | null> {
 
 export async function authGuard(request: FastifyRequest, reply: FastifyReply) {
   const header = request.headers.authorization;
-  if (!header?.startsWith("Bearer ")) {
+  const xApiKey = request.headers["x-api-key"];
+
+  let token: string | undefined;
+  if (header?.startsWith("Bearer ")) {
+    token = header.slice(7);
+  } else if (typeof xApiKey === "string" && xApiKey.trim()) {
+    token = xApiKey.trim();
+  }
+
+  if (!token) {
     return reply
       .status(401)
       .send({ error: "Missing or invalid Authorization header" });
   }
-
-  const token = header.slice(7);
 
   // API key authentication
   if (token.startsWith("smtps_")) {

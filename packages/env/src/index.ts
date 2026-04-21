@@ -64,6 +64,9 @@ const envSchema = z
     // Tracking
     TRACKING_BASE_URL: z.string().default("http://localhost:3002"),
 
+    // CORS
+    CORS_ORIGINS: z.string().optional(), // Comma-separated allowed origins
+
     // Cleanup
     CLEANUP_MAX_AGE_HOURS: z.coerce.number().default(24),
   })

@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 
-const API_BASE = process.env.API_BASE ?? "http://localhost:3002";
+const API_BASE = process.env.API_BASE ?? "http://localhost:3001";
 let token: string;
 
 // Helper for API calls
@@ -99,7 +99,7 @@ describe("API Integration Tests", () => {
     it("GET /api/inboxes/:id/messages returns empty list initially", async () => {
       const { status, body } = await api(`/api/inboxes/${inboxId}/messages`);
       expect(status).toBe(200);
-      expect(Array.isArray(body)).toBe(true);
+      expect(Array.isArray(body.messages)).toBe(true);
     });
 
     // Webhooks (nested under inbox)
@@ -251,7 +251,7 @@ describe("API Integration Tests", () => {
       const saved = token;
       token = "";
       const res = await fetch(`${API_BASE}/api/inboxes`, {
-        headers: { "X-API-Key": rawKey },
+        headers: { Authorization: `Bearer ${rawKey}` },
       });
       expect(res.status).toBe(200);
       token = saved;
@@ -267,7 +267,7 @@ describe("API Integration Tests", () => {
 
     it("Revoked key no longer authenticates", async () => {
       const res = await fetch(`${API_BASE}/api/inboxes`, {
-        headers: { "X-API-Key": rawKey },
+        headers: { Authorization: `Bearer ${rawKey}` },
       });
       expect(res.status).toBe(401);
     });
@@ -645,7 +645,7 @@ describe("API Integration Tests", () => {
     it("GET /api/analytics/overview returns analytics", async () => {
       const { status, body } = await api("/api/analytics/overview?period=30d");
       expect(status).toBe(200);
-      expect(body.totalMessages).toBeDefined();
+      expect(body.totalSent).toBeDefined();
     });
 
     it("GET /api/analytics/timeseries returns chart data", async () => {
@@ -672,7 +672,7 @@ describe("API Integration Tests", () => {
     });
 
     it("GET /api/quotas returns account usage", async () => {
-      const { status, body } = await api("/api/quotas");
+      const { status, body } = await api("/api/account/usage");
       expect(status).toBe(200);
       expect(body.monthlySendLimit).toBeDefined();
       expect(body.currentMonthlySent).toBeDefined();

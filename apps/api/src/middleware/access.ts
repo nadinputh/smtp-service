@@ -14,6 +14,9 @@ export type InboxRole = "owner" | "editor" | "viewer";
 export type TeamRole = "admin" | "member";
 export type GlobalRole = "admin" | "user";
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 /**
  * Resolve the effective role a user has on an inbox.
  * Priority: global admin > inbox creator > inbox_members role > team membership.
@@ -114,6 +117,10 @@ export function requireInboxRole(minRole: InboxRole) {
       return reply.status(400).send({ error: "Missing inbox identifier" });
     }
 
+    if (!UUID_RE.test(inboxId)) {
+      return reply.status(400).send({ error: "Invalid inbox identifier" });
+    }
+
     const userId = request.user?.userId;
     if (!userId) {
       return reply.status(401).send({ error: "Authentication required" });
@@ -204,6 +211,10 @@ export function requireMessageRole(minRole: InboxRole) {
 
     if (!messageId) {
       return reply.status(400).send({ error: "Missing message identifier" });
+    }
+
+    if (!UUID_RE.test(messageId)) {
+      return reply.status(400).send({ error: "Invalid message identifier" });
     }
 
     const userId = request.user?.userId;

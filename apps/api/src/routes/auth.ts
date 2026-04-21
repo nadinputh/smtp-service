@@ -9,23 +9,60 @@ import { signToken, authGuard } from "../middleware/auth.js";
 export function registerAuthRoutes(app: FastifyInstance) {
   const env = getEnv();
   const db = getDb(env.DATABASE_URL);
+  const authRateLimit = {
+    config: {
+      rateLimit: {
+        max: env.APP_MODE === "production" ? 10 : 1000,
+        timeWindow: 60000,
+      },
+    },
+  };
 
   // ─── Register (local) ────────────────────────────────────
   app.post<{
     Body: { email: string; password: string; name?: string };
-  }>("/api/auth/register", async (request, reply) => {
+  }>("/api/auth/register", authRateLimit, async (request, reply) => {
     const { email, password, name } = request.body;
 
-    if (!email || !password) {
+    if (
+      typeof email !== "string" ||
+      typeof password !== "string" ||
+      !email ||
+      !password
+    ) {
       return reply
         .status(400)
         .send({ error: "Email and password are required" });
     }
 
+    if (email.includes("\x00") || password.includes("\x00")) {
+      return reply.status(400).send({ error: "Invalid credentials format" });
+    }
+
+    // Password strength validation
+    if (password.length < 8) {
+      return reply
+        .status(400)
+        .send({ error: "Password must be at least 8 characters" });
+    }
+    if (
+      !/[A-Z]/.test(password) ||
+      !/[a-z]/.test(password) ||
+      !/[0-9]/.test(password)
+    ) {
+      return reply
+        .status(400)
+        .send({
+          error: "Password must contain uppercase, lowercase, and a number",
+        });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
     const [existing] = await db
       .select({ id: users.id })
       .from(users)
-      .where(eq(users.email, email))
+      .where(eq(users.email, normalizedEmail))
       .limit(1);
 
     if (existing) {
@@ -36,7 +73,7 @@ export function registerAuthRoutes(app: FastifyInstance) {
 
     const [user] = await db
       .insert(users)
-      .values({ email, passwordHash, name: name ?? null })
+      .values({ email: normalizedEmail, passwordHash, name: name ?? null })
       .returning({ id: users.id, email: users.email, role: users.role });
 
     const token = signToken({ userId: user.id, email: user.email });
@@ -50,19 +87,30 @@ export function registerAuthRoutes(app: FastifyInstance) {
   // ─── Login (local) ───────────────────────────────────────
   app.post<{
     Body: { email: string; password: string };
-  }>("/api/auth/login", async (request, reply) => {
+  }>("/api/auth/login", authRateLimit, async (request, reply) => {
     const { email, password } = request.body;
 
-    if (!email || !password) {
+    if (
+      typeof email !== "string" ||
+      typeof password !== "string" ||
+      !email ||
+      !password
+    ) {
       return reply
         .status(400)
         .send({ error: "Email and password are required" });
     }
 
+    if (email.includes("\x00") || password.includes("\x00")) {
+      return reply.status(400).send({ error: "Invalid credentials" });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
     const [user] = await db
       .select()
       .from(users)
-      .where(eq(users.email, email))
+      .where(eq(users.email, normalizedEmail))
       .limit(1);
 
     if (!user || !user.passwordHash) {
@@ -90,7 +138,7 @@ export function registerAuthRoutes(app: FastifyInstance) {
   // ─── LDAP Login ──────────────────────────────────────────
   app.post<{
     Body: { username: string; password: string };
-  }>("/api/auth/ldap", async (request, reply) => {
+  }>("/api/auth/ldap", authRateLimit, async (request, reply) => {
     if (!env.LDAP_ENABLED) {
       return reply
         .status(404)
@@ -98,7 +146,12 @@ export function registerAuthRoutes(app: FastifyInstance) {
     }
 
     const { username, password } = request.body;
-    if (!username || !password) {
+    if (
+      typeof username !== "string" ||
+      typeof password !== "string" ||
+      !username ||
+      !password
+    ) {
       return reply
         .status(400)
         .send({ error: "Username and password are required" });
@@ -127,10 +180,15 @@ export function registerAuthRoutes(app: FastifyInstance) {
         });
       });
 
-      // Search for user
+      // Search for user — use proper LDAP filter escaping (RFC 4515)
+      const escapeLdap = (s: string) =>
+        s.replace(
+          /[\\*()&|!=<>~\x00/]/g,
+          (c) => "\\" + c.charCodeAt(0).toString(16).padStart(2, "0"),
+        );
       const searchFilter = env.LDAP_SEARCH_FILTER.replace(
         "{{username}}",
-        username.replace(/[\\*()]/g, ""),
+        escapeLdap(username),
       );
 
       const ldapUser = await new Promise<{
