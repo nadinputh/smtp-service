@@ -158,7 +158,22 @@ export async function authGuard(request: FastifyRequest, reply: FastifyReply) {
 
   // JWT authentication (local tokens)
   try {
-    request.user = verifyToken(token);
+    const payload = verifyToken(token);
+    // Ensure the user referenced by the JWT still exists. A valid signature
+    // is not enough — the user row may have been deleted (or the DB reset)
+    // while the client still holds the token. Without this check, downstream
+    // inserts referencing user_id would fail with FK violations.
+    const env = getEnv();
+    const db = getDb(env.DATABASE_URL);
+    const [u] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.id, payload.userId))
+      .limit(1);
+    if (!u) {
+      return reply.status(401).send({ error: "Invalid or expired token" });
+    }
+    request.user = payload;
     return;
   } catch {
     // Not a valid local JWT — try OAuth2 if enabled
