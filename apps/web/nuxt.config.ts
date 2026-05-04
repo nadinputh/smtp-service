@@ -1,4 +1,9 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
+import dotenv from "dotenv";
+dotenv.config({ path: "../../.env", override: false });
+
+const apiTarget = process.env.NUXT_API_TARGET || "http://localhost:3002";
+
 export default defineNuxtConfig({
   compatibilityDate: "2025-01-01",
   devtools: { enabled: true },
@@ -20,22 +25,20 @@ export default defineNuxtConfig({
   // ─── Proxy: hide the API origin behind the Nuxt server ──
   // Override at deploy time with NUXT_API_TARGET env var.
   runtimeConfig: {
-    apiTarget: process.env.NUXT_API_TARGET || "http://localhost:3002",
+    apiTarget,
+  },
+
+  // ─── Dev server port ─────────────────────────────────────
+  // Override with WEB_PORT env var.
+  devServer: {
+    port: parseInt(process.env.WEB_PORT || "3000"),
   },
 
   routeRules: {
-    "/api/**": {
-      proxy: `${process.env.NUXT_API_TARGET || "http://localhost:3002"}/api/**`,
-    },
-    "/v1/**": {
-      proxy: `${process.env.NUXT_API_TARGET || "http://localhost:3002"}/v1/**`,
-    },
-    "/health": {
-      proxy: `${process.env.NUXT_API_TARGET || "http://localhost:3002"}/health`,
-    },
-    "/admin/queues/**": {
-      proxy: `${process.env.NUXT_API_TARGET || "http://localhost:3002"}/admin/queues/**`,
-    },
+    "/api/**": { proxy: `${apiTarget}/api/**` },
+    "/v1/**": { proxy: `${apiTarget}/v1/**` },
+    "/health": { proxy: `${apiTarget}/health` },
+    "/admin/queues/**": { proxy: `${apiTarget}/admin/queues/**` },
   },
 
   ssr: false,
@@ -51,7 +54,7 @@ export default defineNuxtConfig({
       },
       proxy: {
         "/api/events": {
-          target: process.env.NUXT_API_TARGET || "http://localhost:3002",
+          target: apiTarget,
           changeOrigin: true,
           // SSE requires no response buffering
           headers: {

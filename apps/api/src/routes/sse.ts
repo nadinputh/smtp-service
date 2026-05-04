@@ -70,8 +70,14 @@ export function registerSSERoutes(app: FastifyInstance) {
       }
     }, 60_000);
 
+    // Keepalive: send a comment every 25 s so proxies don't close idle connections
+    const heartbeatInterval = setInterval(() => {
+      reply.raw.write(":ping\n\n");
+    }, 25_000);
+
     request.raw.on("close", () => {
       clearInterval(refreshInterval);
+      clearInterval(heartbeatInterval);
       sub.unsubscribe();
       sub.disconnect();
     });

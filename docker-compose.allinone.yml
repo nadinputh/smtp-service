@@ -7,10 +7,10 @@ services:
       context: .
       dockerfile: Dockerfile.allinone
     ports:
-      - "3000:3000"   # Web UI
-      - "3002:3002"   # API
-      - "2525:2525"   # SMTP
-      - "1025:1025"   # SMTP (alternate)
+      - "${WEB_PORT:-3000}:3000"   # Web UI
+      - "${API_PORT:-3002}:${API_PORT:-3002}"   # API
+      - "${SMTP_PORT:-2525}:${SMTP_PORT:-2525}"   # SMTP
+      - "${SMTP_PORT_ALT:-1025}:${SMTP_PORT_ALT:-1025}"   # SMTP (alternate)
     environment:
       # PostgreSQL (internal)
       PG_USER: smtp

@@ -69,6 +69,7 @@ const envSchema = z
 
     // Cleanup
     CLEANUP_MAX_AGE_HOURS: z.coerce.number().default(24),
+    CLEANUP_BATCH_SIZE: z.coerce.number().default(500),
   })
   .superRefine((data, ctx) => {
     if (data.STORAGE_DRIVER === "s3") {

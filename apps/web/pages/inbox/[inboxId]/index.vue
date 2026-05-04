@@ -319,7 +319,8 @@
               <button
                 v-if="msg.isRead"
                 @click.prevent="toggleReadStatus(msg)"
-                class="text-xs text-gray-400 hover:text-indigo-600 transition-colors"
+                :disabled="togglingReadIds.has(msg.id)"
+                class="p-1 rounded text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 title="Mark as unread"
               >
                 <Icon name="lucide:mail" class="w-3.5 h-3.5" />
@@ -327,7 +328,8 @@
               <button
                 v-else
                 @click.prevent="toggleReadStatus(msg)"
-                class="text-xs text-indigo-500 hover:text-indigo-700 transition-colors"
+                :disabled="togglingReadIds.has(msg.id)"
+                class="p-1 rounded text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 title="Mark as read"
               >
                 <Icon name="lucide:mail-open" class="w-3.5 h-3.5" />
@@ -838,6 +840,9 @@ definePageMeta({ layout: "default" });
 
 const route = useRoute();
 const api = useApi();
+
+// Tracks message IDs with an in-flight read-status toggle to prevent race conditions
+const togglingReadIds = ref(new Set<string>());
 const inboxId = route.params.inboxId as string;
 
 const showCreds = ref(false);
@@ -919,17 +924,17 @@ function clearFilters() {
 
 function handleMessageClick(msg: (typeof messages.value)[number]) {
   if (!msg.isRead) {
-    // Optimistically mark as read in UI
+    // Optimistic UI update only — the message detail page's watcher
+    // handles the actual markMessageRead API call, avoiding a duplicate request.
     msg.isRead = true;
-    api.markMessageRead(msg.id).catch(() => {
-      msg.isRead = false;
-    });
   }
 }
 
 async function toggleReadStatus(msg: (typeof messages.value)[number]) {
+  if (togglingReadIds.value.has(msg.id)) return;
   const wasRead = msg.isRead;
   msg.isRead = !wasRead;
+  togglingReadIds.value.add(msg.id);
   try {
     if (wasRead) {
       await api.markMessageUnread(msg.id);
@@ -938,6 +943,8 @@ async function toggleReadStatus(msg: (typeof messages.value)[number]) {
     }
   } catch {
     msg.isRead = wasRead;
+  } finally {
+    togglingReadIds.value.delete(msg.id);
   }
 }
 

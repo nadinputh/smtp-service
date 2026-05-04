@@ -4,7 +4,7 @@ import { Worker, type Job } from "bullmq";
 import { simpleParser, type ParsedMail } from "mailparser";
 import { getEnv } from "@mailpocket/env";
 import { getDb, messages, userQuotas } from "@mailpocket/db";
-import { lt, lte } from "drizzle-orm";
+import { and, eq, inArray, lt, lte } from "drizzle-orm";
 import { createStorage } from "@mailpocket/storage";
 import {
   QUEUE_NAMES,
@@ -202,14 +202,14 @@ createWebhookDeliveryWorker(redisConnection, db, webhookQueue);
 
 // ─── Cleanup Worker ───────────────────────────────────────
 async function processCleanup(job: Job<CleanupPayload>) {
-  const { maxAgeHours } = job.data;
+  const { maxAgeHours, batchSize } = job.data;
   const cutoff = new Date(Date.now() - maxAgeHours * 60 * 60 * 1000);
 
   console.log(
-    `🧹 Cleaning up messages older than ${maxAgeHours}h (before ${cutoff.toISOString()})`,
+    `🧹 Cleaning up messages older than ${maxAgeHours}h (before ${cutoff.toISOString()}, batch limit: ${batchSize})`,
   );
 
-  // Fetch messages older than cutoff
+  // Fetch read messages older than cutoff — never remove unread messages
   const oldMessages = await db
     .select({
       id: messages.id,
@@ -217,7 +217,8 @@ async function processCleanup(job: Job<CleanupPayload>) {
       attachments: messages.attachments,
     })
     .from(messages)
-    .where(lt(messages.createdAt, cutoff));
+    .where(and(lt(messages.createdAt, cutoff), eq(messages.isRead, true)))
+    .limit(batchSize);
 
   if (oldMessages.length === 0) {
     console.log("🧹 No messages to clean up");
@@ -239,7 +240,9 @@ async function processCleanup(job: Job<CleanupPayload>) {
   await storage.removeObjects(storageKeys);
 
   // Delete from PostgreSQL (cascade will handle related records)
-  await db.delete(messages).where(lt(messages.createdAt, cutoff));
+  // Scope the delete to only the fetched batch IDs to avoid racing with new messages
+  const batchIds = oldMessages.map((m) => m.id);
+  await db.delete(messages).where(inArray(messages.id, batchIds));
 
   console.log(
     `🧹 Cleaned up ${oldMessages.length} messages, ${storageKeys.length} storage objects`,
@@ -264,11 +267,18 @@ cleanupWorker.on("failed", (job, err) => {
 });
 
 // Schedule repeatable cleanup job
+// upsertJobScheduler is idempotent — safe to call from every pod on startup;
+// BullMQ stores the scheduler in Redis and deduplicates by scheduler ID.
 const cleanupQueue = createCleanupQueue(redisConnection);
-await cleanupQueue.add(
-  "auto-cleanup",
-  { maxAgeHours: env.CLEANUP_MAX_AGE_HOURS },
-  { repeat: { every: 60 * 60 * 1000 } }, // Run every hour
+await cleanupQueue.upsertJobScheduler(
+  "cleanup-scheduler",
+  { every: 60 * 60 * 1000 }, // every hour
+  {
+    data: {
+      maxAgeHours: env.CLEANUP_MAX_AGE_HOURS,
+      batchSize: env.CLEANUP_BATCH_SIZE,
+    },
+  },
 );
 
 // ─── Quota Reset Worker ───────────────────────────────────
@@ -316,10 +326,9 @@ quotaResetWorker.on("failed", (job, err) => {
 
 // Schedule repeatable quota reset job — run daily at midnight
 const quotaResetQueue = createQuotaResetQueue(redisConnection);
-await quotaResetQueue.add(
-  "auto-quota-reset",
-  {},
-  { repeat: { every: 24 * 60 * 60 * 1000 } }, // Run every 24 hours
+await quotaResetQueue.upsertJobScheduler(
+  "quota-reset-scheduler",
+  { every: 24 * 60 * 60 * 1000 }, // every 24 hours
 );
 
 // ─── Graceful Shutdown ────────────────────────────────────

@@ -28,6 +28,7 @@ export interface OutboundEmailPayload {
 
 export interface CleanupPayload {
   maxAgeHours: number;
+  batchSize: number;
 }
 
 export interface WebhookDeliveryPayload {

@@ -126,12 +126,12 @@
           </div>
           <!-- iframe -->
           <div
-            class="p-4 transition-colors"
+            class="transition-colors"
             :class="previewBg === 'dark' ? 'bg-gray-900' : 'bg-white'"
           >
             <iframe
               :srcdoc="previewHtml"
-              class="w-full min-h-[400px] border-0"
+              class="w-full min-h-[calc(100vh-300px)] border-0"
               sandbox="allow-same-origin"
             />
           </div>
