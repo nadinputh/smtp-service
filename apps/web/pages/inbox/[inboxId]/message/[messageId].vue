@@ -21,7 +21,7 @@
       <a
         :href="`/api/messages/${messageId}/raw`"
         target="_blank"
-        class="text-xs px-3 py-1.5 rounded-md border border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 shrink-0"
+        class="inline-flex items-center justify-center rounded-lg transition-colors text-xs px-2.5 py-1 border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 shrink-0"
       >
         Download .eml
       </a>
