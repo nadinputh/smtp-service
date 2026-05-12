@@ -315,53 +315,109 @@
 
         <!-- Delivery Logs -->
         <div v-if="activeTab === 'delivery'">
-          <div v-if="deliveryLogs === null" class="text-sm text-gray-400">
-            Loading...
-          </div>
-          <div v-else-if="!deliveryLogs?.length" class="text-sm text-gray-400">
-            No delivery logs
-          </div>
-          <div v-else class="space-y-3">
-            <div
-              v-for="log in deliveryLogs"
-              :key="log.id"
-              class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3"
+          <!-- Inbound message — no delivery logs expected -->
+          <div
+            v-if="message?.status === 'received'"
+            class="flex items-start gap-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-4 text-sm text-gray-500 dark:text-gray-400"
+          >
+            <Icon
+              name="lucide:info"
+              class="w-4 h-4 mt-0.5 shrink-0 text-gray-400"
+            />
+            <span
+              >This is an inbound message. Delivery logs are only recorded for
+              messages sent via MailPocket.</span
             >
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                  <span
-                    class="text-sm font-medium text-gray-800 dark:text-gray-100"
-                    >{{ log.recipient }}</span
+          </div>
+          <template v-else>
+            <!-- Header row with refresh -->
+            <div class="flex items-center justify-between mb-3">
+              <span
+                class="text-xs font-semibold text-gray-400 uppercase tracking-wider"
+                >Delivery Logs</span
+              >
+              <button
+                @click="refreshDeliveryLogs"
+                :disabled="deliveryLogsLoading"
+                class="flex items-center gap-1 text-xs text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 disabled:opacity-50 transition-colors"
+              >
+                <Icon
+                  name="lucide:refresh-cw"
+                  class="w-3.5 h-3.5"
+                  :class="{ 'animate-spin': deliveryLogsLoading }"
+                />
+                Refresh
+              </button>
+            </div>
+            <div
+              v-if="deliveryLogsLoading && deliveryLogs === null"
+              class="text-sm text-gray-400"
+            >
+              Loading...
+            </div>
+            <div
+              v-else-if="deliveryLogsError"
+              class="flex items-center gap-2 text-sm text-red-500 dark:text-red-400"
+            >
+              <Icon name="lucide:alert-circle" class="w-4 h-4 shrink-0" />
+              Failed to load delivery logs.
+              <button
+                @click="refreshDeliveryLogs"
+                class="underline hover:no-underline"
+              >
+                Retry
+              </button>
+            </div>
+            <div
+              v-else-if="!deliveryLogs?.length"
+              class="text-sm text-gray-400"
+            >
+              No delivery logs yet. The message may still be queued or
+              processing.
+            </div>
+            <div v-else class="space-y-3">
+              <div
+                v-for="log in deliveryLogs"
+                :key="log.id"
+                class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3"
+              >
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span
+                      class="text-sm font-medium text-gray-800 dark:text-gray-100"
+                      >{{ log.recipient }}</span
+                    >
+                    <span
+                      class="text-xs px-1.5 py-0.5 rounded-full"
+                      :class="{
+                        'bg-green-100 text-green-700':
+                          log.status === 'delivered',
+                        'bg-red-100 text-red-700':
+                          log.status === 'bounced' || log.status === 'failed',
+                        'bg-yellow-100 text-yellow-700':
+                          log.status === 'deferred' || log.status === 'sending',
+                        'bg-gray-100 text-gray-500': log.status === 'queued',
+                      }"
+                    >
+                      {{ log.status }}
+                    </span>
+                  </div>
+                  <span class="text-xs text-gray-400"
+                    >Attempt #{{ log.attempts }}</span
                   >
-                  <span
-                    class="text-xs px-1.5 py-0.5 rounded-full"
-                    :class="{
-                      'bg-green-100 text-green-700': log.status === 'delivered',
-                      'bg-red-100 text-red-700':
-                        log.status === 'bounced' || log.status === 'failed',
-                      'bg-yellow-100 text-yellow-700':
-                        log.status === 'deferred' || log.status === 'sending',
-                      'bg-gray-100 text-gray-500': log.status === 'queued',
-                    }"
-                  >
-                    {{ log.status }}
-                  </span>
                 </div>
-                <span class="text-xs text-gray-400"
-                  >Attempt #{{ log.attempts }}</span
-                >
-              </div>
-              <div class="mt-1 text-xs text-gray-500 space-y-0.5">
-                <p v-if="log.mxHost">MX: {{ log.mxHost }}</p>
-                <p v-if="log.smtpCode">
-                  SMTP {{ log.smtpCode }}: {{ log.smtpResponse }}
-                </p>
-                <p v-if="log.deliveredAt">
-                  Delivered: {{ new Date(log.deliveredAt).toLocaleString() }}
-                </p>
+                <div class="mt-1 text-xs text-gray-500 space-y-0.5">
+                  <p v-if="log.mxHost">MX: {{ log.mxHost }}</p>
+                  <p v-if="log.smtpCode">
+                    SMTP {{ log.smtpCode }}: {{ log.smtpResponse }}
+                  </p>
+                  <p v-if="log.deliveredAt">
+                    Delivered: {{ new Date(log.deliveredAt).toLocaleString() }}
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
+          </template>
         </div>
 
         <!-- Headers -->
@@ -807,7 +863,8 @@ const activeTab = ref<
 >("html");
 
 // ─── HTML preview background toggle ──────────────────────
-const previewBg = ref<"light" | "dark">("light");
+const { isDark } = useDarkMode();
+const previewBg = ref<"light" | "dark">(isDark.value ? "dark" : "light");
 const previewModes = [
   { value: "light" as const, icon: "lucide:sun", label: "Light" },
   { value: "dark" as const, icon: "lucide:moon", label: "Dark" },
@@ -815,9 +872,18 @@ const previewModes = [
 
 const previewHtml = computed(() => {
   if (!message.value?.html) return "";
-  const bg = previewBg.value === "dark" ? "#111827" : "#ffffff";
-  const color = previewBg.value === "dark" ? "#e5e7eb" : "#1f2937";
-  return `<html><head><style>body{margin:0;background:${bg};color:${color}}</style></head><body>${message.value.html}</body></html>`;
+  if (previewBg.value === "dark") {
+    // Outlook-style dark mode: invert the entire document (handling all inline
+    // colours and background-color declarations automatically), then
+    // counter-invert raster media so images/videos retain their natural look.
+    const darkStyle = [
+      ":root{color-scheme:dark}",
+      "html{filter:invert(1) hue-rotate(180deg);background:#ffffff}",
+      "img,video,canvas,iframe{filter:invert(1) hue-rotate(180deg)}",
+    ].join("");
+    return `<html><head><meta name="color-scheme" content="dark"><style>${darkStyle}</style></head><body style="margin:0">${message.value.html}</body></html>`;
+  }
+  return `<html><head><style>html{background:#ffffff}body{margin:0;color:#1f2937}</style></head><body>${message.value.html}</body></html>`;
 });
 
 const tabs = [
@@ -834,6 +900,20 @@ const tabs = [
 const deliveryLogs = ref<Awaited<
   ReturnType<typeof api.getDeliveryLogs>
 > | null>(null);
+const deliveryLogsLoading = ref(false);
+const deliveryLogsError = ref(false);
+
+async function refreshDeliveryLogs() {
+  deliveryLogsLoading.value = true;
+  deliveryLogsError.value = false;
+  try {
+    deliveryLogs.value = await api.getDeliveryLogs(messageId);
+  } catch {
+    deliveryLogsError.value = true;
+  } finally {
+    deliveryLogsLoading.value = false;
+  }
+}
 
 const rawSource = ref<string | null>(null);
 const headersData = ref<Awaited<
@@ -845,17 +925,27 @@ const compatibilityData = ref<Awaited<
 > | null>(null);
 
 watch(activeTab, async (tab) => {
-  if (tab === "delivery" && deliveryLogs.value === null) {
-    deliveryLogs.value = await api.getDeliveryLogs(messageId);
+  if (
+    tab === "delivery" &&
+    deliveryLogs.value === null &&
+    !deliveryLogsError.value
+  ) {
+    await refreshDeliveryLogs();
   }
   if (tab === "source" && rawSource.value === null) {
-    rawSource.value = await api.getMessageSource(messageId);
+    try {
+      rawSource.value = await api.getMessageSource(messageId);
+    } catch {}
   }
   if (tab === "headers" && headersData.value === null) {
-    headersData.value = await api.getMessageHeaders(messageId);
+    try {
+      headersData.value = await api.getMessageHeaders(messageId);
+    } catch {}
   }
   if (tab === "compatibility" && compatibilityData.value === null) {
-    compatibilityData.value = await api.getMessageCompatibility(messageId);
+    try {
+      compatibilityData.value = await api.getMessageCompatibility(messageId);
+    } catch {}
   }
 });
 

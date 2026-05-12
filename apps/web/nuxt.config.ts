@@ -40,12 +40,10 @@ export default defineNuxtConfig({
     port: parseInt(process.env.WEB_PORT || "3000"),
   },
 
-  routeRules: {
-    // SSE uses native fetch() (no $fetch baseURL prepend), so a non-wildcard
-    // rule works correctly here. All other API calls come through $fetch which
-    // prepends app.baseURL — those are handled by server/middleware/api-proxy.ts
-    "/api/events": { proxy: `${apiTarget}/api/events` },
-  },
+  // All API/SSE proxying is handled by server/middleware/api-proxy.ts
+  // routeRules wildcard proxies are intentionally avoided: they use
+  // ctx.localFetch which causes infinite recursion and _proxyStripBase which
+  // doesn't account for app.baseURL being prepended by $fetch.
 
   ssr: false,
 
@@ -58,16 +56,9 @@ export default defineNuxtConfig({
       watch: {
         ignored: ["**/node_modules/**", "**/.nuxt/**"],
       },
-      proxy: {
-        "/api/events": {
-          target: apiTarget,
-          changeOrigin: true,
-          // SSE requires no response buffering
-          headers: {
-            Connection: "keep-alive",
-          },
-        },
-      },
+      // No Vite proxy rules: Vite's proxy middleware runs before Nitro and
+      // forwards the full path (including app.baseURL) to the API server,
+      // causing 404s. api-proxy.ts handles all proxying correctly.
     },
   },
 });

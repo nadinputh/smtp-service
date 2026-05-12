@@ -13,6 +13,10 @@ const readChangedHandlers = new Set<ReadChangedHandler>();
 let sseController: AbortController | null = null;
 let sseReconnectTimer: ReturnType<typeof setTimeout> | undefined;
 let sseWatchdogTimer: ReturnType<typeof setTimeout> | undefined;
+// Captured from useRuntimeConfig() on first useSSE() call so that native
+// fetch() uses the correct base-prefixed URL (e.g. /admin/smtp/api/events)
+// instead of root-relative /api/events which breaks behind a sub-path reverse proxy.
+let sseBaseURL = "";
 
 const WATCHDOG_MS = 45_000;
 
@@ -28,7 +32,7 @@ async function startSSEConnection(token: string) {
   resetWatchdog();
 
   try {
-    const res = await fetch("/api/events", {
+    const res = await fetch(`${sseBaseURL}/api/events`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       signal: sseController.signal,
     });
@@ -96,6 +100,12 @@ export function useSSE(
   onReadChanged?: ReadChangedHandler,
 ) {
   const { token } = useAuth();
+
+  // Capture the app base URL once (client-only; useRuntimeConfig is available here)
+  if (import.meta.client && !sseBaseURL) {
+    const config = useRuntimeConfig();
+    sseBaseURL = (config.app.baseURL || "").replace(/\/$/, "");
+  }
 
   // Register handlers immediately so they're active before the connection fires
   newEmailHandlers.add(onNewEmail);
