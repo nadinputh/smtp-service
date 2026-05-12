@@ -20,11 +20,14 @@ FROM deps AS build
 COPY . .
 RUN pnpm build
 
+# ─── Migrate (run-once) ───────────────────────────────────
+FROM base AS migrate
+COPY --from=build /app .
+WORKDIR /app/packages/db
+CMD ["pnpm", "migrate"]
+
 # ─── API Service ───────────────────────────────────────────
 FROM base AS api
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/packages/*/node_modules ./packages/
-COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
 COPY --from=build /app .
 WORKDIR /app/apps/api
 EXPOSE 3002
@@ -32,7 +35,6 @@ CMD ["node", "--import", "tsx", "src/index.ts"]
 
 # ─── SMTP Server ──────────────────────────────────────────
 FROM base AS smtp
-COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app .
 WORKDIR /app/apps/smtp
 EXPOSE 2525 1025
@@ -40,7 +42,7 @@ CMD ["node", "--import", "tsx", "src/index.ts"]
 
 # ─── Workers Service ──────────────────────────────────────
 FROM base AS workers
-COPY --from=deps /app/node_modules ./node_modules
+
 COPY --from=build /app .
 WORKDIR /app/apps/workers
 CMD ["node", "--import", "tsx", "src/index.ts"]

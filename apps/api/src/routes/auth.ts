@@ -50,11 +50,9 @@ export function registerAuthRoutes(app: FastifyInstance) {
       !/[a-z]/.test(password) ||
       !/[0-9]/.test(password)
     ) {
-      return reply
-        .status(400)
-        .send({
-          error: "Password must contain uppercase, lowercase, and a number",
-        });
+      return reply.status(400).send({
+        error: "Password must contain uppercase, lowercase, and a number",
+      });
     }
 
     const normalizedEmail = email.trim().toLowerCase();
@@ -271,55 +269,58 @@ export function registerAuthRoutes(app: FastifyInstance) {
   });
 
   // ─── OAuth2 PKCE: Get authorize URL ──────────────────────
-  app.get("/api/auth/oauth2/authorize", async (request, reply) => {
-    if (!env.OAUTH2_ENABLED) {
-      return reply.status(404).send({ error: "OAuth2 is not enabled" });
-    }
+  // The client generates codeVerifier and sends only codeChallenge here.
+  // This keeps the verifier exclusively on the client, preserving PKCE security.
+  app.get<{ Querystring: { codeChallenge: string } }>(
+    "/api/auth/oauth2/authorize",
+    async (request, reply) => {
+      if (!env.OAUTH2_ENABLED) {
+        return reply.status(404).send({ error: "OAuth2 is not enabled" });
+      }
 
-    if (
-      !env.OAUTH2_ISSUER_URL ||
-      !env.OAUTH2_CLIENT_ID ||
-      !env.OAUTH2_REDIRECT_URI
-    ) {
-      return reply
-        .status(500)
-        .send({ error: "OAuth2 configuration is incomplete" });
-    }
+      if (
+        !env.OAUTH2_ISSUER_URL ||
+        !env.OAUTH2_CLIENT_ID ||
+        !env.OAUTH2_REDIRECT_URI
+      ) {
+        return reply
+          .status(500)
+          .send({ error: "OAuth2 configuration is incomplete" });
+      }
 
-    const oidcRes = await fetch(
-      `${env.OAUTH2_ISSUER_URL}/.well-known/openid-configuration`,
-    );
-    if (!oidcRes.ok) {
-      return reply
-        .status(502)
-        .send({ error: "Failed to fetch OIDC configuration" });
-    }
-    const oidc = (await oidcRes.json()) as { authorization_endpoint: string };
+      const { codeChallenge } = request.query;
+      if (!codeChallenge || typeof codeChallenge !== "string") {
+        return reply.status(400).send({ error: "codeChallenge is required" });
+      }
 
-    const codeVerifier = crypto.randomBytes(32).toString("base64url");
-    const codeChallenge = crypto
-      .createHash("sha256")
-      .update(codeVerifier)
-      .digest("base64url");
+      const oidcRes = await fetch(
+        `${env.OAUTH2_ISSUER_URL}/.well-known/openid-configuration`,
+      );
+      if (!oidcRes.ok) {
+        return reply
+          .status(502)
+          .send({ error: "Failed to fetch OIDC configuration" });
+      }
+      const oidc = (await oidcRes.json()) as { authorization_endpoint: string };
 
-    const state = crypto.randomBytes(16).toString("hex");
+      const state = crypto.randomBytes(16).toString("hex");
 
-    const params = new URLSearchParams({
-      response_type: "code",
-      client_id: env.OAUTH2_CLIENT_ID,
-      redirect_uri: env.OAUTH2_REDIRECT_URI,
-      scope: env.OAUTH2_SCOPES,
-      state,
-      code_challenge: codeChallenge,
-      code_challenge_method: "S256",
-    });
+      const params = new URLSearchParams({
+        response_type: "code",
+        client_id: env.OAUTH2_CLIENT_ID,
+        redirect_uri: env.OAUTH2_REDIRECT_URI,
+        scope: env.OAUTH2_SCOPES,
+        state,
+        code_challenge: codeChallenge,
+        code_challenge_method: "S256",
+      });
 
-    return {
-      authorizeUrl: `${oidc.authorization_endpoint}?${params.toString()}`,
-      codeVerifier,
-      state,
-    };
-  });
+      return {
+        authorizeUrl: `${oidc.authorization_endpoint}?${params.toString()}`,
+        state,
+      };
+    },
+  );
 
   // ─── OAuth2 PKCE: Token exchange ─────────────────────────
   app.post<{

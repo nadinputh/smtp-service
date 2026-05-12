@@ -230,10 +230,9 @@ async function handleLogin() {
   loading.value = true;
   try {
     await login(email.value, password.value);
-    navigateTo("/");
+    await navigateTo("/", { replace: true });
   } catch (e: any) {
     error.value = e?.data?.error || "Login failed";
-  } finally {
     loading.value = false;
   }
 }
@@ -243,10 +242,9 @@ async function handleLdapLogin() {
   loading.value = true;
   try {
     await loginLdap(ldapUsername.value, ldapPassword.value);
-    navigateTo("/");
+    await navigateTo("/", { replace: true });
   } catch (e: any) {
     error.value = e?.data?.error || "LDAP login failed";
-  } finally {
     loading.value = false;
   }
 }

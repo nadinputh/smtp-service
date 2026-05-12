@@ -78,6 +78,13 @@
       "when": 1776496000000,
       "tag": "0010_team_invitations_activity",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1778497480647,
+      "tag": "0011_yielding_purifiers",
+      "breakpoints": true
     }
   ]
 }

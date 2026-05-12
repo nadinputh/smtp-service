@@ -77,15 +77,27 @@ export function useAuth() {
   }
 
   async function loginOAuth2() {
-    const res = await $fetch<{
-      authorizeUrl: string;
-      codeVerifier: string;
-      state: string;
-    }>("/api/auth/oauth2/authorize");
+    // Generate PKCE verifier on the client — never send it to the server
+    const codeVerifier = crypto
+      .getRandomValues(new Uint8Array(32))
+      .reduce((s, b) => s + b.toString(16).padStart(2, "0"), "");
 
-    // Store PKCE verifier for the callback
+    const codeChallenge = await crypto.subtle
+      .digest("SHA-256", new TextEncoder().encode(codeVerifier))
+      .then((buf) =>
+        btoa(String.fromCharCode(...new Uint8Array(buf)))
+          .replace(/\+/g, "-")
+          .replace(/\//g, "_")
+          .replace(/=/g, ""),
+      );
+
+    const res = await $fetch<{ authorizeUrl: string; state: string }>(
+      `/api/auth/oauth2/authorize?codeChallenge=${encodeURIComponent(codeChallenge)}`,
+    );
+
+    // Store PKCE verifier and state for the callback
     if (import.meta.client) {
-      sessionStorage.setItem("oauth2_code_verifier", res.codeVerifier);
+      sessionStorage.setItem("oauth2_code_verifier", codeVerifier);
       sessionStorage.setItem("oauth2_state", res.state);
     }
 

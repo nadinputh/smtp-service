@@ -12,7 +12,7 @@ const envSchema = z
 
     // Storage
     STORAGE_DRIVER: z.enum(["s3", "local"]).default("local"),
-    STORAGE_LOCAL_PATH: z.string().default("/data/"),
+    STORAGE_LOCAL_PATH: z.string().default("./data"),
 
     // MinIO / S3 (required when STORAGE_DRIVER=s3)
     MINIO_ENDPOINT: z.string().default("localhost"),
