@@ -16,7 +16,9 @@ export default defineNuxtConfig({
     head: {
       title: "MailPocket",
       titleTemplate: "%s — MailPocket",
-      link: [{ rel: "icon", type: "image/svg+xml", href: "/favicon.svg" }],
+      link: [
+        { rel: "icon", type: "image/svg+xml", href: `${base}/favicon.svg` },
+      ],
     },
   },
 

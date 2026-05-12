@@ -1009,6 +1009,7 @@ export interface AccountUsage {
   currentMonthlySent: number;
   maxInboxes: number;
   currentInboxes: number;
+  accessibleInboxes: number;
   maxMessagesPerInbox: number;
   quotaResetAt: string;
 }

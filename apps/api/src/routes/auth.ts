@@ -166,10 +166,10 @@ export function registerAuthRoutes(app: FastifyInstance) {
         .send({ error: "LDAP configuration is incomplete" });
     }
 
-    try {
-      const ldap = await import("ldapjs");
-      const client = ldap.default.createClient({ url: env.LDAP_URL });
+    const ldap = await import("ldapjs");
+    const client = ldap.default.createClient({ url: env.LDAP_URL });
 
+    try {
       // Bind with service account
       await new Promise<void>((resolve, reject) => {
         client.bind(env.LDAP_BIND_DN!, env.LDAP_BIND_PASSWORD!, (err: any) => {
@@ -177,6 +177,10 @@ export function registerAuthRoutes(app: FastifyInstance) {
           else resolve();
         });
       });
+      request.log.info(
+        { url: env.LDAP_URL },
+        "Connected to LDAP server successfully",
+      );
 
       // Search for user — use proper LDAP filter escaping (RFC 4515)
       const escapeLdap = (s: string) =>
@@ -206,7 +210,12 @@ export function registerAuthRoutes(app: FastifyInstance) {
             let found: any = null;
             res.on("searchEntry", (entry: any) => {
               const attrs = entry.pojo?.attributes || entry.attributes || [];
-              const obj: any = { dn: entry.objectName || entry.dn?.toString() };
+              const obj: any = {
+                dn:
+                  entry.pojo?.objectName ??
+                  entry.objectName?.toString() ??
+                  entry.dn?.toString(),
+              };
               for (const attr of attrs) {
                 const name = attr.type || attr.name;
                 const val = Array.isArray(attr.values || attr.vals)
@@ -223,7 +232,6 @@ export function registerAuthRoutes(app: FastifyInstance) {
       });
 
       if (!ldapUser) {
-        client.destroy();
         return reply.status(401).send({ error: "Invalid credentials" });
       }
 
@@ -234,8 +242,6 @@ export function registerAuthRoutes(app: FastifyInstance) {
           else resolve();
         });
       });
-
-      client.destroy();
 
       const email = ldapUser.mail || `${username}@ldap.local`;
       const name = ldapUser.cn || username;
@@ -265,6 +271,8 @@ export function registerAuthRoutes(app: FastifyInstance) {
       }
       request.log.error(err, "LDAP authentication error");
       return reply.status(500).send({ error: "LDAP authentication failed" });
+    } finally {
+      client.destroy();
     }
   });
 

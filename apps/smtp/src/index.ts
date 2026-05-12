@@ -57,6 +57,23 @@ const smtpOptions: ConstructorParameters<typeof SMTPServer>[0] = {
   allowInsecureAuth: true, // Only for local dev — TLS will be enforced in production
   disabledCommands: ["STARTTLS"], // Disable TLS for local testing
 
+  onConnect(session, callback) {
+    console.log(
+      `[SMTP] Connection from ${session.remoteAddress} (id: ${session.id})`,
+    );
+    callback();
+  },
+
+  onMailFrom(address, session, callback) {
+    console.log(`[SMTP] MAIL FROM: ${address.address} (id: ${session.id})`);
+    callback();
+  },
+
+  onRcptTo(address, session, callback) {
+    console.log(`[SMTP] RCPT TO: ${address.address} (id: ${session.id})`);
+    callback();
+  },
+
   // Authenticate against the inboxes table
   async onAuth(auth, _session, callback) {
     try {
@@ -78,6 +95,7 @@ const smtpOptions: ConstructorParameters<typeof SMTPServer>[0] = {
 
   // Stream the raw email to MinIO and enqueue a job
   onData(stream, session, callback) {
+    console.log(`[SMTP] DATA started (id: ${session.id})`);
     const rawKey = `raw/${randomUUID()}.eml`;
     const passthrough = new PassThrough();
     let size = 0;
@@ -89,10 +107,12 @@ const smtpOptions: ConstructorParameters<typeof SMTPServer>[0] = {
 
     stream.on("end", async () => {
       passthrough.end();
+      console.log(`[SMTP] DATA received ${size} bytes, saving to ${rawKey}`);
 
       try {
         // Upload raw .eml to MinIO
         await storage.putObject(rawKey, passthrough, size, "message/rfc822");
+        console.log(`[SMTP] Raw .eml stored: ${rawKey}`);
 
         // Resolve inbox ID: authenticated user's inbox or catch-all
         const user = (session as any).user as { inboxId: string } | undefined;
@@ -133,6 +153,7 @@ const smtpOptions: ConstructorParameters<typeof SMTPServer>[0] = {
         };
 
         await incomingQueue.add("parse", payload);
+        console.log(`[SMTP] Job queued for inbox ${inboxId}, key: ${rawKey}`);
 
         callback();
       } catch (err) {
@@ -154,8 +175,10 @@ const servers = ports.map((port) => {
   server.on("error", (err) => {
     console.error(`SMTP Server error (port ${port}):`, err);
   });
-  server.listen(port, env.SMTP_HOST, () => {
-    console.log(`📬 SMTP server listening on ${env.SMTP_HOST}:${port}`);
+  server.listen(port, env.SMTP_BIND_HOST, () => {
+    console.log(
+      `📬 SMTP server listening on ${env.SMTP_BIND_HOST}:${port} (advertised: ${env.SMTP_HOST}:${port})`,
+    );
   });
   return server;
 });

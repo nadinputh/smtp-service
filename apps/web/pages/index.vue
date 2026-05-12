@@ -31,7 +31,7 @@
 
       <!-- Empty state: no inboxes -->
       <div
-        v-else-if="usage && usage.currentInboxes === 0"
+        v-else-if="usage && usage.accessibleInboxes === 0"
         class="flex flex-col items-center justify-center py-24"
       >
         <div
@@ -45,8 +45,11 @@
         <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-2">
           No inboxes yet
         </h2>
-        <p class="text-sm text-gray-500 dark:text-gray-400 mb-6 text-center max-w-sm">
-          Create your first inbox to start sending and receiving emails. Analytics will appear here once you have messages.
+        <p
+          class="text-sm text-gray-500 dark:text-gray-400 mb-6 text-center max-w-sm"
+        >
+          Create your first inbox to start sending and receiving emails.
+          Analytics will appear here once you have messages.
         </p>
         <form
           v-if="showInlineCreate"
@@ -469,28 +472,43 @@ function useAnimatedNumber(source: () => number, duration = 400) {
   const displayed = ref(0);
   let raf: number | null = null;
 
-  watch(source, (to, from) => {
-    if (raf) cancelAnimationFrame(raf);
-    const start = performance.now();
-    const diff = to - (from ?? 0);
-    if (diff === 0) { displayed.value = to; return; }
+  watch(
+    source,
+    (to, from) => {
+      if (raf) cancelAnimationFrame(raf);
+      const start = performance.now();
+      const diff = to - (from ?? 0);
+      if (diff === 0) {
+        displayed.value = to;
+        return;
+      }
 
-    function step(now: number) {
-      const t = Math.min((now - start) / duration, 1);
-      const ease = 1 - Math.pow(1 - t, 3); // ease-out cubic
-      displayed.value = Math.round((from ?? 0) + diff * ease);
-      if (t < 1) raf = requestAnimationFrame(step);
-    }
-    raf = requestAnimationFrame(step);
-  }, { immediate: true });
+      function step(now: number) {
+        const t = Math.min((now - start) / duration, 1);
+        const ease = 1 - Math.pow(1 - t, 3); // ease-out cubic
+        displayed.value = Math.round((from ?? 0) + diff * ease);
+        if (t < 1) raf = requestAnimationFrame(step);
+      }
+      raf = requestAnimationFrame(step);
+    },
+    { immediate: true },
+  );
 
   return displayed;
 }
 
-const animatedTotal = useAnimatedNumber(() => overview.value?.totalMessages ?? 0);
-const animatedDelivered = useAnimatedNumber(() => overview.value?.totalDelivered ?? 0);
-const animatedBounced = useAnimatedNumber(() => overview.value?.totalBounced ?? 0);
-const animatedReceived = useAnimatedNumber(() => overview.value?.totalReceived ?? 0);
+const animatedTotal = useAnimatedNumber(
+  () => overview.value?.totalMessages ?? 0,
+);
+const animatedDelivered = useAnimatedNumber(
+  () => overview.value?.totalDelivered ?? 0,
+);
+const animatedBounced = useAnimatedNumber(
+  () => overview.value?.totalBounced ?? 0,
+);
+const animatedReceived = useAnimatedNumber(
+  () => overview.value?.totalReceived ?? 0,
+);
 
 const showInlineCreate = ref(false);
 const firstInboxName = ref("");

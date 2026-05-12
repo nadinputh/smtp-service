@@ -28,6 +28,7 @@ const envSchema = z
     // SMTP Server
     SMTP_PORT: z.coerce.number().default(2525),
     SMTP_HOST: z.string().default("0.0.0.0"),
+    SMTP_BIND_HOST: z.string().default("0.0.0.0"),
     SMTP_PORTS: z.string().optional(), // Comma-separated additional ports, e.g. "2525,1025"
 
     // API Server
