@@ -31,30 +31,50 @@
               v-if="showExportMenu"
               class="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-10 w-36"
             >
-              <a
-                :href="`/api/inboxes/${inboxId}/export?format=csv`"
-                class="block px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                @click="showExportMenu = false"
+              <button
+                class="block w-full text-left px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                @click="
+                  authedDownload(
+                    `${apiBase}/api/inboxes/${inboxId}/export?format=csv`,
+                    `${inboxId}-export.csv`,
+                  );
+                  showExportMenu = false;
+                "
               >
                 Export as CSV
-              </a>
-              <a
-                :href="`/api/inboxes/${inboxId}/export?format=mbox`"
-                class="block px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                @click="showExportMenu = false"
+              </button>
+              <button
+                class="block w-full text-left px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                @click="
+                  authedDownload(
+                    `${apiBase}/api/inboxes/${inboxId}/export?format=mbox`,
+                    `${inboxId}-export.mbox`,
+                  );
+                  showExportMenu = false;
+                "
               >
                 Export as MBOX
-              </a>
-              <a
-                :href="`/api/inboxes/${inboxId}/export?format=eml`"
-                class="block px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                @click="showExportMenu = false"
+              </button>
+              <button
+                class="block w-full text-left px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                @click="
+                  authedDownload(
+                    `${apiBase}/api/inboxes/${inboxId}/export?format=eml`,
+                    `${inboxId}-export.zip`,
+                  );
+                  showExportMenu = false;
+                "
               >
                 Export as EML (ZIP)
-              </a>
+              </button>
             </div>
           </div>
-          <UBtn v-if="isEditorOrAbove" variant="secondary" size="sm" @click="showCreds = !showCreds">
+          <UBtn
+            v-if="isEditorOrAbove"
+            variant="secondary"
+            size="sm"
+            @click="showCreds = !showCreds"
+          >
             <Icon name="lucide:key" class="w-4 h-4" />
             SMTP Credentials
           </UBtn>
@@ -82,9 +102,9 @@
       </p>
       <div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
         <span class="text-gray-500">Host:</span>
-        <code class="text-gray-800 dark:text-gray-200">localhost</code>
+        <code class="text-gray-800 dark:text-gray-200">{{ smtpHost }}</code>
         <span class="text-gray-500">Port:</span>
-        <code class="text-gray-800 dark:text-gray-200">2525</code>
+        <code class="text-gray-800 dark:text-gray-200">{{ smtpPort }}</code>
         <span class="text-gray-500">Username:</span>
         <div class="flex items-center gap-1">
           <code class="text-gray-800 dark:text-gray-200">{{
@@ -249,7 +269,7 @@
           <code class="bg-gray-100 px-1 rounded">{{
             inboxDetail?.smtpUsername
           }}</code>
-          on port 2525
+          on {{ smtpHost }}:{{ smtpPort }}
         </p>
       </div>
 
@@ -300,9 +320,15 @@
             >
               {{ msg.subject || "(no subject)" }}
             </p>
-            <div class="flex items-center gap-2 mt-1">
-              <span class="text-xs text-gray-400"
-                >To: {{ msg.to.join(", ") }}</span
+            <p
+              v-if="msg.textPreview"
+              class="text-xs text-gray-400 dark:text-gray-500 truncate mt-0.5"
+            >
+              {{ msg.textPreview }}
+            </p>
+            <div class="flex items-center gap-2 mt-1 min-w-0">
+              <span class="text-xs text-gray-400 truncate min-w-0 flex-1"
+                >To: {{ formatRecipients(msg.to) }}</span
               >
               <span
                 class="text-xs px-1.5 py-0.5 rounded-full"
@@ -493,7 +519,9 @@
         <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300">
           Inbox Members
         </h3>
-        <UBtn v-if="isOwner" size="sm" @click="showInviteModal = true"> Invite Member </UBtn>
+        <UBtn v-if="isOwner" size="sm" @click="showInviteModal = true">
+          Invite Member
+        </UBtn>
       </div>
 
       <div v-if="membersLoading" class="text-sm text-gray-400">Loading...</div>
@@ -572,7 +600,9 @@
           </h2>
           <form @submit.prevent="handleInviteMember" class="space-y-3">
             <div>
-              <label class="block text-sm text-gray-600 dark:text-gray-400 mb-1">
+              <label
+                class="block text-sm text-gray-600 dark:text-gray-400 mb-1"
+              >
                 Search User
               </label>
               <!-- Selected user chip -->
@@ -583,18 +613,29 @@
                 <div
                   class="w-7 h-7 rounded-full bg-indigo-100 dark:bg-indigo-800 flex items-center justify-center text-xs font-bold text-indigo-600 dark:text-indigo-300 shrink-0"
                 >
-                  {{ (inviteSelectedUser.name || inviteSelectedUser.email)[0].toUpperCase() }}
+                  {{
+                    (inviteSelectedUser.name ||
+                      inviteSelectedUser.email)[0].toUpperCase()
+                  }}
                 </div>
                 <div class="flex-1 min-w-0">
-                  <p class="text-sm font-medium text-gray-800 dark:text-gray-100 truncate">
+                  <p
+                    class="text-sm font-medium text-gray-800 dark:text-gray-100 truncate"
+                  >
                     {{ inviteSelectedUser.name || inviteSelectedUser.email }}
                   </p>
-                  <p v-if="inviteSelectedUser.name" class="text-xs text-gray-500 dark:text-gray-400 truncate">
+                  <p
+                    v-if="inviteSelectedUser.name"
+                    class="text-xs text-gray-500 dark:text-gray-400 truncate"
+                  >
                     {{ inviteSelectedUser.email }}
                   </p>
                 </div>
-                <button type="button" @click="clearInviteSelectedUser"
-                  class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                <button
+                  type="button"
+                  @click="clearInviteSelectedUser"
+                  class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                >
                   <Icon name="lucide:x" class="w-4 h-4" />
                 </button>
               </div>
@@ -610,13 +651,21 @@
                 />
                 <!-- Search results dropdown -->
                 <div
-                  v-if="showInviteSearchResults && inviteSearchQuery.length >= 2"
+                  v-if="
+                    showInviteSearchResults && inviteSearchQuery.length >= 2
+                  "
                   class="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-40 overflow-y-auto z-10"
                 >
-                  <div v-if="inviteSearching" class="px-3 py-2 text-xs text-gray-400">
+                  <div
+                    v-if="inviteSearching"
+                    class="px-3 py-2 text-xs text-gray-400"
+                  >
                     Searching...
                   </div>
-                  <div v-else-if="!inviteSearchResults.length" class="px-3 py-2 text-xs text-gray-400">
+                  <div
+                    v-else-if="!inviteSearchResults.length"
+                    class="px-3 py-2 text-xs text-gray-400"
+                  >
                     No users found
                   </div>
                   <button
@@ -632,7 +681,9 @@
                       {{ (u.name || u.email)[0].toUpperCase() }}
                     </div>
                     <div class="min-w-0">
-                      <p class="text-sm text-gray-800 dark:text-gray-200 truncate">
+                      <p
+                        class="text-sm text-gray-800 dark:text-gray-200 truncate"
+                      >
                         {{ u.name || u.email }}
                       </p>
                       <p v-if="u.name" class="text-xs text-gray-400 truncate">
@@ -654,11 +705,7 @@
               {{ inviteError }}
             </p>
             <div class="flex justify-end gap-2">
-              <UBtn
-                type="button"
-                variant="ghost"
-                @click="closeInviteModal"
-              >
+              <UBtn type="button" variant="ghost" @click="closeInviteModal">
                 Cancel
               </UBtn>
               <UBtn type="submit" :disabled="inviting || !inviteSelectedUser">
@@ -840,6 +887,26 @@ definePageMeta({ layout: "default" });
 
 const route = useRoute();
 const api = useApi();
+const runtimeConfig = useRuntimeConfig();
+const apiBase = runtimeConfig.app.baseURL.replace(/\/$/, "");
+const smtpHost = runtimeConfig.public.smtpHost;
+const smtpPort = runtimeConfig.public.smtpPort;
+const { token } = useAuth();
+
+function authedDownload(url: string, filename: string) {
+  fetch(url, {
+    headers: token.value ? { Authorization: `Bearer ${token.value}` } : {},
+  })
+    .then((r) => r.blob())
+    .then((blob) => {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    })
+    .catch(() => alert("Download failed"));
+}
 
 // Tracks message IDs with an in-flight read-status toggle to prevent race conditions
 const togglingReadIds = ref(new Set<string>());
@@ -982,9 +1049,13 @@ const inbox = computed(() => inboxDetail.value);
 useHead({ title: computed(() => inbox.value?.name ?? "Inbox") });
 
 // Role-based access
-const inboxRole = computed(() => inboxDetail.value?.currentUserRole ?? "viewer");
+const inboxRole = computed(
+  () => inboxDetail.value?.currentUserRole ?? "viewer",
+);
 const isOwner = computed(() => inboxRole.value === "owner");
-const isEditorOrAbove = computed(() => inboxRole.value === "owner" || inboxRole.value === "editor");
+const isEditorOrAbove = computed(
+  () => inboxRole.value === "owner" || inboxRole.value === "editor",
+);
 
 // Initial fetch
 fetchMessages();
@@ -1042,6 +1113,12 @@ function silentRefreshMessages() {
       totalMessages.value = res.total;
     })
     .catch(() => {});
+}
+
+function formatRecipients(to: string[]): string {
+  if (!to.length) return "(none)";
+  if (to.length <= 2) return to.join(", ");
+  return `${to[0]}, ${to[1]} +${to.length - 2} more`;
 }
 
 function formatDate(dateStr: string) {
@@ -1135,8 +1212,14 @@ const inviteError = ref("");
 
 // User search state for invite
 const inviteSearchQuery = ref("");
-const inviteSearchResults = ref<{ id: string; email: string; name: string | null }[]>([]);
-const inviteSelectedUser = ref<{ id: string; email: string; name: string | null } | null>(null);
+const inviteSearchResults = ref<
+  { id: string; email: string; name: string | null }[]
+>([]);
+const inviteSelectedUser = ref<{
+  id: string;
+  email: string;
+  name: string | null;
+} | null>(null);
 const inviteSearching = ref(false);
 const showInviteSearchResults = ref(false);
 let inviteSearchTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -1151,7 +1234,9 @@ function debouncedInviteSearch() {
   inviteSearching.value = true;
   inviteSearchTimeout = setTimeout(async () => {
     try {
-      inviteSearchResults.value = await api.searchUsers(inviteSearchQuery.value);
+      inviteSearchResults.value = await api.searchUsers(
+        inviteSearchQuery.value,
+      );
     } catch {
       inviteSearchResults.value = [];
     } finally {
@@ -1160,7 +1245,11 @@ function debouncedInviteSearch() {
   }, 300);
 }
 
-function selectInviteUser(user: { id: string; email: string; name: string | null }) {
+function selectInviteUser(user: {
+  id: string;
+  email: string;
+  name: string | null;
+}) {
   inviteSelectedUser.value = user;
   showInviteSearchResults.value = false;
   inviteSearchQuery.value = "";
@@ -1197,7 +1286,11 @@ async function handleInviteMember() {
   inviteError.value = "";
   inviting.value = true;
   try {
-    await api.addInboxMember(inboxId, inviteSelectedUser.value.email, inviteRole.value);
+    await api.addInboxMember(
+      inboxId,
+      inviteSelectedUser.value.email,
+      inviteRole.value,
+    );
     closeInviteModal();
     members.value = await api.getInboxMembers(inboxId);
   } catch (e: any) {

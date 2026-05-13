@@ -18,13 +18,17 @@
         </h2>
         <p class="text-sm text-gray-400">From: {{ message?.from }}</p>
       </div>
-      <a
-        :href="`/api/messages/${messageId}/raw`"
-        target="_blank"
+      <button
+        @click="
+          authedDownload(
+            `${apiBase}/api/messages/${messageId}/raw`,
+            `${messageId}.eml`,
+          )
+        "
         class="inline-flex items-center justify-center rounded-lg transition-colors text-xs px-2.5 py-1 border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 shrink-0"
       >
         Download .eml
-      </a>
+      </button>
       <UBtn variant="secondary" size="xs" @click="showForwardModal = true">
         Forward
       </UBtn>
@@ -46,17 +50,92 @@
       <div
         class="px-6 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm space-y-1"
       >
-        <div class="text-gray-700 dark:text-gray-300">
-          <span class="text-gray-400 dark:text-gray-500 w-12 inline-block"
+        <!-- To recipients -->
+        <div class="flex items-start gap-2">
+          <span class="text-gray-400 dark:text-gray-500 w-12 shrink-0 pt-0.5"
             >To:</span
           >
-          {{ message.to.join(", ") }}
+          <div class="flex-1">
+            <!-- Collapsed: first 3 inline + badge -->
+            <div v-if="!toExpanded" class="flex flex-wrap items-center gap-1.5">
+              <span
+                v-for="addr in message.to.slice(0, RECIPIENTS_PREVIEW)"
+                :key="addr"
+                class="inline-block px-2 py-0.5 rounded-md bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs font-mono truncate max-w-xs"
+                >{{ addr }}</span
+              >
+              <button
+                v-if="message.to.length > RECIPIENTS_PREVIEW"
+                @click="toExpanded = true"
+                class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline shrink-0"
+              >
+                +{{ message.to.length - RECIPIENTS_PREVIEW }} more
+              </button>
+            </div>
+            <!-- Expanded: framed chip list -->
+            <div
+              v-else
+              class="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-2"
+            >
+              <div class="flex flex-wrap gap-1.5 mb-2">
+                <span
+                  v-for="addr in message.to"
+                  :key="addr"
+                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs font-mono"
+                  >{{ addr }}</span
+                >
+              </div>
+              <button
+                @click="toExpanded = false"
+                class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 flex items-center gap-1"
+              >
+                <Icon name="lucide:chevron-up" class="w-3 h-3" /> Collapse
+              </button>
+            </div>
+          </div>
         </div>
-        <div v-if="message.cc?.length" class="text-gray-700 dark:text-gray-300">
-          <span class="text-gray-400 dark:text-gray-500 w-12 inline-block"
+
+        <!-- Cc recipients -->
+        <div v-if="message.cc?.length" class="flex items-start gap-2">
+          <span class="text-gray-400 dark:text-gray-500 w-12 shrink-0 pt-0.5"
             >Cc:</span
           >
-          {{ message.cc.join(", ") }}
+          <div class="flex-1">
+            <div v-if="!ccExpanded" class="flex flex-wrap items-center gap-1.5">
+              <span
+                v-for="addr in message.cc.slice(0, RECIPIENTS_PREVIEW)"
+                :key="addr"
+                class="inline-block px-2 py-0.5 rounded-md bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs font-mono truncate max-w-xs"
+                >{{ addr }}</span
+              >
+              <button
+                v-if="message.cc.length > RECIPIENTS_PREVIEW"
+                @click="ccExpanded = true"
+                class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline shrink-0"
+              >
+                +{{ message.cc.length - RECIPIENTS_PREVIEW }} more
+              </button>
+            </div>
+            <div
+              v-else
+              class="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-2"
+            >
+              <div class="flex flex-wrap gap-1.5 mb-2">
+                <span
+                  v-for="addr in message.cc"
+                  :key="addr"
+                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs font-mono"
+                  >{{ addr }}</span
+                >
+              </div>
+              <button
+                @click="ccExpanded = false"
+                class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 flex items-center gap-1"
+              >
+                <Icon name="lucide:chevron-up" class="w-3 h-3" /> Collapse
+              </button>
+            </div>
+          </div>
         </div>
         <div class="text-gray-700 dark:text-gray-300">
           <span class="text-gray-400 dark:text-gray-500 w-12 inline-block"
@@ -174,7 +253,7 @@
                   @click="previewAttachment = idx"
                 >
                   <img
-                    :src="`/api/messages/${messageId}/attachments/${idx}`"
+                    :src="attachmentBlobUrls[idx]"
                     :alt="att.filename"
                     class="w-full h-32 object-cover"
                     loading="lazy"
@@ -232,10 +311,13 @@
                     Preview
                   </UBtn>
                   <a
-                    :href="`/api/messages/${messageId}/attachments/${idx}`"
-                    target="_blank"
-                    download
-                    class="text-xs px-2 py-1 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    class="text-xs px-2 py-1 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+                    @click.prevent="
+                      authedDownload(
+                        `${apiBase}/api/messages/${messageId}/attachments/${idx}`,
+                        att.filename,
+                      )
+                    "
                   >
                     Download
                   </a>
@@ -263,10 +345,13 @@
                     </h3>
                     <div class="flex items-center gap-2">
                       <a
-                        :href="`/api/messages/${messageId}/attachments/${previewAttachment}`"
-                        target="_blank"
-                        download
-                        class="text-xs px-3 py-1.5 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+                        class="text-xs px-3 py-1.5 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
+                        @click.prevent="
+                          authedDownload(
+                            `${apiBase}/api/messages/${messageId}/attachments/${previewAttachment}`,
+                            message.attachments[previewAttachment].filename,
+                          )
+                        "
                       >
                         Download
                       </a>
@@ -282,14 +367,14 @@
                     <!-- Image preview -->
                     <img
                       v-if="isImage(message.attachments[previewAttachment])"
-                      :src="`/api/messages/${messageId}/attachments/${previewAttachment}`"
+                      :src="attachmentBlobUrls[previewAttachment]"
                       :alt="message.attachments[previewAttachment].filename"
                       class="max-w-full mx-auto"
                     />
                     <!-- PDF preview -->
                     <iframe
                       v-else-if="isPdf(message.attachments[previewAttachment])"
-                      :src="`/api/messages/${messageId}/attachments/${previewAttachment}`"
+                      :src="attachmentBlobUrls[previewAttachment]"
                       class="w-full h-[70vh] border-0"
                     />
                     <!-- Text preview -->
@@ -850,6 +935,48 @@ const route = useRoute();
 const api = useApi();
 const inboxId = route.params.inboxId as string;
 const messageId = route.params.messageId as string;
+const apiBase = useRuntimeConfig().app.baseURL.replace(/\/$/, "");
+const { token } = useAuth();
+
+function authedFetch(url: string): Promise<Response> {
+  return fetch(url, {
+    headers: token.value ? { Authorization: `Bearer ${token.value}` } : {},
+  });
+}
+
+function authedDownload(url: string, filename: string) {
+  authedFetch(url)
+    .then((r) => r.blob())
+    .then((blob) => {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    })
+    .catch(() => alert("Download failed"));
+}
+
+// Blob URL cache for attachment previews (avoids repeated authenticated fetches)
+const attachmentBlobUrls = ref<Record<number, string>>({});
+onUnmounted(() => {
+  Object.values(attachmentBlobUrls.value).forEach(URL.revokeObjectURL);
+});
+
+async function loadAttachmentBlobUrl(idx: number): Promise<string> {
+  if (attachmentBlobUrls.value[idx]) return attachmentBlobUrls.value[idx];
+  const r = await authedFetch(
+    `${apiBase}/api/messages/${messageId}/attachments/${idx}`,
+  );
+  const blob = await r.blob();
+  const url = URL.createObjectURL(blob);
+  attachmentBlobUrls.value[idx] = url;
+  return url;
+}
+
+const RECIPIENTS_PREVIEW = 2;
+const toExpanded = ref(false);
+const ccExpanded = ref(false);
 
 const activeTab = ref<
   | "html"
@@ -870,8 +997,20 @@ const previewModes = [
   { value: "dark" as const, icon: "lucide:moon", label: "Dark" },
 ];
 
+// Strip <script> blocks and inline event handlers from email HTML before
+// rendering in the sandboxed iframe. This prevents browser console errors
+// ("Blocked script execution … sandbox … allow-scripts not set") caused by
+// script content in emails while keeping the sandbox as defence-in-depth.
+function sanitizeEmailHtml(raw: string): string {
+  return raw
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/\s+on\w+="[^"]*"/gi, "")
+    .replace(/\s+on\w+='[^']*'/gi, "");
+}
+
 const previewHtml = computed(() => {
   if (!message.value?.html) return "";
+  const safe = sanitizeEmailHtml(message.value.html);
   if (previewBg.value === "dark") {
     // Outlook-style dark mode: invert the entire document (handling all inline
     // colours and background-color declarations automatically), then
@@ -881,9 +1020,9 @@ const previewHtml = computed(() => {
       "html{filter:invert(1) hue-rotate(180deg);background:#ffffff}",
       "img,video,canvas,iframe{filter:invert(1) hue-rotate(180deg)}",
     ].join("");
-    return `<html><head><meta name="color-scheme" content="dark"><style>${darkStyle}</style></head><body style="margin:0">${message.value.html}</body></html>`;
+    return `<html><head><meta name="color-scheme" content="dark"><style>${darkStyle}</style></head><body style="margin:0">${safe}</body></html>`;
   }
-  return `<html><head><style>html{background:#ffffff}body{margin:0;color:#1f2937}</style></head><body>${message.value.html}</body></html>`;
+  return `<html><head><style>html{background:#ffffff}body{margin:0;color:#1f2937}</style></head><body>${safe}</body></html>`;
 });
 
 const tabs = [
@@ -946,6 +1085,12 @@ watch(activeTab, async (tab) => {
     try {
       compatibilityData.value = await api.getMessageCompatibility(messageId);
     } catch {}
+  }
+  // Pre-load blob URLs for all image attachments so thumbnails render
+  if (tab === "attachments" && message.value?.attachments?.length) {
+    for (const { idx } of imageAttachments.value) {
+      loadAttachmentBlobUrl(idx).catch(() => {});
+    }
   }
 });
 
@@ -1025,16 +1170,17 @@ const nonImageAttachments = computed<AttEntry[]>(() =>
 );
 
 watch(previewAttachment, async (idx) => {
-  if (
-    idx !== null &&
-    message.value?.attachments?.[idx] &&
-    isText(message.value.attachments[idx])
-  ) {
+  if (idx === null || !message.value?.attachments?.[idx]) return;
+  const att = message.value.attachments[idx];
+  // Always ensure blob URL is available for the preview modal
+  await loadAttachmentBlobUrl(idx).catch(() => {});
+  // For text attachments, also load the text content
+  if (isText(att)) {
     try {
-      textPreviewContent.value = await $fetch<string>(
-        `/api/messages/${messageId}/attachments/${idx}`,
-        { responseType: "text" },
+      const r = await authedFetch(
+        `${apiBase}/api/messages/${messageId}/attachments/${idx}`,
       );
+      textPreviewContent.value = await r.text();
     } catch {
       textPreviewContent.value = "Failed to load preview";
     }

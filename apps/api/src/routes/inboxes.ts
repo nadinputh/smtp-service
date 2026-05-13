@@ -35,7 +35,14 @@ export function registerInboxRoutes(app: FastifyInstance) {
         SELECT DISTINCT i.id, i.name, i.smtp_username AS "smtpUsername", i.created_at AS "createdAt",
           i.team_id AS "teamId",
           t.name AS "teamName",
-          COALESCE((SELECT COUNT(*) FROM messages m WHERE m.inbox_id = i.id AND m.is_read = false), 0)::int AS "unreadCount"
+          COALESCE((SELECT COUNT(*) FROM messages m WHERE m.inbox_id = i.id AND m.is_read = false), 0)::int AS "unreadCount",
+          CASE
+            WHEN i.user_id = ${userId} THEN 'owner'
+            WHEN im.user_id IS NOT NULL THEN im.role::text
+            WHEN tm.user_id IS NOT NULL AND tm.role = 'admin' THEN 'editor'
+            WHEN tm.user_id IS NOT NULL THEN 'viewer'
+            ELSE 'viewer'
+          END AS "currentUserRole"
         FROM inboxes i
         LEFT JOIN inbox_members im ON im.inbox_id = i.id AND im.user_id = ${userId}
         LEFT JOIN team_members tm ON tm.team_id = i.team_id AND tm.user_id = ${userId}

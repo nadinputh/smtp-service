@@ -129,6 +129,7 @@ export function registerMessageRoutes(app: FastifyInstance) {
           status: messages.status,
           isRead: messages.isRead,
           createdAt: messages.createdAt,
+          textPreview: sql<string | null>`LEFT(${messages.text}, 150)`,
         })
         .from(messages)
         .where(where)
@@ -372,17 +373,15 @@ export function registerMessageRoutes(app: FastifyInstance) {
       }
 
       if (!message.html) {
-        return reply
-          .status(200)
-          .send({
-            overallScores: [],
-            features: [],
-            summary: {
-              totalFeaturesDetected: 0,
-              fullyCompatibleClients: 0,
-              problematicFeatures: 0,
-            },
-          });
+        return reply.status(200).send({
+          overallScores: [],
+          features: [],
+          summary: {
+            totalFeaturesDetected: 0,
+            fullyCompatibleClients: 0,
+            problematicFeatures: 0,
+          },
+        });
       }
 
       return analyzeCompatibility(message.html);

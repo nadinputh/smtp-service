@@ -25,8 +25,14 @@
             class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
           >
             <option value="" disabled>Select an inbox</option>
-            <option v-for="inbox in inboxes" :key="inbox.id" :value="inbox.id">
-              {{ inbox.name }}
+            <option
+              v-for="inbox in inboxes ?? []"
+              :key="inbox.id"
+              :value="inbox.id"
+              :disabled="inbox.currentUserRole === 'viewer'"
+            >
+              {{ inbox.name
+              }}{{ inbox.currentUserRole === "viewer" ? " (view only)" : "" }}
             </option>
           </select>
         </div>
@@ -106,6 +112,37 @@
             <p class="text-xs text-gray-400 mt-0.5">
               Comma-separated for multiple recipients
             </p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label
+              class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+              >CC
+              <span class="text-gray-400 font-normal">(optional)</span></label
+            >
+            <input
+              v-model="form.cc"
+              type="text"
+              placeholder="cc@example.com"
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            />
+            <p class="text-xs text-gray-400 mt-0.5">Comma-separated</p>
+          </div>
+          <div>
+            <label
+              class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+              >BCC
+              <span class="text-gray-400 font-normal">(optional)</span></label
+            >
+            <input
+              v-model="form.bcc"
+              type="text"
+              placeholder="bcc@example.com"
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            />
+            <p class="text-xs text-gray-400 mt-0.5">Comma-separated</p>
           </div>
         </div>
 
@@ -284,7 +321,9 @@ useHead({ title: "Send Email" });
 
 const api = useApi();
 
-const { data: inboxes } = useAsyncData("inboxes", () => api.getInboxes());
+const { data: inboxes } = useAsyncData("send-inboxes", () => api.getInboxes(), {
+  server: false,
+});
 
 const templatesList = ref<Template[]>([]);
 onMounted(async () => {
@@ -314,6 +353,8 @@ const form = reactive({
   inboxId: "",
   from: "",
   to: "",
+  cc: "",
+  bcc: "",
   subject: "",
   html: "",
   text: "",
@@ -339,6 +380,16 @@ async function handleSend() {
       .map((s) => s.trim())
       .filter(Boolean);
 
+    const ccList = form.cc
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    const bccList = form.bcc
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
     // Build custom headers object
     const headers: Record<string, string> = {};
     for (const h of customHeaders) {
@@ -355,6 +406,8 @@ async function handleSend() {
       inboxId: form.inboxId,
       from: form.from,
       to: toList,
+      cc: ccList.length ? ccList : undefined,
+      bcc: bccList.length ? bccList : undefined,
       subject: form.subject || undefined,
       html: form.html || undefined,
       text: form.text || undefined,

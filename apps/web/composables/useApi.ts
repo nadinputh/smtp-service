@@ -185,7 +185,9 @@ export function useApi() {
       inboxId: string;
       from: string;
       to: string[];
-      subject: string;
+      cc?: string[];
+      bcc?: string[];
+      subject?: string;
       html?: string;
       text?: string;
       sendAt?: string;
@@ -782,6 +784,7 @@ export interface Inbox {
   unreadCount: number;
   teamId: string | null;
   teamName: string | null;
+  currentUserRole: string;
 }
 
 export interface InboxDetail extends Inbox {
@@ -801,6 +804,7 @@ export interface Message {
   status: string;
   isRead: boolean;
   createdAt: string;
+  textPreview: string | null;
 }
 
 export interface MessageDetail extends Message {

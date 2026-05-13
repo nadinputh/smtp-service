@@ -32,6 +32,10 @@ export default defineNuxtConfig({
   // Override at deploy time with NUXT_API_TARGET env var.
   runtimeConfig: {
     apiTarget,
+    public: {
+      smtpHost: process.env.SMTP_HOST || "localhost",
+      smtpPort: process.env.SMTP_PORT || "2525",
+    },
   },
 
   // ─── Dev server port ─────────────────────────────────────
