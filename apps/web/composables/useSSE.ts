@@ -3,7 +3,16 @@ type NewEmailHandler = (data: {
   subject: string | null;
   from: string;
 }) => void;
-type ReadChangedHandler = (data: { inboxId: string }) => void;
+type ReadChangedHandler = (data: {
+  inboxId: string;
+  /** Set when a single message changed */
+  messageId?: string;
+  isRead?: boolean;
+  /** Set when all messages in the inbox were marked read */
+  allRead?: boolean;
+  /** Set when a specific set of messages was batch-updated */
+  messageIds?: string[];
+}) => void;
 
 // ─── Singleton connection state (client-only) ─────────────
 // Shared across all useSSE callers so only one SSE connection is ever open,

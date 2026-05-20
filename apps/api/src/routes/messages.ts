@@ -118,6 +118,12 @@ export function registerMessageRoutes(app: FastifyInstance) {
         .from(messages)
         .where(where);
 
+      const unreadWhere = and(...conditions, eq(messages.isRead, false));
+      const [unreadResult] = await db
+        .select({ count: count() })
+        .from(messages)
+        .where(unreadWhere);
+
       const result = await db
         .select({
           id: messages.id,
@@ -137,7 +143,13 @@ export function registerMessageRoutes(app: FastifyInstance) {
         .limit(limit)
         .offset(offset);
 
-      return { messages: result, total: totalResult.count, page, limit };
+      return {
+        messages: result,
+        total: totalResult.count,
+        unreadTotal: unreadResult.count,
+        page,
+        limit,
+      };
     },
   );
 
@@ -657,7 +669,11 @@ export function registerMessageRoutes(app: FastifyInstance) {
 
       await redisPub.publish(
         "read:changed",
-        JSON.stringify({ inboxId: message.inboxId }),
+        JSON.stringify({
+          inboxId: message.inboxId,
+          messageId: id,
+          isRead: true,
+        }),
       );
 
       return { success: true };
@@ -688,7 +704,32 @@ export function registerMessageRoutes(app: FastifyInstance) {
 
       await redisPub.publish(
         "read:changed",
-        JSON.stringify({ inboxId: message.inboxId }),
+        JSON.stringify({
+          inboxId: message.inboxId,
+          messageId: id,
+          isRead: false,
+        }),
+      );
+
+      return { success: true };
+    },
+  );
+
+  // ─── Mark all messages in an inbox as read ─────────────
+  app.put<{ Params: { id: string } }>(
+    "/api/inboxes/:id/messages/read-all",
+    { preHandler: [authGuard, requireInboxRole("viewer")] },
+    async (request, _reply) => {
+      const { id: inboxId } = request.params;
+
+      await db
+        .update(messages)
+        .set({ isRead: true })
+        .where(and(eq(messages.inboxId, inboxId), eq(messages.isRead, false)));
+
+      await redisPub.publish(
+        "read:changed",
+        JSON.stringify({ inboxId, allRead: true }),
       );
 
       return { success: true };
@@ -722,7 +763,10 @@ export function registerMessageRoutes(app: FastifyInstance) {
           ),
         );
 
-      await redisPub.publish("read:changed", JSON.stringify({ inboxId }));
+      await redisPub.publish(
+        "read:changed",
+        JSON.stringify({ inboxId, messageIds, isRead }),
+      );
 
       return { success: true, updated: messageIds.length };
     },

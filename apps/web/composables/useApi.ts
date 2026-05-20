@@ -758,6 +758,13 @@ export function useApi() {
       );
     },
 
+    async markAllRead(inboxId: string) {
+      return await $fetch<{ success: boolean }>(
+        `/api/inboxes/${inboxId}/messages/read-all`,
+        { method: "PUT", headers: authHeaders() },
+      );
+    },
+
     async batchMarkRead(
       inboxId: string,
       messageIds: string[],
@@ -914,6 +921,7 @@ export interface CompatibilityResponse {
 export interface PaginatedMessages {
   messages: Message[];
   total: number;
+  unreadTotal: number;
   page: number;
   limit: number;
 }

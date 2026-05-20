@@ -70,6 +70,16 @@
             </div>
           </div>
           <UBtn
+            v-if="unreadCount > 0"
+            variant="secondary"
+            size="sm"
+            :disabled="markingAllRead"
+            @click="markAllRead"
+          >
+            <Icon name="lucide:check-check" class="w-4 h-4" />
+            {{ markingAllRead ? "Marking..." : "Mark all read" }}
+          </UBtn>
+          <UBtn
             v-if="isEditorOrAbove"
             variant="secondary"
             size="sm"
@@ -926,6 +936,7 @@ const filterBefore = ref("");
 const showFilters = ref(false);
 const currentPage = ref(1);
 const totalMessages = ref(0);
+const totalUnread = ref(0);
 const messages = ref<
   Awaited<ReturnType<typeof api.getInboxMessages>>["messages"]
 >([]);
@@ -939,9 +950,7 @@ const totalPages = computed(() =>
   Math.max(1, Math.ceil(totalMessages.value / 50)),
 );
 
-const unreadCount = computed(
-  () => messages.value.filter((m) => !m.isRead).length,
-);
+const unreadCount = computed(() => totalUnread.value);
 
 // Debounced search
 let searchTimeout: ReturnType<typeof setTimeout>;
@@ -973,6 +982,7 @@ async function fetchMessages() {
     });
     messages.value = res.messages;
     totalMessages.value = res.total;
+    totalUnread.value = res.unreadTotal;
   } catch {
     messages.value = [];
     totalMessages.value = 0;
@@ -994,6 +1004,7 @@ function handleMessageClick(msg: (typeof messages.value)[number]) {
     // Optimistic UI update only — the message detail page's watcher
     // handles the actual markMessageRead API call, avoiding a duplicate request.
     msg.isRead = true;
+    totalUnread.value = Math.max(0, totalUnread.value - 1);
   }
 }
 
@@ -1001,6 +1012,9 @@ async function toggleReadStatus(msg: (typeof messages.value)[number]) {
   if (togglingReadIds.value.has(msg.id)) return;
   const wasRead = msg.isRead;
   msg.isRead = !wasRead;
+  totalUnread.value = wasRead
+    ? totalUnread.value + 1
+    : Math.max(0, totalUnread.value - 1);
   togglingReadIds.value.add(msg.id);
   try {
     if (wasRead) {
@@ -1010,8 +1024,26 @@ async function toggleReadStatus(msg: (typeof messages.value)[number]) {
     }
   } catch {
     msg.isRead = wasRead;
+    totalUnread.value = wasRead
+      ? Math.max(0, totalUnread.value - 1)
+      : totalUnread.value + 1;
   } finally {
     togglingReadIds.value.delete(msg.id);
+  }
+}
+
+const markingAllRead = ref(false);
+async function markAllRead() {
+  if (markingAllRead.value) return;
+  markingAllRead.value = true;
+  try {
+    await api.markAllRead(inboxId);
+    messages.value.forEach((m) => (m.isRead = true));
+    totalUnread.value = 0;
+  } catch {
+    // silently ignore; count will correct on next fetchMessages
+  } finally {
+    markingAllRead.value = false;
   }
 }
 
@@ -1080,7 +1112,34 @@ useSSE(
     }
   },
   (data) => {
-    if (data.inboxId === inboxId) {
+    if (data.inboxId !== inboxId) return;
+
+    if (data.allRead) {
+      // All messages in inbox marked read
+      messages.value.forEach((m) => (m.isRead = true));
+      totalUnread.value = 0;
+    } else if (data.messageId !== undefined && data.isRead !== undefined) {
+      // Single message toggled — update in place if present on current page
+      const msg = messages.value.find((m) => m.id === data.messageId);
+      if (msg && msg.isRead !== data.isRead) {
+        msg.isRead = data.isRead;
+        totalUnread.value = data.isRead
+          ? Math.max(0, totalUnread.value - 1)
+          : totalUnread.value + 1;
+      }
+    } else if (data.messageIds && data.isRead !== undefined) {
+      // Batch update
+      const ids = new Set(data.messageIds);
+      messages.value.forEach((m) => {
+        if (ids.has(m.id) && m.isRead !== data.isRead) {
+          m.isRead = data.isRead!;
+          totalUnread.value = data.isRead
+            ? Math.max(0, totalUnread.value - 1)
+            : totalUnread.value + 1;
+        }
+      });
+    } else {
+      // Fallback: unknown shape — re-fetch to stay in sync
       silentRefreshMessages();
     }
   },
@@ -1111,6 +1170,7 @@ function silentRefreshMessages() {
       }
       messages.value = messages.value.filter((m) => freshIds.has(m.id));
       totalMessages.value = res.total;
+      totalUnread.value = res.unreadTotal;
     })
     .catch(() => {});
 }

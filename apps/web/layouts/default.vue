@@ -532,10 +532,34 @@ function silentRefreshInboxes() {
 
 useSSE(
   (_data) => {
+    // New email always requires a full refresh (count could be on any inbox)
     silentRefreshInboxes();
   },
-  (_data) => {
-    silentRefreshInboxes();
+  (data) => {
+    if (!inboxes.value) {
+      silentRefreshInboxes();
+      return;
+    }
+    const inbox = inboxes.value.find((i) => i.id === data.inboxId);
+    if (!inbox) return;
+
+    if (data.allRead) {
+      // All messages in inbox marked read — badge goes to 0
+      inbox.unreadCount = 0;
+    } else if (data.messageId !== undefined && data.isRead !== undefined) {
+      // Single message toggled
+      inbox.unreadCount = data.isRead
+        ? Math.max(0, (inbox.unreadCount ?? 0) - 1)
+        : (inbox.unreadCount ?? 0) + 1;
+    } else if (data.messageIds !== undefined && data.isRead !== undefined) {
+      // Batch update
+      inbox.unreadCount = data.isRead
+        ? Math.max(0, (inbox.unreadCount ?? 0) - data.messageIds.length)
+        : (inbox.unreadCount ?? 0) + data.messageIds.length;
+    } else {
+      // Unknown shape — re-fetch to stay accurate
+      silentRefreshInboxes();
+    }
   },
 );
 
