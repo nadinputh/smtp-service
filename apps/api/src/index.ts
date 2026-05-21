@@ -32,6 +32,7 @@ import { registerExportRoutes } from "./routes/export.js";
 import { registerInboxMemberRoutes } from "./routes/inbox-members.js";
 import { registerQuotaRoutes } from "./routes/quotas.js";
 import { registerTeamRoutes } from "./routes/teams.js";
+import { registerInboxRuleRoutes } from "./routes/inbox-rules.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { authGuard } from "./middleware/auth.js";
 import { requireAdmin } from "./middleware/access.js";
@@ -136,6 +137,7 @@ registerInboxMemberRoutes(app);
 registerQuotaRoutes(app);
 registerSSERoutes(app);
 registerTeamRoutes(app);
+registerInboxRuleRoutes(app);
 registerAdminRoutes(app);
 
 // ─── Start ────────────────────────────────────────────────

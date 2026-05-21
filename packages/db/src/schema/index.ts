@@ -1,6 +1,12 @@
 export { users } from "./users.js";
 export { inboxes } from "./inboxes.js";
 export { messages } from "./messages.js";
+export { inboxRules } from "./inbox-rules.js";
+export type {
+  RuleCondition,
+  RuleConditionField,
+  RuleConditionOp,
+} from "./inbox-rules.js";
 export { deliveryLogs } from "./delivery-logs.js";
 export { domains } from "./domains.js";
 export { webhooks } from "./webhooks.js";

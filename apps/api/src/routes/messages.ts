@@ -1,8 +1,20 @@
 import type { FastifyInstance } from "fastify";
 import { getEnv } from "@mailpocket/env";
-import { getDb, messages, inboxes } from "@mailpocket/db";
+import { getDb, messages, inboxes, inboxRules } from "@mailpocket/db";
 import { createStorage } from "@mailpocket/storage";
-import { eq, desc, and, ilike, gte, lte, sql, count } from "drizzle-orm";
+import {
+  eq,
+  desc,
+  and,
+  ilike,
+  gte,
+  lte,
+  sql,
+  count,
+  gt,
+  lt,
+} from "drizzle-orm";
+import { buildRuleWhere } from "../lib/rule-conditions.js";
 import { authGuard } from "../middleware/auth.js";
 import { requireInboxRole, requireMessageRole } from "../middleware/access.js";
 import { simpleParser } from "mailparser";
@@ -63,6 +75,7 @@ export function registerMessageRoutes(app: FastifyInstance) {
       before?: string;
       page?: string;
       limit?: string;
+      ruleId?: string;
     };
   }>(
     "/api/inboxes/:id/messages",
@@ -78,6 +91,7 @@ export function registerMessageRoutes(app: FastifyInstance) {
         before,
         page: pageStr = "1",
         limit: limitStr = "50",
+        ruleId,
       } = request.query;
 
       const page = Math.max(1, parseInt(pageStr, 10) || 1);
@@ -105,24 +119,44 @@ export function registerMessageRoutes(app: FastifyInstance) {
         conditions.push(eq(messages.status, statusFilter));
       }
       if (after) {
-        conditions.push(gte(messages.createdAt, new Date(after)));
+        const afterDate = new Date(after);
+        if (!isNaN(afterDate.getTime())) {
+          conditions.push(gte(messages.createdAt, afterDate));
+        }
       }
       if (before) {
-        conditions.push(lte(messages.createdAt, new Date(before)));
+        const beforeDate = new Date(before);
+        if (!isNaN(beforeDate.getTime())) {
+          // Include the full selected day by advancing to end-of-day
+          beforeDate.setUTCHours(23, 59, 59, 999);
+          conditions.push(lte(messages.createdAt, beforeDate));
+        }
+      }
+      if (ruleId) {
+        const [rule] = await db
+          .select()
+          .from(inboxRules)
+          .where(and(eq(inboxRules.id, ruleId), eq(inboxRules.inboxId, id)))
+          .limit(1);
+        if (rule) {
+          const ruleWhere = buildRuleWhere(
+            rule.conditions,
+            rule.logic ?? "AND",
+          );
+          if (ruleWhere) conditions.push(ruleWhere);
+        }
       }
 
       const where = and(...conditions);
 
-      const [totalResult] = await db
-        .select({ count: count() })
+      // Single query: total + unread count via conditional aggregate
+      const [totals] = await db
+        .select({
+          total: count(),
+          unreadTotal: sql<number>`COUNT(*) FILTER (WHERE ${messages.isRead} = false)`,
+        })
         .from(messages)
         .where(where);
-
-      const unreadWhere = and(...conditions, eq(messages.isRead, false));
-      const [unreadResult] = await db
-        .select({ count: count() })
-        .from(messages)
-        .where(unreadWhere);
 
       const result = await db
         .select({
@@ -145,8 +179,8 @@ export function registerMessageRoutes(app: FastifyInstance) {
 
       return {
         messages: result,
-        total: totalResult.count,
-        unreadTotal: unreadResult.count,
+        total: totals.total,
+        unreadTotal: Number(totals.unreadTotal),
         page,
         limit,
       };

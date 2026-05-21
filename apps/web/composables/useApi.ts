@@ -1,11 +1,11 @@
 export function useApi() {
-  const { token } = useAuth();
+  const { token, logout } = useAuth();
 
   function authHeaders(): Record<string, string> {
     return token.value ? { Authorization: `Bearer ${token.value}` } : {};
   }
 
-  return {
+  const api = {
     async getInboxes() {
       return await $fetch<Inbox[]>("/api/inboxes", {
         headers: authHeaders(),
@@ -55,6 +55,7 @@ export function useApi() {
         before?: string;
         page?: number;
         limit?: number;
+        ruleId?: string;
       },
     ) {
       const query: Record<string, string> = {};
@@ -66,6 +67,7 @@ export function useApi() {
       if (params?.before) query.before = params.before;
       if (params?.page) query.page = String(params.page);
       if (params?.limit) query.limit = String(params.limit);
+      if (params?.ruleId) query.ruleId = params.ruleId;
       return await $fetch<PaginatedMessages>(
         `/api/inboxes/${inboxId}/messages`,
         { headers: authHeaders(), query },
@@ -779,7 +781,73 @@ export function useApi() {
         },
       );
     },
+
+    // ─── Inbox Rules ────────────────────────────────────────
+    async getRules(inboxId: string) {
+      return await $fetch<InboxRule[]>(`/api/inboxes/${inboxId}/rules`, {
+        headers: authHeaders(),
+      });
+    },
+
+    async createRule(
+      inboxId: string,
+      data: {
+        name: string;
+        color?: string;
+        conditions: RuleCondition[];
+        logic?: string;
+      },
+    ) {
+      return await $fetch<InboxRule>(`/api/inboxes/${inboxId}/rules`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: data,
+      });
+    },
+
+    async updateRule(
+      inboxId: string,
+      ruleId: string,
+      data: {
+        name?: string;
+        color?: string;
+        conditions?: RuleCondition[];
+        logic?: string;
+        order?: number;
+      },
+    ) {
+      return await $fetch<InboxRule>(
+        `/api/inboxes/${inboxId}/rules/${ruleId}`,
+        { method: "PUT", headers: authHeaders(), body: data },
+      );
+    },
+
+    async deleteRule(inboxId: string, ruleId: string) {
+      return await $fetch<{ success: boolean }>(
+        `/api/inboxes/${inboxId}/rules/${ruleId}`,
+        { method: "DELETE", headers: authHeaders() },
+      );
+    },
   };
+
+  // Intercept 401 responses — redirect to login unless it's a credential check
+  // (changePassword returns 401 for wrong current password, which is not a session issue)
+  return new Proxy(api, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver);
+      if (typeof value !== "function" || prop === "changePassword") return value;
+      return async (...args: unknown[]) => {
+        try {
+          return await (value as (...a: unknown[]) => unknown)(...args);
+        } catch (err: unknown) {
+          if ((err as any)?.response?.status === 401) {
+            logout();
+          }
+          throw err;
+        }
+      };
+    },
+  }) as unknown as typeof api;
 }
 
 // ─── Types ────────────────────────────────────────────────
@@ -1195,4 +1263,41 @@ export interface AdminTopInbox {
   ownerName: string | null;
   teamName: string | null;
   messageCount: number;
+}
+
+// ─── Inbox Rules ──────────────────────────────────────────
+export type RuleConditionField =
+  | "from"
+  | "to"
+  | "subject"
+  | "status"
+  | "spam_score"
+  | "has_attachment";
+
+export type RuleConditionOp =
+  | "contains"
+  | "not_contains"
+  | "equals"
+  | "starts_with"
+  | "ends_with"
+  | "gt"
+  | "lt";
+
+export interface RuleCondition {
+  field: RuleConditionField;
+  op: RuleConditionOp;
+  value: string;
+}
+
+export interface InboxRule {
+  id: string;
+  inboxId: string;
+  name: string;
+  color: string | null;
+  conditions: RuleCondition[];
+  logic: string;
+  order: number;
+  createdAt: string;
+  total: number;
+  unreadTotal: number;
 }

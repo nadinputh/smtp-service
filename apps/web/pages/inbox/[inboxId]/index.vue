@@ -70,7 +70,7 @@
             </div>
           </div>
           <UBtn
-            v-if="unreadCount > 0"
+            v-if="unreadCount > 0 && !hasActiveFilters"
             variant="secondary"
             size="sm"
             :disabled="markingAllRead"
@@ -200,6 +200,62 @@
       v-if="activeTab === 'messages'"
       class="flex-1 overflow-y-auto flex flex-col"
     >
+      <!-- Rule filter tabs -->
+      <div
+        class="px-4 py-2 border-b border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-center gap-1.5 overflow-x-auto shrink-0"
+      >
+        <button
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors shrink-0"
+          :class="
+            !activeRuleId
+              ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-transparent'
+              : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+          "
+          @click="selectRule(null)"
+        >
+          All messages
+        </button>
+        <template v-for="rule in rules" :key="rule.id">
+          <div class="flex items-center gap-0.5 shrink-0 group">
+            <button
+              class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors"
+              :class="ruleColorClasses(rule)"
+              @click="selectRule(rule.id)"
+            >
+              <span
+                class="w-2 h-2 rounded-full shrink-0"
+                :class="
+                  RULE_COLOR_CLASSES[(rule.color as RuleColor) ?? 'indigo'].dot
+                "
+              />
+              {{ rule.name }}
+              <span
+                v-if="rule.unreadTotal > 0"
+                class="ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-black/10 dark:bg-white/20"
+              >
+                {{ rule.unreadTotal }}
+              </span>
+            </button>
+            <button
+              v-if="isEditorOrAbove"
+              class="p-1 rounded text-gray-300 hover:text-gray-500 dark:hover:text-gray-300 transition-colors opacity-0 group-hover:opacity-100"
+              title="Edit filter"
+              @click="openEditRule(rule)"
+            >
+              <Icon name="lucide:pencil" class="w-3 h-3" />
+            </button>
+          </div>
+        </template>
+        <button
+          v-if="isEditorOrAbove"
+          class="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs border border-dashed border-gray-300 dark:border-gray-600 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:border-gray-400 transition-colors shrink-0"
+          @click="openCreateRule"
+        >
+          <Icon name="lucide:plus" class="w-3 h-3" />
+          New filter
+        </button>
+      </div>
+
       <!-- Search & Filters -->
       <div
         class="px-6 py-3 border-b border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-2 shrink-0"
@@ -889,6 +945,204 @@
         </div>
       </Transition>
     </Teleport>
+
+    <!-- Rule builder modal -->
+    <Teleport to="body">
+      <div
+        v-if="showRuleModal"
+        class="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+        @click.self="showRuleModal = false"
+      >
+        <div
+          class="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-lg p-6 mx-4"
+        >
+          <h2
+            class="text-base font-semibold text-gray-800 dark:text-gray-100 mb-4"
+          >
+            {{ editingRuleId ? "Edit filter" : "New filter" }}
+          </h2>
+          <form class="space-y-4" @submit.prevent="saveRule">
+            <!-- Name -->
+            <input
+              v-model="ruleForm.name"
+              type="text"
+              placeholder="Filter name (e.g. Deploy notifications)"
+              required
+              class="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+
+            <!-- Color swatches -->
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-gray-500 dark:text-gray-400 shrink-0"
+                >Color:</span
+              >
+              <div class="flex gap-1.5">
+                <button
+                  v-for="c in RULE_COLORS"
+                  :key="c"
+                  type="button"
+                  class="w-5 h-5 rounded-full transition-transform"
+                  :class="[
+                    RULE_COLOR_CLASSES[c].swatch,
+                    ruleForm.color === c
+                      ? 'ring-2 ring-offset-1 ring-gray-400 scale-110'
+                      : 'hover:scale-105',
+                  ]"
+                  @click="ruleForm.color = c"
+                />
+              </div>
+            </div>
+
+            <!-- Logic toggle -->
+            <div class="flex items-center gap-2 text-sm">
+              <span class="text-gray-500 dark:text-gray-400">Match</span>
+              <div
+                class="flex rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden"
+              >
+                <button
+                  type="button"
+                  class="px-3 py-1 text-xs font-medium transition-colors"
+                  :class="
+                    ruleForm.logic === 'AND'
+                      ? 'bg-indigo-600 text-white'
+                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+                  "
+                  @click="ruleForm.logic = 'AND'"
+                >
+                  ALL
+                </button>
+                <button
+                  type="button"
+                  class="px-3 py-1 text-xs font-medium transition-colors"
+                  :class="
+                    ruleForm.logic === 'OR'
+                      ? 'bg-indigo-600 text-white'
+                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+                  "
+                  @click="ruleForm.logic = 'OR'"
+                >
+                  ANY
+                </button>
+              </div>
+              <span class="text-gray-500 dark:text-gray-400"
+                >of the following conditions:</span
+              >
+            </div>
+
+            <!-- Conditions -->
+            <div class="space-y-2">
+              <div
+                v-for="(cond, idx) in ruleForm.conditions"
+                :key="idx"
+                class="flex items-center gap-2"
+              >
+                <select
+                  v-model="cond.field"
+                  class="flex-1 min-w-0 px-2 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  @change="onConditionFieldChange(idx)"
+                >
+                  <option
+                    v-for="f in FIELD_OPTIONS"
+                    :key="f.value"
+                    :value="f.value"
+                  >
+                    {{ f.label }}
+                  </option>
+                </select>
+                <select
+                  v-model="cond.op"
+                  class="flex-1 min-w-0 px-2 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option
+                    v-for="op in OP_OPTIONS[cond.field]"
+                    :key="op.value"
+                    :value="op.value"
+                  >
+                    {{ op.label }}
+                  </option>
+                </select>
+                <!-- Value input -->
+                <select
+                  v-if="getValueType(cond.field) === 'status'"
+                  v-model="cond.value"
+                  class="flex-1 min-w-0 px-2 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="received">Received</option>
+                  <option value="delivered">Delivered</option>
+                  <option value="bounced">Bounced</option>
+                  <option value="queued">Queued</option>
+                </select>
+                <select
+                  v-else-if="getValueType(cond.field) === 'boolean'"
+                  v-model="cond.value"
+                  class="flex-1 min-w-0 px-2 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="true">Yes</option>
+                  <option value="false">No</option>
+                </select>
+                <input
+                  v-else
+                  v-model="cond.value"
+                  :type="
+                    getValueType(cond.field) === 'number' ? 'number' : 'text'
+                  "
+                  placeholder="value..."
+                  class="flex-1 min-w-0 px-2 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <button
+                  type="button"
+                  class="shrink-0 p-1 rounded text-gray-400 hover:text-red-500 disabled:opacity-30 transition-colors"
+                  :disabled="ruleForm.conditions.length === 1"
+                  @click="removeConditionRow(idx)"
+                >
+                  <Icon name="lucide:x" class="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              class="flex items-center gap-1 text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors"
+              @click="addConditionRow"
+            >
+              <Icon name="lucide:plus" class="w-4 h-4" />
+              Add condition
+            </button>
+
+            <p v-if="ruleError" class="text-sm text-red-600">
+              {{ ruleError }}
+            </p>
+
+            <div class="flex items-center justify-between pt-2">
+              <UBtn
+                v-if="editingRuleId"
+                type="button"
+                variant="danger"
+                size="sm"
+                @click="
+                  handleDeleteRule(editingRuleId!);
+                  showRuleModal = false;
+                "
+              >
+                Delete filter
+              </UBtn>
+              <div class="flex gap-2 ml-auto">
+                <UBtn
+                  type="button"
+                  variant="ghost"
+                  @click="showRuleModal = false"
+                >
+                  Cancel
+                </UBtn>
+                <UBtn type="submit" :disabled="savingRule">
+                  {{ savingRule ? "Saving..." : "Save filter" }}
+                </UBtn>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -942,8 +1196,292 @@ const messages = ref<
 >([]);
 const pending = ref(false);
 
+// ─── Rules ───────────────────────────────────────────────────────────────────
+type InboxRule = Awaited<ReturnType<typeof api.getRules>>[number];
+type RuleColor =
+  | "indigo"
+  | "blue"
+  | "green"
+  | "yellow"
+  | "orange"
+  | "red"
+  | "purple"
+  | "pink";
+type RuleConditionField =
+  | "from"
+  | "to"
+  | "subject"
+  | "status"
+  | "spam_score"
+  | "has_attachment";
+type RuleConditionOp =
+  | "contains"
+  | "not_contains"
+  | "equals"
+  | "starts_with"
+  | "ends_with"
+  | "gt"
+  | "lt";
+
+const rules = ref<InboxRule[]>([]);
+const activeRuleId = ref<string | null>(null);
+const showRuleModal = ref(false);
+const editingRuleId = ref<string | null>(null);
+const savingRule = ref(false);
+const ruleError = ref("");
+
+const ruleForm = reactive<{
+  name: string;
+  color: RuleColor;
+  logic: "AND" | "OR";
+  conditions: {
+    field: RuleConditionField;
+    op: RuleConditionOp;
+    value: string;
+  }[];
+}>({
+  name: "",
+  color: "indigo",
+  logic: "AND",
+  conditions: [{ field: "from", op: "contains", value: "" }],
+});
+
+const RULE_COLOR_CLASSES: Record<
+  RuleColor,
+  { active: string; inactive: string; dot: string; swatch: string }
+> = {
+  indigo: {
+    active: "bg-indigo-100 border-indigo-300 text-indigo-700",
+    inactive:
+      "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400",
+    dot: "bg-indigo-500",
+    swatch: "bg-indigo-500",
+  },
+  blue: {
+    active: "bg-blue-100 border-blue-300 text-blue-700",
+    inactive:
+      "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400",
+    dot: "bg-blue-500",
+    swatch: "bg-blue-500",
+  },
+  green: {
+    active: "bg-green-100 border-green-300 text-green-700",
+    inactive:
+      "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400",
+    dot: "bg-green-500",
+    swatch: "bg-green-500",
+  },
+  yellow: {
+    active: "bg-yellow-100 border-yellow-300 text-yellow-700",
+    inactive:
+      "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400",
+    dot: "bg-yellow-400",
+    swatch: "bg-yellow-400",
+  },
+  orange: {
+    active: "bg-orange-100 border-orange-300 text-orange-700",
+    inactive:
+      "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400",
+    dot: "bg-orange-500",
+    swatch: "bg-orange-500",
+  },
+  red: {
+    active: "bg-red-100 border-red-300 text-red-700",
+    inactive:
+      "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400",
+    dot: "bg-red-500",
+    swatch: "bg-red-500",
+  },
+  purple: {
+    active: "bg-purple-100 border-purple-300 text-purple-700",
+    inactive:
+      "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400",
+    dot: "bg-purple-500",
+    swatch: "bg-purple-500",
+  },
+  pink: {
+    active: "bg-pink-100 border-pink-300 text-pink-700",
+    inactive:
+      "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400",
+    dot: "bg-pink-500",
+    swatch: "bg-pink-500",
+  },
+};
+const RULE_COLORS = Object.keys(RULE_COLOR_CLASSES) as RuleColor[];
+
+const FIELD_OPTIONS: { value: RuleConditionField; label: string }[] = [
+  { value: "from", label: "From" },
+  { value: "to", label: "To" },
+  { value: "subject", label: "Subject" },
+  { value: "status", label: "Status" },
+  { value: "spam_score", label: "Spam Score" },
+  { value: "has_attachment", label: "Has Attachment" },
+];
+
+const OP_OPTIONS: Record<
+  RuleConditionField,
+  { value: RuleConditionOp; label: string }[]
+> = {
+  from: [
+    { value: "contains", label: "contains" },
+    { value: "not_contains", label: "does not contain" },
+    { value: "equals", label: "is exactly" },
+    { value: "starts_with", label: "starts with" },
+    { value: "ends_with", label: "ends with" },
+  ],
+  to: [
+    { value: "contains", label: "contains" },
+    { value: "not_contains", label: "does not contain" },
+  ],
+  subject: [
+    { value: "contains", label: "contains" },
+    { value: "not_contains", label: "does not contain" },
+    { value: "equals", label: "is exactly" },
+    { value: "starts_with", label: "starts with" },
+    { value: "ends_with", label: "ends with" },
+  ],
+  status: [{ value: "equals", label: "is" }],
+  spam_score: [
+    { value: "gt", label: "is greater than" },
+    { value: "lt", label: "is less than" },
+  ],
+  has_attachment: [{ value: "equals", label: "is" }],
+};
+
+function getValueType(
+  field: RuleConditionField,
+): "text" | "status" | "boolean" | "number" {
+  if (field === "status") return "status";
+  if (field === "has_attachment") return "boolean";
+  if (field === "spam_score") return "number";
+  return "text";
+}
+
+function onConditionFieldChange(idx: number) {
+  const c = ruleForm.conditions[idx];
+  c.op = OP_OPTIONS[c.field][0].value;
+  c.value = c.field === "has_attachment" ? "true" : "";
+}
+
+function addConditionRow() {
+  ruleForm.conditions.push({ field: "from", op: "contains", value: "" });
+}
+
+function removeConditionRow(idx: number) {
+  ruleForm.conditions.splice(idx, 1);
+}
+
+function openCreateRule() {
+  editingRuleId.value = null;
+  ruleForm.name = "";
+  ruleForm.color = "indigo";
+  ruleForm.logic = "AND";
+  ruleForm.conditions = [{ field: "from", op: "contains", value: "" }];
+  ruleError.value = "";
+  showRuleModal.value = true;
+}
+
+function openEditRule(rule: InboxRule) {
+  editingRuleId.value = rule.id;
+  ruleForm.name = rule.name;
+  ruleForm.color = (rule.color as RuleColor) ?? "indigo";
+  ruleForm.logic = (rule.logic as "AND" | "OR") ?? "AND";
+  ruleForm.conditions = rule.conditions.map((c) => ({
+    ...c,
+  })) as typeof ruleForm.conditions;
+  ruleError.value = "";
+  showRuleModal.value = true;
+}
+
+async function saveRule() {
+  if (!ruleForm.name.trim()) {
+    ruleError.value = "Name is required";
+    return;
+  }
+  const incomplete = ruleForm.conditions.some(
+    (c) => !c.value.trim() && c.field !== "has_attachment",
+  );
+  if (incomplete) {
+    ruleError.value = "All conditions need a value";
+    return;
+  }
+  savingRule.value = true;
+  ruleError.value = "";
+  try {
+    if (editingRuleId.value) {
+      const updated = await api.updateRule(inboxId, editingRuleId.value, {
+        name: ruleForm.name,
+        color: ruleForm.color,
+        conditions: ruleForm.conditions,
+        logic: ruleForm.logic,
+      });
+      const idx = rules.value.findIndex((r) => r.id === updated.id);
+      if (idx !== -1)
+        rules.value[idx] = {
+          ...updated,
+          total: rules.value[idx].total,
+          unreadTotal: rules.value[idx].unreadTotal,
+        };
+    } else {
+      const created = await api.createRule(inboxId, {
+        name: ruleForm.name,
+        color: ruleForm.color,
+        conditions: ruleForm.conditions,
+        logic: ruleForm.logic,
+      });
+      rules.value.push({ ...created, total: 0, unreadTotal: 0 });
+    }
+    showRuleModal.value = false;
+    loadRules();
+  } catch {
+    ruleError.value = "Failed to save filter";
+  } finally {
+    savingRule.value = false;
+  }
+}
+
+async function handleDeleteRule(ruleId: string) {
+  if (!confirm("Delete this filter?")) return;
+  try {
+    await api.deleteRule(inboxId, ruleId);
+    rules.value = rules.value.filter((r) => r.id !== ruleId);
+    if (activeRuleId.value === ruleId) {
+      activeRuleId.value = null;
+      currentPage.value = 1;
+      fetchMessages();
+    }
+  } catch {
+    // silently ignore
+  }
+}
+
+function selectRule(id: string | null) {
+  activeRuleId.value = id;
+  currentPage.value = 1;
+  fetchMessages();
+}
+
+async function loadRules() {
+  try {
+    rules.value = await api.getRules(inboxId);
+  } catch {
+    rules.value = [];
+  }
+}
+
+function ruleColorClasses(rule: InboxRule) {
+  const color = (rule.color as RuleColor) ?? "indigo";
+  const cls = RULE_COLOR_CLASSES[color] ?? RULE_COLOR_CLASSES.indigo;
+  return activeRuleId.value === rule.id ? cls.active : cls.inactive;
+}
+
 const hasActiveFilters = computed(
-  () => filterStatus.value || filterAfter.value || filterBefore.value,
+  () =>
+    !!searchQuery.value ||
+    !!filterStatus.value ||
+    !!filterAfter.value ||
+    !!filterBefore.value ||
+    !!activeRuleId.value,
 );
 
 const totalPages = computed(() =>
@@ -977,6 +1515,7 @@ async function fetchMessages() {
       status: filterStatus.value || undefined,
       after: filterAfter.value || undefined,
       before: filterBefore.value || undefined,
+      ruleId: activeRuleId.value || undefined,
       page: currentPage.value,
       limit: 50,
     });
@@ -996,6 +1535,7 @@ function clearFilters() {
   filterStatus.value = "";
   filterAfter.value = "";
   filterBefore.value = "";
+  activeRuleId.value = null;
   currentPage.value = 1;
 }
 
@@ -1091,6 +1631,7 @@ const isEditorOrAbove = computed(
 
 // Initial fetch
 fetchMessages();
+loadRules();
 
 // Real-time: refresh message list when a new email arrives in this inbox
 const newMailNotification = ref<{
@@ -1152,23 +1693,14 @@ function silentRefreshMessages() {
       status: filterStatus.value || undefined,
       after: filterAfter.value || undefined,
       before: filterBefore.value || undefined,
+      ruleId: activeRuleId.value || undefined,
       page: currentPage.value,
       limit: 50,
     })
     .then((res) => {
-      for (const fresh of res.messages) {
-        const existing = messages.value.find((m) => m.id === fresh.id);
-        if (existing) {
-          Object.assign(existing, fresh);
-        }
-      }
-      // Add new messages, remove deleted ones
-      const freshIds = new Set(res.messages.map((m) => m.id));
-      const existingIds = new Set(messages.value.map((m) => m.id));
-      for (const m of res.messages) {
-        if (!existingIds.has(m.id)) messages.value.unshift(m);
-      }
-      messages.value = messages.value.filter((m) => freshIds.has(m.id));
+      // Replace with the authoritative server state — avoids ordering
+      // issues when multiple new messages arrive at the same time.
+      messages.value = res.messages;
       totalMessages.value = res.total;
       totalUnread.value = res.unreadTotal;
     })

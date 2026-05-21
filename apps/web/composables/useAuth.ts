@@ -23,6 +23,17 @@ const authState = reactive<AuthState>({
   providers: null,
 });
 
+function isTokenExpired(token: string): boolean {
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    return payload.exp * 1000 < Date.now();
+  } catch {
+    return true;
+  }
+}
+
+let _visibilityListenerAdded = false;
+
 export function useAuth() {
   // Hydrate from localStorage on first call (client-side only)
   if (import.meta.client && !authState.token) {
@@ -30,12 +41,29 @@ export function useAuth() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        authState.token = parsed.token;
-        authState.user = parsed.user;
+        if (parsed.token && !isTokenExpired(parsed.token)) {
+          authState.token = parsed.token;
+          authState.user = parsed.user;
+        } else {
+          localStorage.removeItem("auth");
+        }
       } catch {
         localStorage.removeItem("auth");
       }
     }
+  }
+
+  // Detect expired sessions when the user switches back to the tab
+  if (import.meta.client && !_visibilityListenerAdded) {
+    _visibilityListenerAdded = true;
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden && authState.token && isTokenExpired(authState.token)) {
+        authState.token = null;
+        authState.user = null;
+        localStorage.removeItem("auth");
+        navigateTo("/login");
+      }
+    });
   }
 
   function persist() {
@@ -161,7 +189,9 @@ export function useAuth() {
     navigateTo("/login");
   }
 
-  const isAuthenticated = computed(() => !!authState.token);
+  const isAuthenticated = computed(
+    () => !!authState.token && !isTokenExpired(authState.token),
+  );
 
   return {
     token: computed(() => authState.token),
