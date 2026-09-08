@@ -7,7 +7,7 @@
         <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100">
           API Keys
         </h2>
-        <p class="text-sm text-gray-400 dark:text-gray-500">
+        <p class="text-sm text-gray-500 dark:text-gray-400">
           Manage programmatic access keys for CI/CD and integrations
         </p>
       </div>
@@ -17,9 +17,9 @@
     </header>
 
     <div class="flex-1 overflow-y-auto p-6">
-      <div v-if="loading" class="text-gray-400">Loading...</div>
+      <div v-if="loading" class="text-gray-500 dark:text-gray-400">Loading...</div>
 
-      <div v-else-if="!keys.length" class="text-center text-gray-400 py-12">
+      <div v-else-if="!keys.length" class="text-center text-gray-500 dark:text-gray-400 py-12">
         <Icon name="lucide:key" class="w-12 h-12 mx-auto mb-3 opacity-50" />
         <p>No API keys yet</p>
         <p class="text-xs mt-1">
@@ -73,17 +73,17 @@
                   </div>
                 </td>
                 <td
-                  class="px-4 py-3 text-gray-400 dark:text-gray-500 whitespace-nowrap"
+                  class="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap"
                 >
                   {{ formatDate(key.createdAt) }}
                 </td>
                 <td
-                  class="px-4 py-3 text-gray-400 dark:text-gray-500 whitespace-nowrap"
+                  class="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap"
                 >
                   {{ key.lastUsedAt ? formatDate(key.lastUsedAt) : "Never" }}
                 </td>
                 <td
-                  class="px-4 py-3 text-gray-400 dark:text-gray-500 whitespace-nowrap"
+                  class="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap"
                 >
                   {{ key.expiresAt ? formatDate(key.expiresAt) : "—" }}
                 </td>
@@ -105,18 +105,22 @@
       <!-- New key display -->
       <div
         v-if="newKey"
-        class="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+        class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
         @click.self="newKey = null"
       >
         <div
           class="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-md p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="key-created-title"
         >
           <h2
+            id="key-created-title"
             class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2"
           >
             Key Created
           </h2>
-          <p class="text-sm text-red-600 mb-3">
+          <p class="text-sm text-red-600 dark:text-red-400 mb-3">
             Copy this key now — it won't be shown again.
           </p>
           <div
@@ -127,30 +131,57 @@
               >{{ newKey }}</code
             >
             <button
+              type="button"
               @click="copyKey"
-              class="text-indigo-600 hover:text-indigo-800 shrink-0"
+              :aria-label="justCopiedKey ? 'API key copied' : 'Copy API key'"
+              class="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 shrink-0 inline-flex items-center gap-1"
             >
-              <Icon name="lucide:copy" class="w-4 h-4" />
+              <Icon
+                :name="justCopiedKey ? 'lucide:check' : 'lucide:copy'"
+                class="w-4 h-4"
+              />
+              <span v-if="justCopiedKey" class="text-xs">Copied</span>
             </button>
           </div>
+          <p
+            v-if="copyKeyError"
+            role="alert"
+            class="text-xs text-red-600 dark:text-red-400 mt-1"
+          >
+            {{ copyKeyError }}
+          </p>
           <div class="flex justify-end mt-4">
-            <UBtn @click="newKey = null"> Done </UBtn>
+            <UBtn id="key-created-done-btn" @click="newKey = null">
+              Done
+            </UBtn>
           </div>
         </div>
       </div>
+
+      <p
+        v-if="deleteError"
+        role="alert"
+        class="text-sm text-red-600 dark:text-red-400 mt-4"
+      >
+        {{ deleteError }}
+      </p>
     </div>
 
     <!-- Create API Key Modal -->
     <Teleport to="body">
       <div
         v-if="showCreateModal"
-        class="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+        class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
         @click.self="showCreateModal = false"
       >
         <div
           class="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-sm p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="create-api-key-title"
         >
           <h2
+            id="create-api-key-title"
             class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4"
           >
             Create API Key
@@ -158,10 +189,13 @@
           <form @submit.prevent="handleCreate" class="space-y-4">
             <div>
               <label
+                for="api-key-name"
                 class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
                 >Name</label
               >
               <input
+                id="api-key-name"
+                ref="nameInputRef"
                 v-model="form.name"
                 type="text"
                 required
@@ -171,10 +205,15 @@
             </div>
             <div>
               <label
+                id="api-key-scopes-label"
                 class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
                 >Scopes</label
               >
-              <div class="space-y-2">
+              <div
+                role="group"
+                aria-labelledby="api-key-scopes-label"
+                class="space-y-2"
+              >
                 <label
                   v-for="s in allScopes"
                   :key="s.value"
@@ -197,7 +236,7 @@
                     >
                       {{ s.label }}
                     </p>
-                    <p class="text-xs text-gray-400 dark:text-gray-500">
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
                       {{ s.description }}
                     </p>
                   </div>
@@ -206,16 +245,22 @@
             </div>
             <div>
               <label
+                for="api-key-expires"
                 class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
                 >Expires (optional)</label
               >
               <input
+                id="api-key-expires"
                 v-model="form.expiresAt"
                 type="date"
                 class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
-            <p v-if="createError" class="text-sm text-red-600">
+            <p
+              v-if="createError"
+              role="alert"
+              class="text-sm text-red-600 dark:text-red-400"
+            >
               {{ createError }}
             </p>
             <div class="flex justify-end gap-2">
@@ -248,6 +293,11 @@ const showCreateModal = ref(false);
 const creating = ref(false);
 const createError = ref("");
 const newKey = ref<string | null>(null);
+const deleteError = ref("");
+const justCopiedKey = ref(false);
+const copyKeyError = ref("");
+const nameInputRef = ref<HTMLInputElement | null>(null);
+let copyKeyTimeout: ReturnType<typeof setTimeout> | undefined;
 const allScopes = [
   {
     value: "send",
@@ -309,15 +359,67 @@ async function handleCreate() {
 
 async function handleDelete(keyId: string) {
   if (!confirm("Revoke this API key? This cannot be undone.")) return;
+  deleteError.value = "";
   try {
     await api.deleteApiKey(keyId);
     keys.value = await api.getApiKeys();
   } catch {
-    alert("Failed to revoke key");
+    deleteError.value = "Failed to revoke key";
   }
 }
 
-function copyKey() {
-  if (newKey.value) navigator.clipboard.writeText(newKey.value);
+async function copyKey() {
+  if (!newKey.value) return;
+  copyKeyError.value = "";
+  try {
+    await navigator.clipboard.writeText(newKey.value);
+    justCopiedKey.value = true;
+    clearTimeout(copyKeyTimeout);
+    copyKeyTimeout = setTimeout(() => {
+      justCopiedKey.value = false;
+    }, 2000);
+  } catch {
+    copyKeyError.value = "Could not copy to clipboard";
+  }
 }
+
+function handleKeydown(e: KeyboardEvent) {
+  if (e.key !== "Escape") return;
+  if (newKey.value) {
+    newKey.value = null;
+  } else if (showCreateModal.value) {
+    showCreateModal.value = false;
+  }
+}
+
+watch(
+  () => showCreateModal.value || !!newKey.value,
+  (isOpen) => {
+    if (isOpen) {
+      document.addEventListener("keydown", handleKeydown);
+    } else {
+      document.removeEventListener("keydown", handleKeydown);
+    }
+  },
+);
+
+watch(showCreateModal, (isOpen) => {
+  if (isOpen) {
+    nextTick(() => nameInputRef.value?.focus());
+  }
+});
+
+watch(newKey, (val) => {
+  if (val) {
+    nextTick(() => document.getElementById("key-created-done-btn")?.focus());
+  } else {
+    justCopiedKey.value = false;
+    copyKeyError.value = "";
+  }
+});
+
+onUnmounted(() => {
+  document.removeEventListener("keydown", handleKeydown);
+  clearTimeout(copyKeyTimeout);
+});
 </script>

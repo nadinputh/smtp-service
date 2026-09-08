@@ -9,7 +9,7 @@
         <div class="text-center mb-6">
           <Icon
             name="lucide:mail"
-            class="w-10 h-10 text-indigo-600 mx-auto mb-2"
+            class="w-10 h-10 text-indigo-600 dark:text-indigo-400 mx-auto mb-2"
           />
           <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100">
             Create your account
@@ -22,10 +22,12 @@
         <form @submit.prevent="handleRegister" class="space-y-4">
           <div>
             <label
+              for="register-name"
               class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
               >Name</label
             >
             <input
+              id="register-name"
               v-model="name"
               type="text"
               autocomplete="name"
@@ -35,10 +37,12 @@
           </div>
           <div>
             <label
+              for="register-email"
               class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
               >Email</label
             >
             <input
+              id="register-email"
               v-model="email"
               type="email"
               required
@@ -49,10 +53,12 @@
           </div>
           <div>
             <label
+              for="register-password"
               class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
               >Password</label
             >
             <input
+              id="register-password"
               v-model="password"
               type="password"
               required
@@ -63,7 +69,7 @@
             />
           </div>
 
-          <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+          <p v-if="error" role="alert" class="text-sm text-red-600 dark:text-red-400">{{ error }}</p>
 
           <UBtn type="submit" :disabled="loading" class="w-full">
             {{ loading ? "Creating account..." : "Create account" }}
@@ -74,7 +80,7 @@
           Already have an account?
           <NuxtLink
             to="/login"
-            class="text-indigo-600 hover:text-indigo-500 font-medium"
+            class="text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300 font-medium"
           >
             Sign in
           </NuxtLink>
@@ -91,7 +97,7 @@ useHead({ title: "Create Account" });
 const { register, isAuthenticated } = useAuth();
 
 if (isAuthenticated.value) {
-  navigateTo("/");
+  await navigateTo("/");
 }
 
 const name = ref("");
@@ -105,7 +111,7 @@ async function handleRegister() {
   loading.value = true;
   try {
     await register(email.value, password.value, name.value || undefined);
-    navigateTo("/");
+    await navigateTo("/");
   } catch (e: any) {
     error.value = e?.data?.error || "Registration failed";
   } finally {

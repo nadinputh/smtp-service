@@ -7,7 +7,7 @@
         <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100">
           Team Management
         </h2>
-        <p class="text-sm text-gray-400 dark:text-gray-500">
+        <p class="text-sm text-gray-500 dark:text-gray-400">
           View and manage all teams
         </p>
       </div>
@@ -25,13 +25,13 @@
         />
       </div>
 
-      <div v-if="loading" class="text-gray-400 dark:text-gray-500">
+      <div v-if="loading" class="text-gray-500 dark:text-gray-400">
         Loading...
       </div>
 
       <div
         v-else-if="!teamsData?.data.length"
-        class="text-center text-gray-400 dark:text-gray-500 py-12"
+        class="text-center text-gray-500 dark:text-gray-400 py-12"
       >
         <Icon
           name="lucide:users-round"
@@ -80,7 +80,7 @@
                   </span>
                 </td>
                 <td
-                  class="px-4 py-3 text-gray-400 dark:text-gray-500 whitespace-nowrap"
+                  class="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap"
                 >
                   {{ formatDate(team.createdAt) }}
                 </td>
@@ -111,7 +111,7 @@
           v-if="teamsData.pagination.pages > 1"
           class="flex items-center justify-between pt-4"
         >
-          <p class="text-xs text-gray-400 dark:text-gray-500">
+          <p class="text-xs text-gray-500 dark:text-gray-400">
             Page {{ teamsData.pagination.page }} of
             {{ teamsData.pagination.pages }} ({{ teamsData.pagination.total }}
             teams)
@@ -153,8 +153,12 @@
       >
         <div
           class="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-sm p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-team-title"
         >
           <h2
+            id="delete-team-title"
             class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2"
           >
             Delete Team
@@ -166,6 +170,7 @@
           </p>
           <p
             v-if="deleteError"
+            role="alert"
             class="text-sm text-red-600 dark:text-red-400 mb-2"
           >
             {{ deleteError }}
@@ -224,7 +229,20 @@ function debouncedFetch() {
   }, 300);
 }
 
-onMounted(fetchTeams);
+function handleKeydown(e: KeyboardEvent) {
+  if (e.key !== "Escape") return;
+  if (deleteTarget.value) deleteTarget.value = null;
+}
+
+onMounted(() => {
+  fetchTeams();
+  document.addEventListener("keydown", handleKeydown);
+});
+
+onUnmounted(() => {
+  document.removeEventListener("keydown", handleKeydown);
+  if (searchTimeout) clearTimeout(searchTimeout);
+});
 
 // ─── Delete ────────────────────────────────────────────────
 const deleteTarget = ref<AdminTeam | null>(null);

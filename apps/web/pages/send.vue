@@ -6,7 +6,7 @@
       <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100">
         Send Email
       </h2>
-      <p class="text-sm text-gray-400 dark:text-gray-500">
+      <p class="text-sm text-gray-500 dark:text-gray-400">
         Compose and send via the HTTP API
       </p>
     </header>
@@ -43,7 +43,7 @@
             class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
           >
             Template
-            <span class="text-gray-400 dark:text-gray-500 font-normal"
+            <span class="text-gray-500 dark:text-gray-400 font-normal"
               >(optional)</span
             >
           </label>
@@ -59,6 +59,14 @@
               </template>
             </option>
           </select>
+          <p
+            v-if="templatesError"
+            role="alert"
+            aria-live="assertive"
+            class="text-xs text-red-600 dark:text-red-400 mt-1"
+          >
+            Couldn't load templates. You can still compose manually.
+          </p>
         </div>
 
         <!-- Template variables -->
@@ -68,7 +76,7 @@
           >
             Template Variables
           </label>
-          <div class="grid grid-cols-2 gap-2">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div v-for="varName in selectedTemplate.variables" :key="varName">
               <label
                 class="block text-xs text-gray-500 dark:text-gray-400 mb-0.5"
@@ -83,7 +91,7 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label
               class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
@@ -109,18 +117,18 @@
               placeholder="recipient@example.com"
               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             />
-            <p class="text-xs text-gray-400 mt-0.5">
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
               Comma-separated for multiple recipients
             </p>
           </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label
               class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
               >CC
-              <span class="text-gray-400 font-normal">(optional)</span></label
+              <span class="text-gray-500 dark:text-gray-400 font-normal">(optional)</span></label
             >
             <input
               v-model="form.cc"
@@ -128,13 +136,13 @@
               placeholder="cc@example.com"
               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             />
-            <p class="text-xs text-gray-400 mt-0.5">Comma-separated</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Comma-separated</p>
           </div>
           <div>
             <label
               class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
               >BCC
-              <span class="text-gray-400 font-normal">(optional)</span></label
+              <span class="text-gray-500 dark:text-gray-400 font-normal">(optional)</span></label
             >
             <input
               v-model="form.bcc"
@@ -142,7 +150,7 @@
               placeholder="bcc@example.com"
               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             />
-            <p class="text-xs text-gray-400 mt-0.5">Comma-separated</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Comma-separated</p>
           </div>
         </div>
 
@@ -254,6 +262,7 @@
               <button
                 type="button"
                 @click="customHeaders.splice(i, 1)"
+                aria-label="Remove header"
                 class="text-red-400 hover:text-red-600"
               >
                 <Icon name="lucide:x" class="w-4 h-4" />
@@ -279,25 +288,37 @@
               sending ? "Sending..." : useSchedule ? "Schedule" : "Send Email"
             }}
           </UBtn>
-          <p v-if="sendError" class="text-sm text-red-600">{{ sendError }}</p>
+          <p
+            v-if="sendError"
+            role="alert"
+            aria-live="assertive"
+            class="text-sm text-red-600 dark:text-red-400"
+          >
+            {{ sendError }}
+          </p>
         </div>
 
         <!-- Result -->
         <div
           v-if="sendResult"
+          role="status"
+          aria-live="polite"
           class="bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-lg p-4 text-sm"
         >
-          <p class="text-green-800 font-medium">
+          <p class="text-green-800 dark:text-green-300 font-medium">
             {{
               sendResult.status === "scheduled"
                 ? "Email scheduled!"
                 : "Email queued for delivery!"
             }}
           </p>
-          <p class="text-green-600 mt-1">
+          <p class="text-green-600 dark:text-green-400 mt-1">
             Message ID: <code>{{ sendResult.id }}</code>
           </p>
-          <p v-if="sendResult.suppressed?.length" class="text-orange-600 mt-1">
+          <p
+            v-if="sendResult.suppressed?.length"
+            class="text-orange-700 dark:text-orange-400 mt-1"
+          >
             Suppressed recipients: {{ sendResult.suppressed.join(", ") }}
           </p>
           <NuxtLink
@@ -326,10 +347,13 @@ const { data: inboxes } = useAsyncData("send-inboxes", () => api.getInboxes(), {
 });
 
 const templatesList = ref<Template[]>([]);
+const templatesError = ref(false);
 onMounted(async () => {
   try {
     templatesList.value = await api.getTemplates();
-  } catch {}
+  } catch {
+    templatesError.value = true;
+  }
 });
 
 const selectedTemplate = computed(() =>

@@ -7,7 +7,7 @@
         <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100">
           Teams
         </h2>
-        <p class="text-sm text-gray-400 dark:text-gray-500">
+        <p class="text-sm text-gray-500 dark:text-gray-400">
           Manage teams and team members
         </p>
       </div>
@@ -22,7 +22,7 @@
         <div
           v-for="inv in myInvitations"
           :key="inv.id"
-          class="flex items-center justify-between px-4 py-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-lg"
+          class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 py-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-lg"
         >
           <div>
             <p class="text-sm font-medium text-gray-800 dark:text-gray-100">
@@ -45,13 +45,13 @@
         </div>
       </div>
 
-      <div v-if="loading" class="text-gray-400 dark:text-gray-500">
+      <div v-if="loading" class="text-gray-500 dark:text-gray-400">
         Loading...
       </div>
 
       <div
         v-else-if="!teams.length"
-        class="text-center text-gray-400 dark:text-gray-500 py-12"
+        class="text-center text-gray-500 dark:text-gray-400 py-12"
       >
         <Icon
           name="lucide:users-round"
@@ -71,32 +71,37 @@
               class="bg-gray-50 dark:bg-gray-800 text-xs uppercase text-gray-500 dark:text-gray-400"
             >
               <tr>
-                <th class="px-4 py-3">Name</th>
-                <th class="px-4 py-3">Created</th>
-                <th class="px-4 py-3 text-right">Actions</th>
+                <th scope="col" class="px-4 py-3">Name</th>
+                <th scope="col" class="px-4 py-3">Created</th>
+                <th scope="col" class="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
               <tr
                 v-for="team in teams"
                 :key="team.id"
-                class="bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors cursor-pointer"
-                @click="navigateTo(`/teams/${team.id}`)"
+                class="relative bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
               >
                 <td
                   class="px-4 py-3 font-medium text-gray-800 dark:text-gray-200 whitespace-nowrap"
                 >
-                  {{ team.name }}
+                  <NuxtLink
+                    :to="`/teams/${team.id}`"
+                    class="absolute inset-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
+                  >
+                    <span class="sr-only">{{ team.name }}</span>
+                  </NuxtLink>
+                  <span aria-hidden="true">{{ team.name }}</span>
                 </td>
                 <td
-                  class="px-4 py-3 text-gray-400 dark:text-gray-500 whitespace-nowrap"
+                  class="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap"
                 >
                   {{ formatDate(team.createdAt) }}
                 </td>
                 <td class="px-4 py-3 text-right whitespace-nowrap">
                   <Icon
                     name="lucide:chevron-right"
-                    class="w-4 h-4 text-gray-400 dark:text-gray-500 inline-block"
+                    class="w-4 h-4 text-gray-500 dark:text-gray-400 inline-block"
                   />
                 </td>
               </tr>
@@ -110,19 +115,30 @@
     <Teleport to="body">
       <div
         v-if="showCreateModal"
-        class="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+        class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
         @click.self="showCreateModal = false"
       >
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="create-team-title"
           class="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-sm p-6"
         >
           <h2
+            id="create-team-title"
             class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4"
           >
             Create Team
           </h2>
           <form @submit.prevent="handleCreateTeam">
+            <label
+              for="create-team-name"
+              class="block text-sm text-gray-600 dark:text-gray-400 mb-1"
+            >
+              Team name
+            </label>
             <input
+              id="create-team-name"
               v-model="newTeamName"
               type="text"
               required
@@ -218,6 +234,20 @@ const showCreateModal = ref(false);
 const newTeamName = ref("");
 const creating = ref(false);
 const createError = ref("");
+
+function handleEscapeKey(e: KeyboardEvent) {
+  if (e.key === "Escape" && showCreateModal.value) {
+    showCreateModal.value = false;
+  }
+}
+
+onMounted(() => {
+  document.addEventListener("keydown", handleEscapeKey);
+});
+
+onUnmounted(() => {
+  document.removeEventListener("keydown", handleEscapeKey);
+});
 
 async function handleCreateTeam() {
   creating.value = true;

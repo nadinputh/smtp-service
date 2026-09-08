@@ -7,7 +7,7 @@
         <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100">
           User Management
         </h2>
-        <p class="text-sm text-gray-400 dark:text-gray-500">
+        <p class="text-sm text-gray-500 dark:text-gray-400">
           Manage users and assign roles
         </p>
       </div>
@@ -28,13 +28,13 @@
         />
       </div>
 
-      <div v-if="loading" class="text-gray-400 dark:text-gray-500">
+      <div v-if="loading" class="text-gray-500 dark:text-gray-400">
         Loading...
       </div>
 
       <div
         v-else-if="!usersData?.data.length"
-        class="text-center text-gray-400 dark:text-gray-500 py-12"
+        class="text-center text-gray-500 dark:text-gray-400 py-12"
       >
         <Icon name="lucide:users" class="w-12 h-12 mx-auto mb-3 opacity-50" />
         <p>No users found</p>
@@ -85,7 +85,7 @@
                   </span>
                 </td>
                 <td
-                  class="px-4 py-3 text-gray-400 dark:text-gray-500 whitespace-nowrap"
+                  class="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap"
                 >
                   {{ formatDate(u.createdAt) }}
                 </td>
@@ -121,7 +121,7 @@
           v-if="usersData.pagination.pages > 1"
           class="flex items-center justify-between pt-4"
         >
-          <p class="text-xs text-gray-400 dark:text-gray-500">
+          <p class="text-xs text-gray-500 dark:text-gray-400">
             Page {{ usersData.pagination.page }} of
             {{ usersData.pagination.pages }} ({{ usersData.pagination.total }}
             users)
@@ -163,8 +163,12 @@
       >
         <div
           class="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-sm p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="edit-user-title"
         >
           <h2
+            id="edit-user-title"
             class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4"
           >
             Edit User
@@ -185,17 +189,52 @@
             <select
               v-model="editForm.role"
               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-3"
+              @change="pendingAdminConfirm = false"
             >
               <option value="user">User</option>
               <option value="admin">Admin</option>
             </select>
             <p
               v-if="editError"
+              role="alert"
               class="text-sm text-red-600 dark:text-red-400 mb-2"
             >
               {{ editError }}
             </p>
-            <div class="flex justify-end gap-2 mt-4">
+            <div
+              v-if="pendingAdminConfirm"
+              class="mb-2 p-3 rounded-lg border border-orange-200 dark:border-orange-700 bg-orange-50 dark:bg-orange-900/20"
+            >
+              <p
+                class="text-sm font-medium text-orange-700 dark:text-orange-400 mb-1"
+              >
+                Confirm admin access for {{ editUser?.email }}?
+              </p>
+              <p class="text-xs text-orange-600 dark:text-orange-400 mb-3">
+                Admins can manage all users, teams, and inboxes across the
+                system. This grants elevated access.
+              </p>
+              <div class="flex justify-end gap-2">
+                <UBtn
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  @click="pendingAdminConfirm = false"
+                >
+                  Cancel
+                </UBtn>
+                <UBtn
+                  type="button"
+                  variant="warning"
+                  size="xs"
+                  :disabled="saving"
+                  @click="submitEdit"
+                >
+                  {{ saving ? "Saving..." : "Confirm Admin Access" }}
+                </UBtn>
+              </div>
+            </div>
+            <div v-else class="flex justify-end gap-2 mt-4">
               <UBtn type="button" variant="ghost" @click="editUser = null">
                 Cancel
               </UBtn>
@@ -215,8 +254,12 @@
       >
         <div
           class="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-sm p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-user-title"
         >
           <h2
+            id="delete-user-title"
             class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2"
           >
             Delete User
@@ -224,10 +267,12 @@
           <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
             Are you sure you want to delete
             <strong>{{ deleteTarget.email }}</strong
-            >? This action cannot be undone.
+            >? Any inboxes or teams they own may lose their owner and access
+            could be affected. This action cannot be undone.
           </p>
           <p
             v-if="deleteError"
+            role="alert"
             class="text-sm text-red-600 dark:text-red-400 mb-2"
           >
             {{ deleteError }}
@@ -253,8 +298,12 @@
       >
         <div
           class="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-sm p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="create-user-title"
         >
           <h2
+            id="create-user-title"
             class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4"
           >
             Create User
@@ -302,6 +351,7 @@
             </select>
             <p
               v-if="createError"
+              role="alert"
               class="text-sm text-red-600 dark:text-red-400 mb-2"
             >
               {{ createError }}
@@ -330,8 +380,12 @@
       >
         <div
           class="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-sm p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="set-password-title"
         >
           <h2
+            id="set-password-title"
             class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2"
           >
             Set Password
@@ -365,12 +419,15 @@
             />
             <p
               v-if="passwordError"
+              role="alert"
               class="text-sm text-red-600 dark:text-red-400 mb-2"
             >
               {{ passwordError }}
             </p>
             <p
               v-if="passwordSuccess"
+              role="status"
+              aria-live="polite"
               class="text-sm text-green-600 dark:text-green-400 mb-2"
             >
               {{ passwordSuccess }}
@@ -401,6 +458,7 @@ definePageMeta({ layout: "default" });
 useHead({ title: "User Management" });
 
 const api = useApi();
+const toast = useToast();
 const { user: currentUser } = useAuth();
 
 const loading = ref(true);
@@ -432,7 +490,23 @@ async function fetchUsers() {
   }
 }
 
-onMounted(fetchUsers);
+function handleKeydown(e: KeyboardEvent) {
+  if (e.key !== "Escape") return;
+  if (editUser.value) editUser.value = null;
+  else if (deleteTarget.value) deleteTarget.value = null;
+  else if (showCreateModal.value) showCreateModal.value = false;
+  else if (passwordTarget.value) passwordTarget.value = null;
+}
+
+onMounted(() => {
+  fetchUsers();
+  document.addEventListener("keydown", handleKeydown);
+});
+
+onUnmounted(() => {
+  document.removeEventListener("keydown", handleKeydown);
+  if (debounceTimer) clearTimeout(debounceTimer);
+});
 
 // ─── Create ────────────────────────────────────────────────
 const showCreateModal = ref(false);
@@ -455,6 +529,7 @@ async function handleCreate() {
       name: createForm.name || undefined,
       role: createForm.role,
     });
+    toast.success(`User "${createForm.email}" created`);
     showCreateModal.value = false;
     createForm.email = "";
     createForm.password = "";
@@ -471,6 +546,8 @@ async function handleCreate() {
 // ─── Edit ──────────────────────────────────────────────────
 const editUser = ref<AdminUser | null>(null);
 const editForm = reactive({ name: "", role: "user" });
+const editOriginalRole = ref("");
+const pendingAdminConfirm = ref(false);
 const editError = ref("");
 const saving = ref(false);
 
@@ -478,10 +555,26 @@ function openEditModal(u: AdminUser) {
   editUser.value = u;
   editForm.name = u.name ?? "";
   editForm.role = u.role;
+  editOriginalRole.value = u.role;
+  pendingAdminConfirm.value = false;
   editError.value = "";
 }
 
-async function handleEdit() {
+function handleEdit() {
+  if (!editUser.value) return;
+  // Role escalation to admin requires an explicit extra confirmation step
+  if (
+    editForm.role === "admin" &&
+    editOriginalRole.value !== "admin" &&
+    !pendingAdminConfirm.value
+  ) {
+    pendingAdminConfirm.value = true;
+    return;
+  }
+  submitEdit();
+}
+
+async function submitEdit() {
   if (!editUser.value) return;
   saving.value = true;
   editError.value = "";
@@ -490,6 +583,8 @@ async function handleEdit() {
       name: editForm.name || undefined,
       role: editForm.role,
     });
+    toast.success(`User "${editUser.value.email}" updated`);
+    pendingAdminConfirm.value = false;
     editUser.value = null;
     await fetchUsers();
   } catch (e: any) {
@@ -515,6 +610,7 @@ async function handleDelete() {
   deleteError.value = "";
   try {
     await api.deleteAdminUser(deleteTarget.value.id);
+    toast.success(`User "${deleteTarget.value.email}" deleted`);
     deleteTarget.value = null;
     await fetchUsers();
   } catch (e: any) {

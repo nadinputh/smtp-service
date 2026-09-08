@@ -6,6 +6,7 @@
       <div class="flex items-center gap-3">
         <button
           @click="router.back()"
+          aria-label="Go back"
           class="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
         >
           <Icon name="lucide:arrow-left" class="w-4 h-4" />
@@ -16,13 +17,13 @@
           </h2>
           <p
             v-if="selectedTeam"
-            class="text-sm text-gray-400 dark:text-gray-500"
+            class="text-sm text-gray-500 dark:text-gray-400"
           >
             Created {{ formatDate(selectedTeam.createdAt) }}
           </p>
         </div>
       </div>
-      <div v-if="canManage" class="flex gap-2">
+      <div v-if="canManage" class="flex flex-wrap gap-2">
         <UBtn variant="secondary" size="sm" @click="openRenameModal">
           Rename
         </UBtn>
@@ -33,24 +34,39 @@
     </header>
 
     <div class="flex-1 overflow-y-auto p-6">
-      <div v-if="loading" class="text-gray-400 dark:text-gray-500">
+      <div v-if="loading" class="text-gray-500 dark:text-gray-400">
         Loading...
       </div>
 
-      <div v-else-if="!selectedTeam" class="text-center text-gray-400 dark:text-gray-500 py-12">
+      <div
+        v-else-if="!selectedTeam"
+        class="text-center text-gray-500 dark:text-gray-400 py-12"
+      >
+        <Icon
+          name="lucide:search-x"
+          class="w-12 h-12 mx-auto mb-3 opacity-50"
+        />
         <p>Team not found</p>
+        <p class="text-xs mt-1">
+          It may have been deleted, or you may not have access to it.
+        </p>
       </div>
 
       <div v-else>
         <!-- Tabs -->
         <div
-          class="flex gap-1 mb-4 border-b border-gray-200 dark:border-gray-700"
+          role="tablist"
+          class="flex gap-1 mb-4 border-b border-gray-200 dark:border-gray-700 overflow-x-auto"
         >
           <button
             v-for="tab in detailTabs"
             :key="tab.key"
+            :id="`tab-${tab.key}`"
+            role="tab"
+            :aria-selected="activeTab === tab.key"
+            :aria-controls="`panel-${tab.key}`"
             @click="activeTab = tab.key"
-            class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors"
+            class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap"
             :class="
               activeTab === tab.key
                 ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400'
@@ -70,6 +86,9 @@
         <!-- Members Tab -->
         <div
           v-if="activeTab === 'members'"
+          id="panel-members"
+          role="tabpanel"
+          aria-labelledby="tab-members"
           class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5"
         >
           <div class="flex items-center justify-between mb-4">
@@ -89,14 +108,14 @@
 
           <div
             v-if="membersLoading"
-            class="text-gray-400 dark:text-gray-500 text-sm"
+            class="text-gray-500 dark:text-gray-400 text-sm"
           >
             Loading...
           </div>
 
           <div
             v-else-if="!members.length"
-            class="text-sm text-gray-400 dark:text-gray-500 text-center py-6"
+            class="text-sm text-gray-500 dark:text-gray-400 text-center py-6"
           >
             No members yet
           </div>
@@ -110,10 +129,10 @@
                 class="bg-gray-50 dark:bg-gray-800 text-xs uppercase text-gray-500 dark:text-gray-400"
               >
                 <tr>
-                  <th class="px-4 py-3">Email</th>
-                  <th class="px-4 py-3">Name</th>
-                  <th class="px-4 py-3">Role</th>
-                  <th class="px-4 py-3 text-right">Actions</th>
+                  <th scope="col" class="px-4 py-3">Email</th>
+                  <th scope="col" class="px-4 py-3">Name</th>
+                  <th scope="col" class="px-4 py-3">Role</th>
+                  <th scope="col" class="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -133,20 +152,46 @@
                     {{ member.name || "—" }}
                   </td>
                   <td class="px-4 py-3 whitespace-nowrap">
-                    <select
-                      v-if="canManage"
-                      :value="member.role"
-                      @change="
-                        handleRoleChange(
-                          member,
-                          ($event.target as HTMLSelectElement).value,
-                        )
-                      "
-                      class="text-xs border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    >
-                      <option value="member">Member</option>
-                      <option value="admin">Admin</option>
-                    </select>
+                    <div v-if="canManage">
+                      <select
+                        :value="member.role"
+                        @change="
+                          requestRoleChange(
+                            member,
+                            ($event.target as HTMLSelectElement).value,
+                          )
+                        "
+                        class="text-xs border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      >
+                        <option value="member">Member</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                      <div
+                        v-if="
+                          pendingRoleChange &&
+                          pendingRoleChange.member.id === member.id
+                        "
+                        class="mt-1.5 flex items-center gap-2 text-xs"
+                      >
+                        <span class="text-gray-600 dark:text-gray-400">
+                          Change to {{ pendingRoleChange.newRole }}?
+                        </span>
+                        <button
+                          type="button"
+                          class="font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
+                          @click="confirmRoleChange"
+                        >
+                          Confirm
+                        </button>
+                        <button
+                          type="button"
+                          class="text-gray-500 dark:text-gray-400 hover:underline"
+                          @click="cancelRoleChange"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
                     <span
                       v-else
                       class="text-xs px-2 py-0.5 rounded-full font-medium"
@@ -160,14 +205,38 @@
                     </span>
                   </td>
                   <td class="px-4 py-3 text-right whitespace-nowrap">
-                    <UBtn
+                    <div
                       v-if="canManage"
-                      variant="danger"
-                      size="xs"
-                      @click="handleRemoveMember(member)"
+                      class="flex justify-end items-center gap-2"
                     >
-                      Remove
-                    </UBtn>
+                      <template v-if="confirmingRemoveId === member.id">
+                        <span class="text-xs text-gray-600 dark:text-gray-400">
+                          Are you sure?
+                        </span>
+                        <UBtn
+                          variant="danger-filled"
+                          size="xs"
+                          @click="handleRemoveMember(member)"
+                        >
+                          Confirm
+                        </UBtn>
+                        <UBtn
+                          variant="ghost"
+                          size="xs"
+                          @click="confirmingRemoveId = null"
+                        >
+                          Cancel
+                        </UBtn>
+                      </template>
+                      <UBtn
+                        v-else
+                        variant="danger"
+                        size="xs"
+                        @click="confirmingRemoveId = member.id"
+                      >
+                        Remove
+                      </UBtn>
+                    </div>
                   </td>
                 </tr>
               </tbody>
@@ -178,6 +247,9 @@
         <!-- Inboxes Tab -->
         <div
           v-if="activeTab === 'inboxes'"
+          id="panel-inboxes"
+          role="tabpanel"
+          aria-labelledby="tab-inboxes"
           class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5"
         >
           <div class="flex items-center justify-between mb-4">
@@ -190,14 +262,14 @@
 
           <div
             v-if="inboxesLoading"
-            class="text-gray-400 dark:text-gray-500 text-sm"
+            class="text-gray-500 dark:text-gray-400 text-sm"
           >
             Loading...
           </div>
 
           <div
             v-else-if="!teamInboxes.length"
-            class="text-sm text-gray-400 dark:text-gray-500 text-center py-6"
+            class="text-sm text-gray-500 dark:text-gray-400 text-center py-6"
           >
             <p>No inboxes assigned to this team</p>
             <p class="text-xs mt-1">
@@ -215,10 +287,10 @@
                 class="bg-gray-50 dark:bg-gray-800 text-xs uppercase text-gray-500 dark:text-gray-400"
               >
                 <tr>
-                  <th class="px-4 py-3">Name</th>
-                  <th class="px-4 py-3">SMTP Username</th>
-                  <th class="px-4 py-3">Created</th>
-                  <th class="px-4 py-3 text-right">Actions</th>
+                  <th scope="col" class="px-4 py-3">Name</th>
+                  <th scope="col" class="px-4 py-3">SMTP Username</th>
+                  <th scope="col" class="px-4 py-3">Created</th>
+                  <th scope="col" class="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -243,7 +315,7 @@
                     {{ inbox.smtpUsername }}
                   </td>
                   <td
-                    class="px-4 py-3 text-gray-400 dark:text-gray-500 whitespace-nowrap"
+                    class="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap"
                   >
                     {{ formatDate(inbox.createdAt) }}
                   </td>
@@ -266,6 +338,9 @@
         <!-- Invitations Tab -->
         <div
           v-if="activeTab === 'invitations'"
+          id="panel-invitations"
+          role="tabpanel"
+          aria-labelledby="tab-invitations"
           class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5"
         >
           <div class="flex items-center justify-between mb-4">
@@ -285,14 +360,14 @@
 
           <div
             v-if="invitationsLoading"
-            class="text-gray-400 dark:text-gray-500 text-sm"
+            class="text-gray-500 dark:text-gray-400 text-sm"
           >
             Loading...
           </div>
 
           <div
             v-else-if="!invitations.length"
-            class="text-sm text-gray-400 dark:text-gray-500 text-center py-6"
+            class="text-sm text-gray-500 dark:text-gray-400 text-center py-6"
           >
             No pending invitations
           </div>
@@ -306,11 +381,11 @@
                 class="bg-gray-50 dark:bg-gray-800 text-xs uppercase text-gray-500 dark:text-gray-400"
               >
                 <tr>
-                  <th class="px-4 py-3">Email</th>
-                  <th class="px-4 py-3">Role</th>
-                  <th class="px-4 py-3">Invited by</th>
-                  <th class="px-4 py-3">Expires</th>
-                  <th class="px-4 py-3 text-right">Actions</th>
+                  <th scope="col" class="px-4 py-3">Email</th>
+                  <th scope="col" class="px-4 py-3">Role</th>
+                  <th scope="col" class="px-4 py-3">Invited by</th>
+                  <th scope="col" class="px-4 py-3">Expires</th>
+                  <th scope="col" class="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -342,19 +417,43 @@
                     {{ inv.inviterName || inv.inviterEmail }}
                   </td>
                   <td
-                    class="px-4 py-3 text-gray-400 dark:text-gray-500 whitespace-nowrap"
+                    class="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap"
                   >
                     {{ formatDate(inv.expiresAt) }}
                   </td>
                   <td class="px-4 py-3 text-right whitespace-nowrap">
-                    <UBtn
+                    <div
                       v-if="canManage"
-                      variant="danger"
-                      size="xs"
-                      @click="handleRevokeInvitation(inv)"
+                      class="flex justify-end items-center gap-2"
                     >
-                      Revoke
-                    </UBtn>
+                      <template v-if="confirmingRevokeId === inv.id">
+                        <span class="text-xs text-gray-600 dark:text-gray-400">
+                          Are you sure?
+                        </span>
+                        <UBtn
+                          variant="danger-filled"
+                          size="xs"
+                          @click="handleRevokeInvitation(inv)"
+                        >
+                          Confirm
+                        </UBtn>
+                        <UBtn
+                          variant="ghost"
+                          size="xs"
+                          @click="confirmingRevokeId = null"
+                        >
+                          Cancel
+                        </UBtn>
+                      </template>
+                      <UBtn
+                        v-else
+                        variant="danger"
+                        size="xs"
+                        @click="confirmingRevokeId = inv.id"
+                      >
+                        Revoke
+                      </UBtn>
+                    </div>
                   </td>
                 </tr>
               </tbody>
@@ -365,6 +464,9 @@
         <!-- Activity Tab -->
         <div
           v-if="activeTab === 'activity'"
+          id="panel-activity"
+          role="tabpanel"
+          aria-labelledby="tab-activity"
           class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5"
         >
           <h4
@@ -375,14 +477,14 @@
 
           <div
             v-if="activityLoading"
-            class="text-gray-400 dark:text-gray-500 text-sm"
+            class="text-gray-500 dark:text-gray-400 text-sm"
           >
             Loading...
           </div>
 
           <div
             v-else-if="!activity.length"
-            class="text-sm text-gray-400 dark:text-gray-500 text-center py-6"
+            class="text-sm text-gray-500 dark:text-gray-400 text-center py-6"
           >
             No activity recorded yet
           </div>
@@ -406,7 +508,7 @@
                   }}</span>
                   {{ activityDescription(entry) }}
                 </p>
-                <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                   {{ formatDateTime(entry.createdAt) }}
                 </p>
               </div>
@@ -421,19 +523,30 @@
       <!-- Rename Modal -->
       <div
         v-if="showRenameModal"
-        class="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+        class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
         @click.self="showRenameModal = false"
       >
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="rename-team-title"
           class="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-sm p-6"
         >
           <h2
+            id="rename-team-title"
             class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4"
           >
             Rename Team
           </h2>
           <form @submit.prevent="handleRename">
+            <label
+              for="rename-team-name"
+              class="block text-sm text-gray-600 dark:text-gray-400 mb-1"
+            >
+              New team name
+            </label>
             <input
+              id="rename-team-name"
               v-model="renameName"
               type="text"
               required
@@ -465,19 +578,24 @@
       <!-- Add Member Modal -->
       <div
         v-if="showAddMemberModal"
-        class="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+        class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
         @click.self="closeAddMemberModal"
       >
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="add-member-title"
           class="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-sm p-6"
         >
           <h2
+            id="add-member-title"
             class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4"
           >
             Add Team Member
           </h2>
           <form @submit.prevent="handleAddMember">
             <label
+              for="add-member-search"
               class="block text-sm text-gray-600 dark:text-gray-400 mb-1"
             >
               Search User
@@ -486,15 +604,17 @@
               <div class="relative">
                 <Icon
                   name="lucide:search"
-                  class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
+                  class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400"
                 />
                 <input
+                  id="add-member-search"
                   v-model="userSearchQuery"
                   type="text"
                   placeholder="Search by name or email..."
                   class="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   @input="debouncedSearch"
                   @focus="showSearchResults = true"
+                  @blur="handleSearchBlur"
                 />
               </div>
 
@@ -520,14 +640,15 @@
                   </p>
                   <p
                     v-if="selectedUser.name"
-                    class="text-xs text-gray-400 dark:text-gray-500 truncate"
+                    class="text-xs text-gray-500 dark:text-gray-400 truncate"
                   >
                     {{ selectedUser.email }}
                   </p>
                 </div>
                 <button
                   type="button"
-                  class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                  aria-label="Clear selected user"
+                  class="text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                   @click="clearSelectedUser"
                 >
                   <Icon name="lucide:x" class="w-4 h-4" />
@@ -545,13 +666,13 @@
               >
                 <div
                   v-if="searching"
-                  class="px-3 py-3 text-sm text-gray-400 dark:text-gray-500 text-center"
+                  class="px-3 py-3 text-sm text-gray-500 dark:text-gray-400 text-center"
                 >
                   Searching...
                 </div>
                 <div
                   v-else-if="!searchResults.length"
-                  class="px-3 py-3 text-sm text-gray-400 dark:text-gray-500 text-center"
+                  class="px-3 py-3 text-sm text-gray-500 dark:text-gray-400 text-center"
                 >
                   No users found
                 </div>
@@ -575,7 +696,7 @@
                     </p>
                     <p
                       v-if="user.name"
-                      class="text-xs text-gray-400 dark:text-gray-500 truncate"
+                      class="text-xs text-gray-500 dark:text-gray-400 truncate"
                     >
                       {{ user.email }}
                     </p>
@@ -585,11 +706,13 @@
             </div>
 
             <label
+              for="add-member-role"
               class="block text-sm text-gray-600 dark:text-gray-400 mb-1 mt-3"
             >
               Role
             </label>
             <select
+              id="add-member-role"
               v-model="addMemberForm.role"
               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-3"
             >
@@ -621,13 +744,17 @@
       <!-- Delete Team Confirmation -->
       <div
         v-if="showDeleteTeamModal"
-        class="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+        class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
         @click.self="showDeleteTeamModal = false"
       >
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-team-title"
           class="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-sm p-6"
         >
           <h2
+            id="delete-team-title"
             class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2"
           >
             Delete Team
@@ -661,24 +788,30 @@
       <!-- Invite by Email Modal -->
       <div
         v-if="showInviteModal"
-        class="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+        class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
         @click.self="closeInviteModal"
       >
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="invite-title"
           class="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-sm p-6"
         >
           <h2
+            id="invite-title"
             class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4"
           >
             Invite by Email
           </h2>
           <form @submit.prevent="handleSendInvitation">
             <label
+              for="invite-email"
               class="block text-sm text-gray-600 dark:text-gray-400 mb-1"
             >
               Email Address
             </label>
             <input
+              id="invite-email"
               v-model="inviteForm.email"
               type="email"
               required
@@ -686,11 +819,13 @@
               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             />
             <label
+              for="invite-role"
               class="block text-sm text-gray-600 dark:text-gray-400 mb-1 mt-3"
             >
               Role
             </label>
             <select
+              id="invite-role"
               v-model="inviteForm.role"
               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             >
@@ -755,6 +890,7 @@ const invitationsLoading = ref(false);
 // Activity log
 const activity = ref<TeamActivity[]>([]);
 const activityLoading = ref(false);
+const activityLoaded = ref(false);
 
 const canManage = computed(() => {
   const role = selectedTeam.value?.currentUserRole;
@@ -836,9 +972,10 @@ async function loadTeam() {
     });
 
   api
-    .getTeamActivity(teamId)
+    .getTeamActivity(teamId, 50)
     .then((r) => {
       activity.value = r;
+      activityLoaded.value = true;
     })
     .catch(() => {
       activity.value = [];
@@ -851,16 +988,38 @@ async function loadTeam() {
 onMounted(loadTeam);
 
 watch(activeTab, async (tab) => {
-  if (tab === "activity") {
+  if (tab === "activity" && !activityLoaded.value) {
     activityLoading.value = true;
     try {
-      activity.value = await api.getTeamActivity(teamId);
+      activity.value = await api.getTeamActivity(teamId, 50);
+      activityLoaded.value = true;
     } catch {
       activity.value = [];
     } finally {
       activityLoading.value = false;
     }
   }
+});
+
+function handleEscapeKey(e: KeyboardEvent) {
+  if (e.key !== "Escape") return;
+  if (showRenameModal.value) {
+    showRenameModal.value = false;
+  } else if (showAddMemberModal.value) {
+    closeAddMemberModal();
+  } else if (showDeleteTeamModal.value) {
+    showDeleteTeamModal.value = false;
+  } else if (showInviteModal.value) {
+    closeInviteModal();
+  }
+}
+
+onMounted(() => {
+  document.addEventListener("keydown", handleEscapeKey);
+});
+
+onUnmounted(() => {
+  document.removeEventListener("keydown", handleEscapeKey);
 });
 
 // ─── Rename Team ───────────────────────────────────────────
@@ -921,6 +1080,10 @@ const showAddMemberModal = ref(false);
 const addMemberForm = reactive({ role: "member" });
 const addingMember = ref(false);
 const addMemberError = ref("");
+const confirmingRemoveId = ref<string | null>(null);
+const pendingRoleChange = ref<{ member: TeamMember; newRole: string } | null>(
+  null,
+);
 
 // User search state
 const userSearchQuery = ref("");
@@ -968,6 +1131,13 @@ function clearSelectedUser() {
   searchResults.value = [];
 }
 
+function handleSearchBlur() {
+  // Delay so a click on a dropdown result still registers before we hide it.
+  setTimeout(() => {
+    showSearchResults.value = false;
+  }, 150);
+}
+
 function closeAddMemberModal() {
   showAddMemberModal.value = false;
   clearSelectedUser();
@@ -995,14 +1165,26 @@ async function handleAddMember() {
   }
 }
 
-async function handleRoleChange(member: TeamMember, newRole: string) {
-  if (!selectedTeam.value || newRole === member.role) return;
+function requestRoleChange(member: TeamMember, newRole: string) {
+  if (newRole === member.role) return;
+  pendingRoleChange.value = { member, newRole };
+}
+
+function cancelRoleChange() {
+  pendingRoleChange.value = null;
+}
+
+async function confirmRoleChange() {
+  if (!selectedTeam.value || !pendingRoleChange.value) return;
+  const { member, newRole } = pendingRoleChange.value;
   try {
     await api.updateTeamMemberRole(selectedTeam.value.id, member.userId, newRole);
     toast.success(`Role changed to ${newRole}`);
     members.value = await api.getTeamMembers(teamId);
   } catch {
     toast.error("Failed to change role");
+  } finally {
+    pendingRoleChange.value = null;
   }
 }
 
@@ -1014,6 +1196,8 @@ async function handleRemoveMember(member: TeamMember) {
     members.value = await api.getTeamMembers(teamId);
   } catch {
     toast.error("Failed to remove member");
+  } finally {
+    confirmingRemoveId.value = null;
   }
 }
 
@@ -1034,6 +1218,7 @@ const showInviteModal = ref(false);
 const inviteForm = reactive({ email: "", role: "member" });
 const sendingInvite = ref(false);
 const inviteError = ref("");
+const confirmingRevokeId = ref<string | null>(null);
 
 function closeInviteModal() {
   showInviteModal.value = false;
@@ -1055,7 +1240,7 @@ async function handleSendInvitation() {
     toast.success(`Invitation sent to ${inviteForm.email}`);
     closeInviteModal();
     invitations.value = await api.getTeamInvitations(teamId);
-    activity.value = await api.getTeamActivity(teamId);
+    activity.value = await api.getTeamActivity(teamId, 50);
   } catch (e: any) {
     inviteError.value = e?.data?.error || "Failed to send invitation";
   } finally {
@@ -1071,6 +1256,8 @@ async function handleRevokeInvitation(inv: TeamInvitationDetail) {
     invitations.value = await api.getTeamInvitations(teamId);
   } catch {
     toast.error("Failed to revoke invitation");
+  } finally {
+    confirmingRevokeId.value = null;
   }
 }
 

@@ -6,7 +6,7 @@
           <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100">
             Admin Analytics
           </h1>
-          <p class="text-sm text-gray-400 dark:text-gray-500">
+          <p class="text-sm text-gray-500 dark:text-gray-400">
             System-wide metrics across all users and inboxes
           </p>
         </div>
@@ -17,7 +17,8 @@
             v-for="p in periods"
             :key="p.value"
             @click="selectedPeriod = p.value"
-            class="px-3 py-1.5 text-sm rounded-md transition-colors"
+            :aria-pressed="selectedPeriod === p.value"
+            class="px-3 py-1.5 text-sm rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
             :class="
               selectedPeriod === p.value
                 ? 'bg-indigo-600 text-white'
@@ -29,7 +30,7 @@
         </div>
       </div>
 
-      <div v-if="loading" class="text-center text-gray-400 py-20">
+      <div v-if="loading" class="text-center text-gray-500 dark:text-gray-400 py-20">
         Loading analytics...
       </div>
 
@@ -40,7 +41,7 @@
             class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5"
           >
             <p
-              class="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider"
+              class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider"
             >
               Total Users
             </p>
@@ -52,7 +53,7 @@
             class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5"
           >
             <p
-              class="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider"
+              class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider"
             >
               Total Inboxes
             </p>
@@ -64,7 +65,7 @@
             class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5"
           >
             <p
-              class="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider"
+              class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider"
             >
               Total Teams
             </p>
@@ -80,14 +81,14 @@
             class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5"
           >
             <p
-              class="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider"
+              class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider"
             >
               Total Messages
             </p>
             <p class="text-3xl font-bold text-gray-800 dark:text-gray-100 mt-1">
               {{ overview?.totalMessages ?? 0 }}
             </p>
-            <p class="text-xs text-gray-400 mt-1">
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
               {{ overview?.period.total ?? 0 }} in last
               {{ overview?.period.days }}d
             </p>
@@ -96,14 +97,14 @@
             class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5"
           >
             <p
-              class="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider"
+              class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider"
             >
               Delivered
             </p>
             <p class="text-3xl font-bold text-green-600 mt-1">
               {{ overview?.totalDelivered ?? 0 }}
             </p>
-            <p class="text-xs text-gray-400 mt-1">
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
               {{ overview?.deliveryRate ?? 0 }}% delivery rate
             </p>
           </div>
@@ -111,14 +112,14 @@
             class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5"
           >
             <p
-              class="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider"
+              class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider"
             >
               Bounced
             </p>
             <p class="text-3xl font-bold text-red-600 mt-1">
               {{ overview?.totalBounced ?? 0 }}
             </p>
-            <p class="text-xs text-gray-400 mt-1">
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
               {{ overview?.bounceRate ?? 0 }}% bounce rate
             </p>
           </div>
@@ -126,14 +127,14 @@
             class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5"
           >
             <p
-              class="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider"
+              class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider"
             >
               Received
             </p>
             <p class="text-3xl font-bold text-indigo-600 mt-1">
               {{ overview?.totalReceived ?? 0 }}
             </p>
-            <p class="text-xs text-gray-400 mt-1">
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
               {{ overview?.period.received ?? 0 }} in period
             </p>
           </div>
@@ -158,7 +159,8 @@
                   v-for="m in metrics"
                   :key="m.value"
                   @click="selectedMetric = m.value"
-                  class="px-2 py-1 text-xs rounded transition-colors"
+                  :aria-pressed="selectedMetric === m.value"
+                  class="px-2 py-1 text-xs rounded transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
                   :class="
                     selectedMetric === m.value
                       ? 'bg-white dark:bg-gray-700 shadow text-gray-800 dark:text-gray-100'
@@ -175,6 +177,8 @@
                 :viewBox="`0 0 ${chartWidth} ${chartHeight}`"
                 class="w-full h-full"
                 preserveAspectRatio="none"
+                role="img"
+                :aria-label="chartSummaryLabel"
               >
                 <line
                   v-for="i in 5"
@@ -183,7 +187,7 @@
                   :y1="(chartHeight / 5) * i"
                   :x2="chartWidth"
                   :y2="(chartHeight / 5) * i"
-                  stroke="#f3f4f6"
+                  :stroke="gridStroke"
                   stroke-width="1"
                 />
                 <polygon :points="areaPoints" :fill="metricColor + '20'" />
@@ -195,8 +199,8 @@
                   stroke-linejoin="round"
                 />
                 <circle
-                  v-for="(pt, idx) in chartPoints"
-                  :key="idx"
+                  v-for="pt in chartPoints"
+                  :key="`${pt.x}-${pt.y}`"
                   :cx="pt.x"
                   :cy="pt.y"
                   r="3"
@@ -206,14 +210,30 @@
               </svg>
               <div
                 v-else
-                class="h-full flex items-center justify-center text-sm text-gray-400"
+                class="h-full flex items-center justify-center text-sm text-gray-500 dark:text-gray-400"
               >
                 No data
               </div>
             </div>
+            <!-- Accessible text alternative for the SVG trend chart -->
+            <table v-if="timeseries" class="sr-only">
+              <caption>{{ chartSummaryLabel }}</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Date</th>
+                  <th scope="col">{{ selectedMetricLabel }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(label, i) in timeseries.labels" :key="label">
+                  <td>{{ label }}</td>
+                  <td>{{ timeseries.values[i] }}</td>
+                </tr>
+              </tbody>
+            </table>
             <div
               v-if="timeseries"
-              class="flex justify-between mt-1 text-[10px] text-gray-400"
+              class="flex justify-between mt-1 text-xs text-gray-500 dark:text-gray-400"
             >
               <span>{{ timeseries.labels[0] }}</span>
               <span v-if="timeseries.labels.length > 2">{{
@@ -272,7 +292,7 @@
             </h3>
             <div
               v-if="!topUsers.length"
-              class="text-sm text-gray-400 dark:text-gray-500 py-4 text-center"
+              class="text-sm text-gray-500 dark:text-gray-400 py-4 text-center"
             >
               No data yet
             </div>
@@ -297,7 +317,7 @@
                     >
                     <span
                       v-if="u.name"
-                      class="block text-xs text-gray-400 dark:text-gray-500"
+                      class="block text-xs text-gray-500 dark:text-gray-400"
                       >{{ u.email }}</span
                     >
                   </td>
@@ -327,7 +347,7 @@
             </h3>
             <div
               v-if="!topInboxes.length"
-              class="text-sm text-gray-400 dark:text-gray-500 py-4 text-center"
+              class="text-sm text-gray-500 dark:text-gray-400 py-4 text-center"
             >
               No data yet
             </div>
@@ -412,16 +432,47 @@ const metrics = [
   { label: "Received", value: "received" },
 ];
 
-const metricColors: Record<string, string> = {
+const { isDark } = useDarkMode();
+
+const metricColorsLight: Record<string, string> = {
   sent: "#6366f1",
   delivered: "#22c55e",
   bounced: "#ef4444",
   received: "#6366f1",
 };
 
-const metricColor = computed(
-  () => metricColors[selectedMetric.value] ?? "#6366f1",
+const metricColorsDark: Record<string, string> = {
+  sent: "#818cf8",
+  delivered: "#4ade80",
+  bounced: "#f87171",
+  received: "#818cf8",
+};
+
+const metricColor = computed(() => {
+  const colors = isDark.value ? metricColorsDark : metricColorsLight;
+  return colors[selectedMetric.value] ?? colors.sent;
+});
+
+const gridStroke = computed(() => (isDark.value ? "#374151" : "#f3f4f6"));
+
+const selectedMetricLabel = computed(
+  () =>
+    metrics.find((m) => m.value === selectedMetric.value)?.label ??
+    selectedMetric.value,
 );
+
+const chartSummaryLabel = computed(() => {
+  if (!timeseries.value || !timeseries.value.values.length) {
+    return `No ${selectedMetricLabel.value.toLowerCase()} data available for the selected period`;
+  }
+  const vals = timeseries.value.values;
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const first = vals[0];
+  const last = vals[vals.length - 1];
+  const trend = last > first ? "trending up" : last < first ? "trending down" : "flat";
+  return `${selectedMetricLabel.value} email volume trend, ${trend} overall: ranges from ${min} to ${max}, starting at ${first} and ending at ${last} across ${vals.length} data points.`;
+});
 
 // ─── Chart ──────────────────────────────────────────────────
 const chartWidth = 600;

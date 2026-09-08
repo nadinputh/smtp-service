@@ -1,8 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import { getEnv } from "@mailpocket/env";
-import { getDb, messages, inboxes } from "@mailpocket/db";
+import { getDb, messages, inboxes, inboxRules } from "@mailpocket/db";
 import { createStorage, type StorageClient } from "@mailpocket/storage";
-import { eq, and } from "drizzle-orm";
+import { eq, and, ilike, gte, lte, sql } from "drizzle-orm";
+import { buildRuleWhere } from "../lib/rule-conditions.js";
 import { authGuard } from "../middleware/auth.js";
 import { requireInboxRole } from "../middleware/access.js";
 import archiver from "archiver";
@@ -30,12 +31,33 @@ export function registerExportRoutes(app: FastifyInstance) {
   );
 
   // ─── Export Messages ────────────────────────────────────
-  app.get<{ Params: { id: string }; Querystring: { format?: string } }>(
+  app.get<{
+    Params: { id: string };
+    Querystring: {
+      format?: string;
+      q?: string;
+      from?: string;
+      to?: string;
+      status?: string;
+      after?: string;
+      before?: string;
+      ruleId?: string;
+    };
+  }>(
     "/api/inboxes/:id/export",
     { preHandler: [authGuard, requireInboxRole("viewer")] },
     async (request, reply) => {
       const { id } = request.params;
-      const format = request.query.format ?? "csv";
+      const {
+        format = "csv",
+        q,
+        from: fromFilter,
+        to: toFilter,
+        status: statusFilter,
+        after,
+        before,
+        ruleId,
+      } = request.query;
 
       // Get inbox name for the export filename
       const [inbox] = await db
@@ -48,11 +70,59 @@ export function registerExportRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Inbox not found" });
       }
 
-      // Fetch all messages for this inbox
+      // Same filter conditions as the messages list endpoint, so
+      // "export" reflects whatever is currently on screen.
+      const conditions = [eq(messages.inboxId, id)];
+
+      if (q) {
+        const pattern = `%${q}%`;
+        conditions.push(
+          sql`(${messages.subject} ILIKE ${pattern} OR ${messages.from} ILIKE ${pattern} OR ${messages.to}::text ILIKE ${pattern})`,
+        );
+      }
+      if (fromFilter) {
+        conditions.push(ilike(messages.from, `%${fromFilter}%`));
+      }
+      if (toFilter) {
+        conditions.push(
+          sql`${messages.to}::text ILIKE ${"%" + toFilter + "%"}`,
+        );
+      }
+      if (statusFilter) {
+        conditions.push(eq(messages.status, statusFilter));
+      }
+      if (after) {
+        const afterDate = new Date(after);
+        if (!isNaN(afterDate.getTime())) {
+          conditions.push(gte(messages.createdAt, afterDate));
+        }
+      }
+      if (before) {
+        const beforeDate = new Date(before);
+        if (!isNaN(beforeDate.getTime())) {
+          beforeDate.setUTCHours(23, 59, 59, 999);
+          conditions.push(lte(messages.createdAt, beforeDate));
+        }
+      }
+      if (ruleId) {
+        const [rule] = await db
+          .select()
+          .from(inboxRules)
+          .where(and(eq(inboxRules.id, ruleId), eq(inboxRules.inboxId, id)))
+          .limit(1);
+        if (rule) {
+          const ruleWhere = buildRuleWhere(
+            rule.conditions,
+            rule.logic ?? "AND",
+          );
+          if (ruleWhere) conditions.push(ruleWhere);
+        }
+      }
+
       const inboxMessages = await db
         .select()
         .from(messages)
-        .where(eq(messages.inboxId, id));
+        .where(and(...conditions));
 
       if (format === "csv") {
         return exportCsv(reply, inbox.name, inboxMessages);

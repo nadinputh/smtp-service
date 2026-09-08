@@ -6,10 +6,11 @@
       <div
         class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8 text-center"
       >
-        <div v-if="loading" class="space-y-4">
+        <h1 class="sr-only">Authenticating</h1>
+        <div v-if="loading" class="space-y-4" role="status" aria-live="polite">
           <Icon
             name="lucide:loader-2"
-            class="w-10 h-10 text-indigo-600 mx-auto animate-spin"
+            class="w-10 h-10 text-indigo-600 dark:text-indigo-400 mx-auto animate-spin motion-reduce:animate-none"
           />
           <p class="text-sm text-gray-600 dark:text-gray-300">
             Completing sign in...
@@ -20,10 +21,10 @@
             name="lucide:alert-circle"
             class="w-10 h-10 text-red-500 mx-auto"
           />
-          <p class="text-sm text-red-600">{{ error }}</p>
+          <p role="alert" class="text-sm text-red-600 dark:text-red-400">{{ error }}</p>
           <NuxtLink
             to="/login"
-            class="inline-block mt-2 text-sm text-indigo-600 hover:text-indigo-500 font-medium"
+            class="inline-block mt-2 text-sm text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300 font-medium"
           >
             Back to login
           </NuxtLink>
@@ -55,7 +56,7 @@ onMounted(async () => {
 
   try {
     await handleOAuth2Callback(code, state);
-    navigateTo("/");
+    await navigateTo("/");
   } catch (e: any) {
     error.value = e?.data?.error || e?.message || "Authentication failed";
   } finally {

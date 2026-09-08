@@ -7,7 +7,7 @@
         <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100">
           Account Settings
         </h2>
-        <p class="text-sm text-gray-400 dark:text-gray-500">
+        <p class="text-sm text-gray-500 dark:text-gray-400">
           Manage your profile and security
         </p>
       </div>
@@ -68,11 +68,14 @@
             <form @submit.prevent="handleChangePassword" class="space-y-3">
               <div>
                 <label
+                  for="current-password"
                   class="block text-sm text-gray-600 dark:text-gray-400 mb-1"
                 >
-                  Current Password <span class="text-red-500">*</span>
+                  Current Password
+                  <span class="text-red-500 dark:text-red-400">*</span>
                 </label>
                 <input
+                  id="current-password"
                   v-model="form.currentPassword"
                   type="password"
                   required
@@ -82,11 +85,14 @@
               </div>
               <div>
                 <label
+                  for="new-password"
                   class="block text-sm text-gray-600 dark:text-gray-400 mb-1"
                 >
-                  New Password <span class="text-red-500">*</span>
+                  New Password
+                  <span class="text-red-500 dark:text-red-400">*</span>
                 </label>
                 <input
+                  id="new-password"
                   v-model="form.newPassword"
                   type="password"
                   required
@@ -97,11 +103,14 @@
               </div>
               <div>
                 <label
+                  for="confirm-password"
                   class="block text-sm text-gray-600 dark:text-gray-400 mb-1"
                 >
-                  Confirm New Password <span class="text-red-500">*</span>
+                  Confirm New Password
+                  <span class="text-red-500 dark:text-red-400">*</span>
                 </label>
                 <input
+                  id="confirm-password"
                   v-model="form.confirmPassword"
                   type="password"
                   required
@@ -110,7 +119,7 @@
                   class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                 />
               </div>
-              <p v-if="error" class="text-sm text-red-600 dark:text-red-400">
+              <p v-if="error" role="alert" class="text-sm text-red-600 dark:text-red-400">
                 {{ error }}
               </p>
               <p

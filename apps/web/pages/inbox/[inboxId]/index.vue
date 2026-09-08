@@ -9,7 +9,7 @@
           <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100">
             {{ inbox?.name ?? "Inbox" }}
           </h2>
-          <p class="text-sm text-gray-400">
+          <p class="text-sm text-gray-500 dark:text-gray-400">
             {{ totalMessages }} messages
             <span v-if="unreadCount > 0" class="text-indigo-600 font-medium"
               >&middot; {{ unreadCount }} unread</span
@@ -18,7 +18,7 @@
         </div>
         <div class="flex items-center gap-2">
           <!-- Export dropdown -->
-          <div class="relative">
+          <div ref="exportMenuRef" class="relative">
             <UBtn
               variant="secondary"
               size="sm"
@@ -29,15 +29,23 @@
             </UBtn>
             <div
               v-if="showExportMenu"
-              class="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-10 w-36"
+              role="dialog"
+              aria-label="Export options"
+              class="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-20 w-44"
             >
+              <p
+                class="px-3 pb-1 text-[11px] font-medium text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700 mb-1"
+              >
+                {{
+                  hasActiveFilters
+                    ? "Export filtered results"
+                    : "Export entire inbox"
+                }}
+              </p>
               <button
                 class="block w-full text-left px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
                 @click="
-                  authedDownload(
-                    `${apiBase}/api/inboxes/${inboxId}/export?format=csv`,
-                    `${inboxId}-export.csv`,
-                  );
+                  authedDownload(buildExportUrl('csv'), `${inboxId}-export.csv`);
                   showExportMenu = false;
                 "
               >
@@ -46,10 +54,7 @@
               <button
                 class="block w-full text-left px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
                 @click="
-                  authedDownload(
-                    `${apiBase}/api/inboxes/${inboxId}/export?format=mbox`,
-                    `${inboxId}-export.mbox`,
-                  );
+                  authedDownload(buildExportUrl('mbox'), `${inboxId}-export.mbox`);
                   showExportMenu = false;
                 "
               >
@@ -58,10 +63,7 @@
               <button
                 class="block w-full text-left px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
                 @click="
-                  authedDownload(
-                    `${apiBase}/api/inboxes/${inboxId}/export?format=eml`,
-                    `${inboxId}-export.zip`,
-                  );
+                  authedDownload(buildExportUrl('eml'), `${inboxId}-export.zip`);
                   showExportMenu = false;
                 "
               >
@@ -83,6 +85,7 @@
             v-if="isEditorOrAbove"
             variant="secondary"
             size="sm"
+            data-creds-toggle
             @click="showCreds = !showCreds"
           >
             <Icon name="lucide:key" class="w-4 h-4" />
@@ -105,36 +108,44 @@
     <!-- SMTP Credentials panel -->
     <div
       v-if="showCreds && inboxDetail"
+      ref="credsPanelRef"
+      role="dialog"
+      aria-label="SMTP credentials"
       class="px-6 py-3 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 text-sm space-y-2 shrink-0"
     >
-      <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+      <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
         SMTP Settings
       </p>
       <div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-        <span class="text-gray-500">Host:</span>
+        <span class="text-gray-500 dark:text-gray-400">Host:</span>
         <code class="text-gray-800 dark:text-gray-200">{{ smtpHost }}</code>
-        <span class="text-gray-500">Port:</span>
+        <span class="text-gray-500 dark:text-gray-400">Port:</span>
         <code class="text-gray-800 dark:text-gray-200">{{ smtpPort }}</code>
-        <span class="text-gray-500">Username:</span>
+        <span class="text-gray-500 dark:text-gray-400">Username:</span>
         <div class="flex items-center gap-1">
           <code class="text-gray-800 dark:text-gray-200">{{
             inboxDetail.smtpUsername
           }}</code>
           <button
-            @click="copy(inboxDetail.smtpUsername)"
-            class="text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+            @click="copy(inboxDetail.smtpUsername, 'username')"
+            :aria-label="copiedField === 'username' ? 'Username copied' : 'Copy username'"
+            class="text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
           >
-            <Icon name="lucide:copy" class="w-3.5 h-3.5" />
+            <Icon
+              :name="copiedField === 'username' ? 'lucide:check' : 'lucide:copy'"
+              class="w-3.5 h-3.5"
+            />
           </button>
         </div>
-        <span class="text-gray-500">Password:</span>
+        <span class="text-gray-500 dark:text-gray-400">Password:</span>
         <div class="flex items-center gap-1">
           <code class="text-gray-800 dark:text-gray-200">{{
             showPassword ? inboxDetail.smtpPassword : "••••••••••••"
           }}</code>
           <button
             @click="showPassword = !showPassword"
-            class="text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+            :aria-label="showPassword ? 'Hide password' : 'Show password'"
+            class="text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
           >
             <Icon
               :name="showPassword ? 'lucide:eye-off' : 'lucide:eye'"
@@ -142,14 +153,22 @@
             />
           </button>
           <button
-            @click="copy(inboxDetail.smtpPassword)"
-            class="text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+            @click="copy(inboxDetail.smtpPassword, 'password')"
+            :aria-label="copiedField === 'password' ? 'Password copied' : 'Copy password'"
+            class="text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
           >
-            <Icon name="lucide:copy" class="w-3.5 h-3.5" />
+            <Icon
+              :name="copiedField === 'password' ? 'lucide:check' : 'lucide:copy'"
+              class="w-3.5 h-3.5"
+            />
           </button>
         </div>
       </div>
     </div>
+
+    <p v-if="downloadError" role="alert" class="px-6 py-1.5 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border-b border-gray-200 dark:border-gray-700 shrink-0">
+      {{ downloadError }}
+    </p>
 
     <!-- Tab bar: Messages / Webhooks -->
     <div
@@ -158,33 +177,21 @@
       <nav class="flex gap-4 -mb-px">
         <button
           class="py-3 text-sm border-b-2 transition-colors"
-          :class="
-            activeTab === 'messages'
-              ? 'border-indigo-500 text-indigo-600 font-medium'
-              : 'border-transparent text-gray-400 hover:text-gray-600'
-          "
+          :class="activeTab === 'messages' ? 'border-indigo-500 text-indigo-600 font-medium' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-600'"
           @click="activeTab = 'messages'"
         >
           Messages ({{ totalMessages }})
         </button>
         <button
           class="py-3 text-sm border-b-2 transition-colors"
-          :class="
-            activeTab === 'webhooks'
-              ? 'border-indigo-500 text-indigo-600 font-medium'
-              : 'border-transparent text-gray-400 hover:text-gray-600'
-          "
+          :class="activeTab === 'webhooks' ? 'border-indigo-500 text-indigo-600 font-medium' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-600'"
           @click="activeTab = 'webhooks'"
         >
           Webhooks
         </button>
         <button
           class="py-3 text-sm border-b-2 transition-colors"
-          :class="
-            activeTab === 'members'
-              ? 'border-indigo-500 text-indigo-600 font-medium'
-              : 'border-transparent text-gray-400 hover:text-gray-600'
-          "
+          :class="activeTab === 'members' ? 'border-indigo-500 text-indigo-600 font-medium' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-600'"
           @click="
             activeTab = 'members';
             loadMembers();
@@ -248,7 +255,7 @@
         </template>
         <button
           v-if="isEditorOrAbove"
-          class="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs border border-dashed border-gray-300 dark:border-gray-600 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:border-gray-400 transition-colors shrink-0"
+          class="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs border border-dashed border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:border-gray-400 transition-colors shrink-0"
           @click="openCreateRule"
         >
           <Icon name="lucide:plus" class="w-3 h-3" />
@@ -264,7 +271,7 @@
           <div class="relative flex-1">
             <Icon
               name="lucide:search"
-              class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
+              class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400"
             />
             <input
               v-model="searchQuery"
@@ -319,9 +326,9 @@
         </div>
       </div>
 
-      <div v-if="pending" class="p-6 text-gray-400">Loading messages...</div>
+      <div v-if="pending" class="p-6 text-gray-500 dark:text-gray-400">Loading messages...</div>
 
-      <div v-else-if="!messages?.length" class="p-6 text-center text-gray-400">
+      <div v-else-if="!messages?.length" class="p-6 text-center text-gray-500 dark:text-gray-400">
         <Icon name="lucide:inbox" class="w-12 h-12 mx-auto mb-3 opacity-50" />
         <p>
           {{
@@ -332,7 +339,7 @@
         </p>
         <p v-if="!searchQuery && !hasActiveFilters" class="text-xs mt-1">
           Send an email to
-          <code class="bg-gray-100 px-1 rounded">{{
+          <code class="bg-gray-100 dark:bg-gray-700 dark:text-gray-200 px-1 rounded">{{
             inboxDetail?.smtpUsername
           }}</code>
           on {{ smtpHost }}:{{ smtpPort }}
@@ -372,7 +379,7 @@
                   {{ msg.from }}
                 </span>
               </div>
-              <span class="text-xs text-gray-400 shrink-0 ml-3">
+              <span class="text-xs text-gray-500 dark:text-gray-400 shrink-0 ml-3">
                 {{ formatDate(msg.date || msg.createdAt) }}
               </span>
             </div>
@@ -388,12 +395,12 @@
             </p>
             <p
               v-if="msg.textPreview"
-              class="text-xs text-gray-400 dark:text-gray-500 truncate mt-0.5"
+              class="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5"
             >
               {{ msg.textPreview }}
             </p>
             <div class="flex items-center gap-2 mt-1 min-w-0">
-              <span class="text-xs text-gray-400 truncate min-w-0 flex-1"
+              <span class="text-xs text-gray-500 dark:text-gray-400 truncate min-w-0 flex-1"
                 >To: {{ formatRecipients(msg.to) }}</span
               >
               <span
@@ -412,7 +419,7 @@
                 v-if="msg.isRead"
                 @click.prevent="toggleReadStatus(msg)"
                 :disabled="togglingReadIds.has(msg.id)"
-                class="p-1 rounded text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                class="p-1 rounded text-gray-500 dark:text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 title="Mark as unread"
               >
                 <Icon name="lucide:mail" class="w-3.5 h-3.5" />
@@ -436,7 +443,7 @@
         v-if="totalPages > 1"
         class="px-6 py-3 border-t border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-center justify-between shrink-0"
       >
-        <p class="text-xs text-gray-400">
+        <p class="text-xs text-gray-500 dark:text-gray-400">
           {{ totalMessages }} message{{ totalMessages === 1 ? "" : "s" }} · Page
           {{ currentPage }} of {{ totalPages }}
         </p>
@@ -469,7 +476,7 @@
           <Icon name="lucide:plus" class="w-4 h-4" /> Add Webhook
         </UBtn>
       </div>
-      <div v-if="!webhooks?.length" class="text-center text-gray-400 py-8">
+      <div v-if="!webhooks?.length" class="text-center text-gray-500 dark:text-gray-400 py-8">
         <Icon name="lucide:webhook" class="w-10 h-10 mx-auto mb-2 opacity-50" />
         <p class="text-sm">No webhooks configured</p>
       </div>
@@ -526,12 +533,12 @@
             v-if="expandedWebhook === wh.id"
             class="border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-3 py-2"
           >
-            <div v-if="webhookLogsLoading" class="text-xs text-gray-400 py-2">
+            <div v-if="webhookLogsLoading" class="text-xs text-gray-500 dark:text-gray-400 py-2">
               Loading logs...
             </div>
             <div
               v-else-if="!currentWebhookLogs.length"
-              class="text-xs text-gray-400 py-2"
+              class="text-xs text-gray-500 dark:text-gray-400 py-2"
             >
               No delivery logs yet
             </div>
@@ -554,13 +561,13 @@
                     >{{ log.status }}</span
                   >
                   <span class="text-gray-500">{{ log.event }}</span>
-                  <span v-if="log.statusCode" class="text-gray-400"
+                  <span v-if="log.statusCode" class="text-gray-500 dark:text-gray-400"
                     >HTTP {{ log.statusCode }}</span
                   >
-                  <span class="text-gray-400">Attempt {{ log.attempt }}</span>
+                  <span class="text-gray-500 dark:text-gray-400">Attempt {{ log.attempt }}</span>
                 </div>
                 <div class="flex items-center gap-2">
-                  <span class="text-gray-400">{{
+                  <span class="text-gray-500 dark:text-gray-400">{{
                     formatDate(log.createdAt)
                   }}</span>
                   <UBtn
@@ -590,8 +597,8 @@
         </UBtn>
       </div>
 
-      <div v-if="membersLoading" class="text-sm text-gray-400">Loading...</div>
-      <div v-else-if="!members.length" class="text-sm text-gray-400">
+      <div v-if="membersLoading" class="text-sm text-gray-500 dark:text-gray-400">Loading...</div>
+      <div v-else-if="!members.length" class="text-sm text-gray-500 dark:text-gray-400">
         No members yet. Invite someone to share this inbox.
       </div>
       <div v-else class="space-y-2">
@@ -611,7 +618,7 @@
             >
               {{ member.name || member.email }}
             </p>
-            <p class="text-xs text-gray-400">{{ member.email }}</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400">{{ member.email }}</p>
           </div>
           <span
             class="text-xs px-2 py-0.5 rounded-full font-medium"
@@ -657,9 +664,13 @@
         @click.self="closeInviteModal"
       >
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="invite-modal-title"
           class="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-sm p-6"
         >
           <h2
+            id="invite-modal-title"
             class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4"
           >
             Invite Member
@@ -700,7 +711,7 @@
                 <button
                   type="button"
                   @click="clearInviteSelectedUser"
-                  class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                  class="text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                 >
                   <Icon name="lucide:x" class="w-4 h-4" />
                 </button>
@@ -724,13 +735,13 @@
                 >
                   <div
                     v-if="inviteSearching"
-                    class="px-3 py-2 text-xs text-gray-400"
+                    class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400"
                   >
                     Searching...
                   </div>
                   <div
                     v-else-if="!inviteSearchResults.length"
-                    class="px-3 py-2 text-xs text-gray-400"
+                    class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400"
                   >
                     No users found
                   </div>
@@ -752,7 +763,7 @@
                       >
                         {{ u.name || u.email }}
                       </p>
-                      <p v-if="u.name" class="text-xs text-gray-400 truncate">
+                      <p v-if="u.name" class="text-xs text-gray-500 dark:text-gray-400 truncate">
                         {{ u.email }}
                       </p>
                     </div>
@@ -791,9 +802,13 @@
         @click.self="showWebhookModal = false"
       >
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="webhook-modal-title"
           class="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-sm p-6"
         >
           <h2
+            id="webhook-modal-title"
             class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4"
           >
             Add Webhook
@@ -826,7 +841,7 @@
                   >
                     Delivered
                   </p>
-                  <p class="text-xs text-gray-400 dark:text-gray-500">
+                  <p class="text-xs text-gray-500 dark:text-gray-400">
                     Fires when an email is successfully delivered
                   </p>
                 </div>
@@ -850,7 +865,7 @@
                   >
                     Bounced
                   </p>
-                  <p class="text-xs text-gray-400 dark:text-gray-500">
+                  <p class="text-xs text-gray-500 dark:text-gray-400">
                     Fires when an email delivery bounces
                   </p>
                 </div>
@@ -874,7 +889,7 @@
                   >
                     Opened
                   </p>
-                  <p class="text-xs text-gray-400 dark:text-gray-500">
+                  <p class="text-xs text-gray-500 dark:text-gray-400">
                     Fires when a recipient opens the email
                   </p>
                 </div>
@@ -931,14 +946,14 @@
             </p>
             <p
               v-if="newMailNotification.subject"
-              class="text-xs text-gray-400 truncate"
+              class="text-xs text-gray-500 dark:text-gray-400 truncate"
             >
               {{ newMailNotification.subject }}
             </p>
           </div>
           <button
             @click="newMailNotification = null"
-            class="text-gray-400 hover:text-gray-600 shrink-0"
+            class="text-gray-500 dark:text-gray-400 hover:text-gray-600 shrink-0"
           >
             <Icon name="lucide:x" class="w-4 h-4" />
           </button>
@@ -954,9 +969,13 @@
         @click.self="showRuleModal = false"
       >
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="rule-modal-title"
           class="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-lg p-6 mx-4"
         >
           <h2
+            id="rule-modal-title"
             class="text-base font-semibold text-gray-800 dark:text-gray-100 mb-4"
           >
             {{ editingRuleId ? "Edit filter" : "New filter" }}
@@ -964,6 +983,7 @@
           <form class="space-y-4" @submit.prevent="saveRule">
             <!-- Name -->
             <input
+              ref="ruleNameInputRef"
               v-model="ruleForm.name"
               type="text"
               placeholder="Filter name (e.g. Deploy notifications)"
@@ -976,12 +996,15 @@
               <span class="text-xs text-gray-500 dark:text-gray-400 shrink-0"
                 >Color:</span
               >
-              <div class="flex gap-1.5">
+              <div role="radiogroup" aria-label="Filter color" class="flex gap-1.5">
                 <button
                   v-for="c in RULE_COLORS"
                   :key="c"
                   type="button"
-                  class="w-5 h-5 rounded-full transition-transform"
+                  role="radio"
+                  :aria-checked="ruleForm.color === c"
+                  :aria-label="`${c} color`"
+                  class="w-5 h-5 rounded-full transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-500"
                   :class="[
                     RULE_COLOR_CLASSES[c].swatch,
                     ruleForm.color === c
@@ -1091,7 +1114,7 @@
                 />
                 <button
                   type="button"
-                  class="shrink-0 p-1 rounded text-gray-400 hover:text-red-500 disabled:opacity-30 transition-colors"
+                  class="shrink-0 p-1 rounded text-gray-500 dark:text-gray-400 hover:text-red-500 disabled:opacity-30 transition-colors"
                   :disabled="ruleForm.conditions.length === 1"
                   @click="removeConditionRow(idx)"
                 >
@@ -1157,7 +1180,10 @@ const smtpHost = runtimeConfig.public.smtpHost;
 const smtpPort = runtimeConfig.public.smtpPort;
 const { token } = useAuth();
 
+const downloadError = ref("");
+
 function authedDownload(url: string, filename: string) {
+  downloadError.value = "";
   fetch(url, {
     headers: token.value ? { Authorization: `Bearer ${token.value}` } : {},
   })
@@ -1169,7 +1195,21 @@ function authedDownload(url: string, filename: string) {
       a.click();
       URL.revokeObjectURL(a.href);
     })
-    .catch(() => alert("Download failed"));
+    .catch(() => {
+      downloadError.value = "Download failed. Please try again.";
+    });
+}
+
+// Export reflects whatever is currently filtered/searched on screen,
+// so what you export matches what you're looking at.
+function buildExportUrl(format: string) {
+  const params = new URLSearchParams({ format });
+  if (searchQuery.value) params.set("q", searchQuery.value);
+  if (filterStatus.value) params.set("status", filterStatus.value);
+  if (filterAfter.value) params.set("after", filterAfter.value);
+  if (filterBefore.value) params.set("before", filterBefore.value);
+  if (activeRuleId.value) params.set("ruleId", activeRuleId.value);
+  return `${apiBase}/api/inboxes/${inboxId}/export?${params.toString()}`;
 }
 
 // Tracks message IDs with an in-flight read-status toggle to prevent race conditions
@@ -1181,6 +1221,46 @@ const showPassword = ref(false);
 const showExportMenu = ref(false);
 const deleting = ref(false);
 const activeTab = ref<"messages" | "webhooks" | "members">("messages");
+
+const credsPanelRef = ref<HTMLElement | null>(null);
+const exportMenuRef = ref<HTMLElement | null>(null);
+
+function handleOverlayClick(e: MouseEvent) {
+  const target = e.target as HTMLElement;
+  if (
+    showCreds.value &&
+    credsPanelRef.value &&
+    !credsPanelRef.value.contains(target) &&
+    !target.closest?.("[data-creds-toggle]")
+  ) {
+    showCreds.value = false;
+  }
+  if (
+    showExportMenu.value &&
+    exportMenuRef.value &&
+    !exportMenuRef.value.contains(e.target as Node)
+  ) {
+    showExportMenu.value = false;
+  }
+}
+
+function handleOverlayKeydown(e: KeyboardEvent) {
+  if (e.key !== "Escape") return;
+  if (showExportMenu.value) showExportMenu.value = false;
+  else if (showCreds.value) showCreds.value = false;
+  else if (showRuleModal.value) showRuleModal.value = false;
+  else if (showWebhookModal.value) showWebhookModal.value = false;
+  else if (showInviteModal.value) showInviteModal.value = false;
+}
+
+onMounted(() => {
+  document.addEventListener("click", handleOverlayClick);
+  document.addEventListener("keydown", handleOverlayKeydown);
+});
+onUnmounted(() => {
+  document.removeEventListener("click", handleOverlayClick);
+  document.removeEventListener("keydown", handleOverlayKeydown);
+});
 
 // Search & filter state
 const searchQuery = ref("");
@@ -1229,6 +1309,13 @@ const showRuleModal = ref(false);
 const editingRuleId = ref<string | null>(null);
 const savingRule = ref(false);
 const ruleError = ref("");
+const ruleNameInputRef = ref<HTMLInputElement | null>(null);
+
+watch(showRuleModal, (open) => {
+  if (open) {
+    nextTick(() => ruleNameInputRef.value?.focus());
+  }
+});
 
 const ruleForm = reactive<{
   name: string;
@@ -1737,8 +1824,23 @@ async function handleDelete() {
   }
 }
 
-function copy(text: string) {
-  navigator.clipboard.writeText(text);
+const copiedField = ref<string | null>(null);
+let copiedTimeout: ReturnType<typeof setTimeout> | undefined;
+
+function copy(text: string, field?: string) {
+  navigator.clipboard
+    .writeText(text)
+    .then(() => {
+      if (!field) return;
+      copiedField.value = field;
+      clearTimeout(copiedTimeout);
+      copiedTimeout = setTimeout(() => {
+        copiedField.value = null;
+      }, 2000);
+    })
+    .catch(() => {
+      downloadError.value = "Couldn't copy to clipboard.";
+    });
 }
 
 async function handleAddWebhook() {

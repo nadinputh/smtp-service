@@ -9,7 +9,7 @@
         <div class="text-center mb-6">
           <Icon
             name="lucide:mail"
-            class="w-10 h-10 text-indigo-600 mx-auto mb-2"
+            class="w-10 h-10 text-indigo-600 dark:text-indigo-400 mx-auto mb-2"
           />
           <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100">
             Welcome back
@@ -29,7 +29,7 @@
             :class="[
               'flex-1 py-2 text-sm font-medium border-b-2 transition-colors',
               authMethod === 'local'
-                ? 'border-indigo-600 text-indigo-600'
+                ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400'
                 : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200',
             ]"
             @click="authMethod = 'local'"
@@ -41,7 +41,7 @@
             :class="[
               'flex-1 py-2 text-sm font-medium border-b-2 transition-colors',
               authMethod === 'ldap'
-                ? 'border-indigo-600 text-indigo-600'
+                ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400'
                 : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200',
             ]"
             @click="authMethod = 'ldap'"
@@ -58,10 +58,12 @@
         >
           <div>
             <label
+              for="login-email"
               class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
               >Email</label
             >
             <input
+              id="login-email"
               v-model="email"
               type="email"
               required
@@ -72,10 +74,12 @@
           </div>
           <div>
             <label
+              for="login-password"
               class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
               >Password</label
             >
             <input
+              id="login-password"
               v-model="password"
               type="password"
               required
@@ -85,7 +89,7 @@
             />
           </div>
 
-          <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+          <p v-if="error" role="alert" class="text-sm text-red-600 dark:text-red-400">{{ error }}</p>
 
           <UBtn type="submit" :disabled="loading" class="w-full">
             {{ loading ? "Signing in..." : "Sign in" }}
@@ -100,10 +104,12 @@
         >
           <div>
             <label
+              for="login-ldap-username"
               class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
               >Username</label
             >
             <input
+              id="login-ldap-username"
               v-model="ldapUsername"
               type="text"
               required
@@ -114,10 +120,12 @@
           </div>
           <div>
             <label
+              for="login-ldap-password"
               class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
               >Password</label
             >
             <input
+              id="login-ldap-password"
               v-model="ldapPassword"
               type="password"
               required
@@ -127,7 +135,7 @@
             />
           </div>
 
-          <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+          <p v-if="error" role="alert" class="text-sm text-red-600 dark:text-red-400">{{ error }}</p>
 
           <UBtn type="submit" :disabled="loading" class="w-full">
             {{ loading ? "Signing in..." : "Sign in with LDAP" }}
@@ -187,7 +195,7 @@ const { login, loginLdap, loginOAuth2, fetchProviders, isAuthenticated } =
 
 // Redirect if already logged in
 if (isAuthenticated.value) {
-  navigateTo("/");
+  await navigateTo("/");
 }
 
 const email = ref("");

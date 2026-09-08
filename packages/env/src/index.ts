@@ -27,7 +27,7 @@ const envSchema = z
 
     // SMTP Server
     SMTP_PORT: z.coerce.number().default(2525),
-    SMTP_HOST: z.string().default("0.0.0.0"),
+    SMTP_HOST: z.string().default("localhost"), // advertised/external hostname, not a bind address
     SMTP_BIND_HOST: z.string().default("0.0.0.0"),
     SMTP_PORTS: z.string().optional(), // Comma-separated additional ports, e.g. "2525,1025"
 
@@ -63,7 +63,7 @@ const envSchema = z
     LDAP_SEARCH_FILTER: z.string().default("(uid={{username}})"),
 
     // Tracking
-    TRACKING_BASE_URL: z.string().default("http://localhost:3002"),
+    TRACKING_BASE_URL: z.string().default("http://localhost:3001"),
 
     // CORS
     CORS_ORIGINS: z.string().optional(), // Comma-separated allowed origins

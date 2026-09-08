@@ -134,12 +134,13 @@ Services:
 | `MINIO_BUCKET`          | No       | `emails`                | MinIO bucket name                            |
 | `MINIO_USE_SSL`         | No       | `false`                 | Use SSL for MinIO                            |
 | `SMTP_PORT`             | No       | `2525`                  | Primary SMTP port                            |
-| `SMTP_HOST`             | No       | `0.0.0.0`               | SMTP bind address                            |
+| `SMTP_HOST`             | No       | `localhost`             | Advertised SMTP hostname shown to users (not a bind address) |
+| `SMTP_BIND_HOST`        | No       | `0.0.0.0`               | Actual local bind address for the SMTP listener |
 | `SMTP_PORTS`            | No       | —                       | Additional SMTP ports (comma-separated)      |
 | `API_PORT`              | No       | `3001`                  | API server port                              |
 | `API_HOST`              | No       | `0.0.0.0`               | API bind address                             |
 | `APP_MODE`              | No       | `testing`               | `testing` (sinkhole) or `production` (relay) |
-| `TRACKING_BASE_URL`     | No       | `http://localhost:3002` | Base URL for open/click tracking             |
+| `TRACKING_BASE_URL`     | No       | `http://localhost:3001` | Base URL for open/click tracking (must match `API_PORT`) |
 | `CLEANUP_MAX_AGE_HOURS` | No       | `24`                    | Auto-cleanup retention (hours)               |
 | `OAUTH2_ENABLED`        | No       | `false`                 | Enable OAuth2 OIDC login                     |
 | `OAUTH2_ISSUER_URL`     | No       | —                       | OIDC issuer URL                              |

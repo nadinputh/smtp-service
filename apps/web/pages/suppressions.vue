@@ -7,7 +7,7 @@
         <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100">
           Suppression List
         </h2>
-        <p class="text-sm text-gray-400 dark:text-gray-500">
+        <p class="text-sm text-gray-500 dark:text-gray-400">
           Blocked addresses that won't receive emails
         </p>
       </div>
@@ -20,7 +20,9 @@
     <div class="flex-1 overflow-y-auto p-6">
       <!-- Search -->
       <div class="mb-4">
+        <label for="suppression-search" class="sr-only">Search by email</label>
         <input
+          id="suppression-search"
           v-model="searchQuery"
           type="text"
           placeholder="Search by email..."
@@ -28,10 +30,18 @@
         />
       </div>
 
-      <div v-if="loading" class="text-sm text-gray-400">Loading...</div>
+      <p
+        v-if="removeError"
+        role="alert"
+        class="text-sm text-red-600 dark:text-red-400 mb-4"
+      >
+        {{ removeError }}
+      </p>
+
+      <div v-if="loading" class="text-sm text-gray-500 dark:text-gray-400">Loading...</div>
       <div
         v-else-if="!data?.suppressions.length"
-        class="text-center py-16 text-gray-400"
+        class="text-center py-16 text-gray-500 dark:text-gray-400"
       >
         <Icon name="lucide:shield-check" class="w-12 h-12 mx-auto mb-3" />
         <p class="text-lg font-medium">No suppressed addresses</p>
@@ -87,7 +97,7 @@
                   {{ item.source || "—" }}
                 </td>
                 <td
-                  class="px-4 py-3 text-gray-400 dark:text-gray-500 whitespace-nowrap"
+                  class="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap"
                 >
                   {{ new Date(item.createdAt).toLocaleDateString() }}
                 </td>
@@ -142,7 +152,7 @@
     <Teleport to="body">
       <div
         v-if="showAddModal"
-        class="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+        class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
         @click.self="showAddModal = false"
       >
         <div
@@ -154,14 +164,24 @@
             Suppress Address
           </h2>
           <form @submit.prevent="handleAdd">
+            <label
+              for="suppression-email"
+              class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+              >Email Address</label
+            >
             <input
+              id="suppression-email"
               v-model="addEmail"
               type="email"
               required
               placeholder="email@example.com"
               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
-            <p v-if="addError" class="text-sm text-red-600 mt-2">
+            <p
+              v-if="addError"
+              role="alert"
+              class="text-sm text-red-600 dark:text-red-400 mt-2"
+            >
               {{ addError }}
             </p>
             <div class="flex justify-end gap-2 mt-4">
@@ -195,6 +215,7 @@ const showAddModal = ref(false);
 const addEmail = ref("");
 const adding = ref(false);
 const addError = ref("");
+const removeError = ref("");
 
 let searchTimeout: ReturnType<typeof setTimeout>;
 
@@ -237,11 +258,12 @@ async function handleAdd() {
 
 async function handleRemove(id: string) {
   if (!confirm("Remove this address from the suppression list?")) return;
+  removeError.value = "";
   try {
     await api.removeSuppression(id);
     await fetchSuppressions();
   } catch (e: any) {
-    alert(e?.data?.error || "Failed to remove suppression");
+    removeError.value = e?.data?.error || "Failed to remove suppression";
   }
 }
 

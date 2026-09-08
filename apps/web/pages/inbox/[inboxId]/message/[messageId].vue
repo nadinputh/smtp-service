@@ -6,7 +6,8 @@
     >
       <NuxtLink
         :to="`/inbox/${inboxId}`"
-        class="text-gray-400 hover:text-gray-600 transition-colors"
+        aria-label="Back to inbox"
+        class="text-gray-500 dark:text-gray-400 hover:text-gray-600 transition-colors"
       >
         <Icon name="lucide:arrow-left" class="w-5 h-5" />
       </NuxtLink>
@@ -16,7 +17,7 @@
         >
           {{ message?.subject || "(no subject)" }}
         </h2>
-        <p class="text-sm text-gray-400">From: {{ message?.from }}</p>
+        <p class="text-sm text-gray-500 dark:text-gray-400">From: {{ message?.from }}</p>
       </div>
       <button
         @click="
@@ -43,7 +44,24 @@
       <UBtn variant="danger" size="xs" @click="handleDelete"> Delete </UBtn>
     </header>
 
-    <div v-if="pending" class="p-6 text-gray-400">Loading...</div>
+    <p
+      v-if="downloadError"
+      role="alert"
+      aria-live="assertive"
+      class="px-6 py-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border-b border-red-100 dark:border-red-900"
+    >
+      {{ downloadError }}
+    </p>
+    <p
+      v-if="cancelScheduleError"
+      role="alert"
+      aria-live="assertive"
+      class="px-6 py-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border-b border-red-100 dark:border-red-900"
+    >
+      {{ cancelScheduleError }}
+    </p>
+
+    <div v-if="pending" class="p-6 text-gray-500 dark:text-gray-400">Loading...</div>
 
     <div v-else-if="message" class="flex-1 overflow-y-auto">
       <!-- Metadata -->
@@ -52,7 +70,7 @@
       >
         <!-- To recipients -->
         <div class="flex items-start gap-2">
-          <span class="text-gray-400 dark:text-gray-500 w-12 shrink-0 pt-0.5"
+          <span class="text-gray-500 dark:text-gray-400 w-12 shrink-0 pt-0.5"
             >To:</span
           >
           <div class="flex-1">
@@ -87,7 +105,7 @@
               </div>
               <button
                 @click="toExpanded = false"
-                class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 flex items-center gap-1"
+                class="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 flex items-center gap-1"
               >
                 <Icon name="lucide:chevron-up" class="w-3 h-3" /> Collapse
               </button>
@@ -97,7 +115,7 @@
 
         <!-- Cc recipients -->
         <div v-if="message.cc?.length" class="flex items-start gap-2">
-          <span class="text-gray-400 dark:text-gray-500 w-12 shrink-0 pt-0.5"
+          <span class="text-gray-500 dark:text-gray-400 w-12 shrink-0 pt-0.5"
             >Cc:</span
           >
           <div class="flex-1">
@@ -130,7 +148,7 @@
               </div>
               <button
                 @click="ccExpanded = false"
-                class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 flex items-center gap-1"
+                class="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 flex items-center gap-1"
               >
                 <Icon name="lucide:chevron-up" class="w-3 h-3" /> Collapse
               </button>
@@ -138,7 +156,7 @@
           </div>
         </div>
         <div class="text-gray-700 dark:text-gray-300">
-          <span class="text-gray-400 dark:text-gray-500 w-12 inline-block"
+          <span class="text-gray-500 dark:text-gray-400 w-12 inline-block"
             >Date:</span
           >
           {{
@@ -158,11 +176,7 @@
             v-for="tab in tabs"
             :key="tab.key"
             class="py-3 text-sm border-b-2 transition-colors"
-            :class="
-              activeTab === tab.key
-                ? 'border-indigo-500 text-indigo-600 font-medium'
-                : 'border-transparent text-gray-400 hover:text-gray-600'
-            "
+            :class="activeTab === tab.key ? 'border-indigo-500 text-indigo-600 font-medium' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-600'"
             @click="activeTab = tab.key"
           >
             {{ tab.label }}
@@ -181,7 +195,7 @@
           <div
             class="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"
           >
-            <span class="text-xs text-gray-400 dark:text-gray-500"
+            <span class="text-xs text-gray-500 dark:text-gray-400"
               >HTML Preview</span
             >
             <div
@@ -191,6 +205,7 @@
                 v-for="opt in previewModes"
                 :key="opt.value"
                 @click="previewBg = opt.value"
+                :title="opt.title"
                 class="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors"
                 :class="
                   previewBg === opt.value
@@ -210,6 +225,7 @@
           >
             <iframe
               :srcdoc="previewHtml"
+              title="Email HTML preview"
               class="w-full min-h-[calc(100vh-300px)] border-0"
               sandbox="allow-same-origin"
             />
@@ -217,7 +233,7 @@
         </div>
         <p
           v-else-if="activeTab === 'html'"
-          class="text-gray-400 dark:text-gray-500 text-sm"
+          class="text-gray-500 dark:text-gray-400 text-sm"
         >
           No HTML body
         </p>
@@ -233,7 +249,7 @@
         <div v-if="activeTab === 'attachments'">
           <div
             v-if="!message.attachments?.length"
-            class="text-sm text-gray-400"
+            class="text-sm text-gray-500 dark:text-gray-400"
           >
             No attachments
           </div>
@@ -241,15 +257,16 @@
             <!-- Image thumbnails grid -->
             <div v-if="imageAttachments.length" class="mb-6">
               <p
-                class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3"
+                class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3"
               >
                 Images
               </p>
               <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div
+                <button
                   v-for="{ att, idx } in imageAttachments"
                   :key="idx"
-                  class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden group cursor-pointer"
+                  type="button"
+                  class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden group text-left w-full"
                   @click="previewAttachment = idx"
                 >
                   <img
@@ -264,18 +281,18 @@
                     >
                       {{ att.filename }}
                     </p>
-                    <p class="text-[10px] text-gray-400 dark:text-gray-500">
+                    <p class="text-[10px] text-gray-500 dark:text-gray-400">
                       {{ formatBytes(att.size) }}
                     </p>
                   </div>
-                </div>
+                </button>
               </div>
             </div>
 
             <!-- All attachments list -->
             <p
               v-if="imageAttachments.length && nonImageAttachments.length"
-              class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3"
+              class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3"
             >
               Other Files
             </p>
@@ -289,7 +306,7 @@
               >
                 <Icon
                   name="lucide:paperclip"
-                  class="w-4 h-4 text-gray-400 shrink-0"
+                  class="w-4 h-4 text-gray-500 dark:text-gray-400 shrink-0"
                 />
                 <div class="min-w-0 flex-1">
                   <p
@@ -297,7 +314,7 @@
                   >
                     {{ att.filename }}
                   </p>
-                  <p class="text-xs text-gray-400 dark:text-gray-500">
+                  <p class="text-xs text-gray-500 dark:text-gray-400">
                     {{ att.contentType }} &middot; {{ formatBytes(att.size) }}
                   </p>
                 </div>
@@ -333,6 +350,9 @@
                 @click.self="previewAttachment = null"
               >
                 <div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Attachment preview"
                   class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col m-4"
                 >
                   <div
@@ -357,7 +377,8 @@
                       </a>
                       <button
                         @click="previewAttachment = null"
-                        class="text-gray-400 hover:text-gray-600 transition-colors"
+                        aria-label="Close preview"
+                        class="text-gray-500 dark:text-gray-400 hover:text-gray-600 transition-colors"
                       >
                         <Icon name="lucide:x" class="w-5 h-5" />
                       </button>
@@ -375,6 +396,7 @@
                     <iframe
                       v-else-if="isPdf(message.attachments[previewAttachment])"
                       :src="attachmentBlobUrls[previewAttachment]"
+                      title="PDF attachment preview"
                       class="w-full h-[70vh] border-0"
                     />
                     <!-- Text preview -->
@@ -384,7 +406,7 @@
                       >{{ textPreviewContent }}</pre
                     >
                     <!-- Unsupported -->
-                    <div v-else class="text-center py-16 text-gray-400">
+                    <div v-else class="text-center py-16 text-gray-500 dark:text-gray-400">
                       <Icon
                         name="lucide:file"
                         class="w-16 h-16 mx-auto mb-4 opacity-50"
@@ -407,7 +429,7 @@
           >
             <Icon
               name="lucide:info"
-              class="w-4 h-4 mt-0.5 shrink-0 text-gray-400"
+              class="w-4 h-4 mt-0.5 shrink-0 text-gray-500 dark:text-gray-400"
             />
             <span
               >This is an inbound message. Delivery logs are only recorded for
@@ -418,17 +440,17 @@
             <!-- Header row with refresh -->
             <div class="flex items-center justify-between mb-3">
               <span
-                class="text-xs font-semibold text-gray-400 uppercase tracking-wider"
+                class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider"
                 >Delivery Logs</span
               >
               <button
                 @click="refreshDeliveryLogs"
                 :disabled="deliveryLogsLoading"
-                class="flex items-center gap-1 text-xs text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 disabled:opacity-50 transition-colors"
+                class="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 disabled:opacity-50 transition-colors"
               >
                 <Icon
                   name="lucide:refresh-cw"
-                  class="w-3.5 h-3.5"
+                  class="w-3.5 h-3.5 motion-reduce:animate-none"
                   :class="{ 'animate-spin': deliveryLogsLoading }"
                 />
                 Refresh
@@ -436,12 +458,14 @@
             </div>
             <div
               v-if="deliveryLogsLoading && deliveryLogs === null"
-              class="text-sm text-gray-400"
+              class="text-sm text-gray-500 dark:text-gray-400"
             >
               Loading...
             </div>
             <div
               v-else-if="deliveryLogsError"
+              role="alert"
+              aria-live="assertive"
               class="flex items-center gap-2 text-sm text-red-500 dark:text-red-400"
             >
               <Icon name="lucide:alert-circle" class="w-4 h-4 shrink-0" />
@@ -455,7 +479,7 @@
             </div>
             <div
               v-else-if="!deliveryLogs?.length"
-              class="text-sm text-gray-400"
+              class="text-sm text-gray-500 dark:text-gray-400"
             >
               No delivery logs yet. The message may still be queued or
               processing.
@@ -475,19 +499,19 @@
                     <span
                       class="text-xs px-1.5 py-0.5 rounded-full"
                       :class="{
-                        'bg-green-100 text-green-700':
+                        'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':
                           log.status === 'delivered',
-                        'bg-red-100 text-red-700':
+                        'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':
                           log.status === 'bounced' || log.status === 'failed',
-                        'bg-yellow-100 text-yellow-700':
+                        'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400':
                           log.status === 'deferred' || log.status === 'sending',
-                        'bg-gray-100 text-gray-500': log.status === 'queued',
+                        'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400': log.status === 'queued',
                       }"
                     >
                       {{ log.status }}
                     </span>
                   </div>
-                  <span class="text-xs text-gray-400"
+                  <span class="text-xs text-gray-500 dark:text-gray-400"
                     >Attempt #{{ log.attempts }}</span
                   >
                 </div>
@@ -507,16 +531,31 @@
 
         <!-- Headers -->
         <div v-if="activeTab === 'headers'">
-          <div v-if="headersData === null" class="text-sm text-gray-400">
+          <div
+            v-if="headersLoading && headersData === null"
+            class="text-sm text-gray-500 dark:text-gray-400"
+          >
             Loading...
           </div>
-          <template v-else>
+          <div
+            v-else-if="headersError"
+            role="alert"
+            aria-live="assertive"
+            class="flex items-center gap-2 text-sm text-red-500 dark:text-red-400"
+          >
+            <Icon name="lucide:alert-circle" class="w-4 h-4 shrink-0" />
+            Failed to load headers.
+            <button @click="loadHeaders" class="underline hover:no-underline">
+              Retry
+            </button>
+          </div>
+          <template v-else-if="headersData">
             <!-- Auth badges -->
             <div
               v-if="headersData.authChecks.length"
               class="flex items-center gap-2 mb-4"
             >
-              <span class="text-xs font-semibold text-gray-400 uppercase"
+              <span class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase"
                 >Auth:</span
               >
               <span
@@ -531,7 +570,7 @@
 
             <!-- Hop trace -->
             <div v-if="headersData.hops.length" class="mb-4">
-              <p class="text-xs font-semibold text-gray-400 uppercase mb-2">
+              <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">
                 Routing Hops ({{ headersData.hops.length }})
               </p>
               <div class="space-y-1">
@@ -548,7 +587,7 @@
                   }}</span>
                   <Icon
                     name="lucide:arrow-right"
-                    class="w-3 h-3 text-gray-400 shrink-0"
+                    class="w-3 h-3 text-gray-500 dark:text-gray-400 shrink-0"
                   />
                   <span class="text-gray-800 dark:text-gray-200">{{
                     hop.by
@@ -560,7 +599,7 @@
                   >
                   <span
                     v-if="hop.timestamp"
-                    class="text-gray-400 dark:text-gray-500 shrink-0"
+                    class="text-gray-500 dark:text-gray-400 shrink-0"
                   >
                     {{ new Date(hop.timestamp).toLocaleString() }}
                   </span>
@@ -573,7 +612,7 @@
               <template v-for="(group, key) in headersData.groups" :key="key">
                 <details v-if="group.length" class="group" open>
                   <summary
-                    class="text-xs font-semibold text-gray-400 uppercase cursor-pointer hover:text-gray-600 mb-1"
+                    class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase cursor-pointer hover:text-gray-600 mb-1"
                   >
                     {{ groupLabels[key] || key }} ({{ group.length }})
                   </summary>
@@ -601,11 +640,26 @@
 
         <!-- Raw Source -->
         <div v-if="activeTab === 'source'">
-          <div v-if="rawSource === null" class="text-sm text-gray-400">
+          <div
+            v-if="sourceLoading && rawSource === null"
+            class="text-sm text-gray-500 dark:text-gray-400"
+          >
             Loading...
           </div>
+          <div
+            v-else-if="sourceError"
+            role="alert"
+            aria-live="assertive"
+            class="flex items-center gap-2 text-sm text-red-500 dark:text-red-400"
+          >
+            <Icon name="lucide:alert-circle" class="w-4 h-4 shrink-0" />
+            Failed to load message source.
+            <button @click="loadSource" class="underline hover:no-underline">
+              Retry
+            </button>
+          </div>
           <pre
-            v-else
+            v-else-if="rawSource !== null"
             class="whitespace-pre-wrap text-xs font-mono text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 max-h-[600px] overflow-auto"
             >{{ rawSource }}</pre
           >
@@ -623,16 +677,16 @@
             <span
               class="text-xs px-2 py-0.5 rounded-full font-medium"
               :class="{
-                'bg-green-100 text-green-700': (message.spamScore ?? 0) < 3,
-                'bg-yellow-100 text-yellow-700':
+                'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400': (message.spamScore ?? 0) < 3,
+                'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400':
                   (message.spamScore ?? 0) >= 3 && (message.spamScore ?? 0) < 6,
-                'bg-red-100 text-red-700': (message.spamScore ?? 0) >= 6,
+                'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400': (message.spamScore ?? 0) >= 6,
               }"
             >
               {{ spamVerdict(message.spamScore ?? 0).label }}
             </span>
           </div>
-          <div v-if="!message.spamRules?.length" class="text-sm text-gray-400">
+          <div v-if="!message.spamRules?.length" class="text-sm text-gray-500 dark:text-gray-400">
             No spam rules triggered — email looks clean!
           </div>
           <div v-else class="space-y-2">
@@ -666,7 +720,7 @@
             v-if="spamSuggestions.length"
             class="mt-5 border-t border-gray-100 dark:border-gray-700 pt-4"
           >
-            <p class="text-xs font-semibold text-gray-400 uppercase mb-2">
+            <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">
               Suggestions
             </p>
             <ul class="space-y-1">
@@ -687,23 +741,44 @@
 
         <!-- Compatibility -->
         <div v-if="activeTab === 'compatibility'">
-          <div v-if="compatibilityData === null" class="text-sm text-gray-400">
+          <div
+            v-if="compatibilityLoading && compatibilityData === null"
+            class="text-sm text-gray-500 dark:text-gray-400"
+          >
             Loading...
           </div>
+          <div
+            v-else-if="compatibilityError"
+            role="alert"
+            aria-live="assertive"
+            class="flex items-center gap-2 text-sm text-red-500 dark:text-red-400"
+          >
+            <Icon name="lucide:alert-circle" class="w-4 h-4 shrink-0" />
+            Failed to load compatibility data.
+            <button
+              @click="loadCompatibility"
+              class="underline hover:no-underline"
+            >
+              Retry
+            </button>
+          </div>
           <template
-            v-else-if="compatibilityData.summary.totalFeaturesDetected === 0"
+            v-else-if="
+              compatibilityData &&
+              compatibilityData.summary.totalFeaturesDetected === 0
+            "
           >
             <div class="text-center py-12">
               <Icon
                 name="lucide:file-text"
                 class="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-600"
               />
-              <p class="text-sm text-gray-400 dark:text-gray-500">
+              <p class="text-sm text-gray-500 dark:text-gray-400">
                 No HTML content to analyze
               </p>
             </div>
           </template>
-          <template v-else>
+          <template v-else-if="compatibilityData">
             <!-- Summary -->
             <div class="mb-6 flex items-center gap-4 text-sm">
               <div
@@ -782,7 +857,7 @@
                   />
                 </div>
                 <span
-                  class="text-[10px] text-gray-400 dark:text-gray-500 mt-1 inline-block"
+                  class="text-[10px] text-gray-500 dark:text-gray-400 mt-1 inline-block"
                   >{{ client.category }}</span
                 >
               </div>
@@ -797,7 +872,7 @@
                 open
               >
                 <summary
-                  class="text-xs font-semibold text-gray-400 uppercase cursor-pointer hover:text-gray-600 mb-2"
+                  class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase cursor-pointer hover:text-gray-600 mb-2"
                 >
                   {{ cat.label }} ({{ cat.features.length }})
                 </summary>
@@ -806,19 +881,19 @@
                     <thead>
                       <tr class="border-b border-gray-200 dark:border-gray-700">
                         <th
-                          class="text-left py-2 px-3 text-xs font-semibold text-gray-400 uppercase w-48"
+                          class="text-left py-2 px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase w-48"
                         >
                           Feature
                         </th>
                         <th
-                          class="text-center py-2 px-1 text-xs font-semibold text-gray-400 uppercase w-12"
+                          class="text-center py-2 px-1 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase w-12"
                         >
                           Uses
                         </th>
                         <th
                           v-for="client in compatibilityData.overallScores"
                           :key="client.id"
-                          class="text-center py-2 px-1 text-[10px] font-semibold text-gray-400 uppercase whitespace-nowrap"
+                          class="text-center py-2 px-1 text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase whitespace-nowrap"
                         >
                           {{ client.name }}
                         </th>
@@ -836,7 +911,7 @@
                             >{{ feat.name }}</span
                           >
                           <p
-                            class="text-[11px] text-gray-400 dark:text-gray-500"
+                            class="text-[11px] text-gray-500 dark:text-gray-400"
                           >
                             {{ feat.description }}
                           </p>
@@ -888,25 +963,45 @@
         @click.self="showForwardModal = false"
       >
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="forward-modal-title"
           class="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-sm p-6"
         >
           <h2
+            id="forward-modal-title"
             class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4"
           >
             Forward Message
           </h2>
           <form @submit.prevent="handleForward">
+            <label
+              for="forward-to"
+              class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+              >Forward to</label
+            >
             <input
+              id="forward-to"
               v-model="forwardTo"
               type="email"
               required
               placeholder="recipient@example.com"
               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
-            <p v-if="forwardError" class="text-sm text-red-600 mt-2">
+            <p
+              v-if="forwardError"
+              role="alert"
+              aria-live="assertive"
+              class="text-sm text-red-600 dark:text-red-400 mt-2"
+            >
               {{ forwardError }}
             </p>
-            <p v-if="forwardSuccess" class="text-sm text-green-600 mt-2">
+            <p
+              v-if="forwardSuccess"
+              role="status"
+              aria-live="polite"
+              class="text-sm text-green-600 dark:text-green-400 mt-2"
+            >
               Message forwarded and queued!
             </p>
             <div class="flex justify-end gap-2 mt-4">
@@ -944,7 +1039,10 @@ function authedFetch(url: string): Promise<Response> {
   });
 }
 
+const downloadError = ref("");
+
 function authedDownload(url: string, filename: string) {
+  downloadError.value = "";
   authedFetch(url)
     .then((r) => r.blob())
     .then((blob) => {
@@ -954,7 +1052,9 @@ function authedDownload(url: string, filename: string) {
       a.click();
       URL.revokeObjectURL(a.href);
     })
-    .catch(() => alert("Download failed"));
+    .catch(() => {
+      downloadError.value = "Download failed. Please try again.";
+    });
 }
 
 // Blob URL cache for attachment previews (avoids repeated authenticated fetches)
@@ -990,11 +1090,19 @@ const activeTab = ref<
 >("html");
 
 // ─── HTML preview background toggle ──────────────────────
-const { isDark } = useDarkMode();
-const previewBg = ref<"light" | "dark">(isDark.value ? "dark" : "light");
+// Always defaults to "light" regardless of the admin's own dashboard theme —
+// this preview approximates how the email renders for recipients, which has
+// nothing to do with the viewer's personal dashboard preference.
+const previewBg = ref<"light" | "dark">("light");
 const previewModes = [
   { value: "light" as const, icon: "lucide:sun", label: "Light" },
-  { value: "dark" as const, icon: "lucide:moon", label: "Dark" },
+  {
+    value: "dark" as const,
+    icon: "lucide:moon",
+    label: "Simulate dark mode",
+    title:
+      "Approximates how some email clients auto-invert colors in dark mode. This is a simulation, not the actual email rendering.",
+  },
 ];
 
 // Strip <script> blocks and inline event handlers from email HTML before
@@ -1055,13 +1163,56 @@ async function refreshDeliveryLogs() {
 }
 
 const rawSource = ref<string | null>(null);
+const sourceLoading = ref(false);
+const sourceError = ref(false);
+
+async function loadSource() {
+  sourceLoading.value = true;
+  sourceError.value = false;
+  try {
+    rawSource.value = await api.getMessageSource(messageId);
+  } catch {
+    sourceError.value = true;
+  } finally {
+    sourceLoading.value = false;
+  }
+}
+
 const headersData = ref<Awaited<
   ReturnType<typeof api.getMessageHeaders>
 > | null>(null);
+const headersLoading = ref(false);
+const headersError = ref(false);
+
+async function loadHeaders() {
+  headersLoading.value = true;
+  headersError.value = false;
+  try {
+    headersData.value = await api.getMessageHeaders(messageId);
+  } catch {
+    headersError.value = true;
+  } finally {
+    headersLoading.value = false;
+  }
+}
 
 const compatibilityData = ref<Awaited<
   ReturnType<typeof api.getMessageCompatibility>
 > | null>(null);
+const compatibilityLoading = ref(false);
+const compatibilityError = ref(false);
+
+async function loadCompatibility() {
+  compatibilityLoading.value = true;
+  compatibilityError.value = false;
+  try {
+    compatibilityData.value = await api.getMessageCompatibility(messageId);
+  } catch {
+    compatibilityError.value = true;
+  } finally {
+    compatibilityLoading.value = false;
+  }
+}
 
 watch(activeTab, async (tab) => {
   if (
@@ -1071,20 +1222,18 @@ watch(activeTab, async (tab) => {
   ) {
     await refreshDeliveryLogs();
   }
-  if (tab === "source" && rawSource.value === null) {
-    try {
-      rawSource.value = await api.getMessageSource(messageId);
-    } catch {}
+  if (tab === "source" && rawSource.value === null && !sourceError.value) {
+    await loadSource();
   }
-  if (tab === "headers" && headersData.value === null) {
-    try {
-      headersData.value = await api.getMessageHeaders(messageId);
-    } catch {}
+  if (tab === "headers" && headersData.value === null && !headersError.value) {
+    await loadHeaders();
   }
-  if (tab === "compatibility" && compatibilityData.value === null) {
-    try {
-      compatibilityData.value = await api.getMessageCompatibility(messageId);
-    } catch {}
+  if (
+    tab === "compatibility" &&
+    compatibilityData.value === null &&
+    !compatibilityError.value
+  ) {
+    await loadCompatibility();
   }
   // Pre-load blob URLs for all image attachments so thumbnails render
   if (tab === "attachments" && message.value?.attachments?.length) {
@@ -1187,6 +1336,21 @@ watch(previewAttachment, async (idx) => {
   }
 });
 
+// Close the attachment preview modal on Escape while it is open.
+function handlePreviewKeydown(e: KeyboardEvent) {
+  if (e.key === "Escape") previewAttachment.value = null;
+}
+watch(previewAttachment, (idx) => {
+  if (idx !== null) {
+    document.addEventListener("keydown", handlePreviewKeydown);
+  } else {
+    document.removeEventListener("keydown", handlePreviewKeydown);
+  }
+});
+onUnmounted(() => {
+  document.removeEventListener("keydown", handlePreviewKeydown);
+});
+
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -1205,6 +1369,21 @@ const forwardTo = ref("");
 const forwarding = ref(false);
 const forwardError = ref("");
 const forwardSuccess = ref(false);
+
+// Close the forward modal on Escape while it is open.
+function handleForwardModalKeydown(e: KeyboardEvent) {
+  if (e.key === "Escape") showForwardModal.value = false;
+}
+watch(showForwardModal, (open) => {
+  if (open) {
+    document.addEventListener("keydown", handleForwardModalKeydown);
+  } else {
+    document.removeEventListener("keydown", handleForwardModalKeydown);
+  }
+});
+onUnmounted(() => {
+  document.removeEventListener("keydown", handleForwardModalKeydown);
+});
 
 async function handleForward() {
   forwardError.value = "";
@@ -1226,15 +1405,19 @@ async function handleForward() {
 }
 
 // ─── Cancel Schedule ──────────────────────────────────────
+const cancelScheduleError = ref("");
+
 async function handleCancelSchedule() {
   if (!confirm("Cancel the scheduled delivery?")) return;
+  cancelScheduleError.value = "";
   try {
     await api.cancelScheduledMessage(messageId);
     if (message.value) {
       message.value.status = "cancelled";
     }
   } catch (e: any) {
-    alert(e?.data?.error || "Failed to cancel scheduled message");
+    cancelScheduleError.value =
+      e?.data?.error || "Failed to cancel scheduled message";
   }
 }
 
@@ -1290,10 +1473,11 @@ const spamSuggestions = computed(() => {
 });
 
 function authBadgeClass(result: string): string {
-  if (result === "pass") return "bg-green-100 text-green-700";
+  if (result === "pass")
+    return "bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400";
   if (result === "fail" || result === "softfail")
-    return "bg-red-100 text-red-700";
-  return "bg-gray-100 text-gray-500";
+    return "bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400";
+  return "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400";
 }
 
 // ─── Compatibility Helpers ────────────────────────────────

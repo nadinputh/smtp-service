@@ -7,7 +7,7 @@
         <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100">
           Email Templates
         </h2>
-        <p class="text-sm text-gray-400 dark:text-gray-500">
+        <p class="text-sm text-gray-500 dark:text-gray-400">
           Reusable templates with variable substitution
         </p>
       </div>
@@ -18,10 +18,17 @@
     </header>
 
     <div class="flex-1 overflow-y-auto p-6">
-      <div v-if="loading" class="text-sm text-gray-400">Loading...</div>
+      <p
+        v-if="deleteError"
+        role="alert"
+        class="text-sm text-red-600 dark:text-red-400 mb-4"
+      >
+        {{ deleteError }}
+      </p>
+      <div v-if="loading" class="text-sm text-gray-500 dark:text-gray-400">Loading...</div>
       <div
         v-else-if="!templateList.length"
-        class="text-center py-16 text-gray-400"
+        class="text-center py-16 text-gray-500 dark:text-gray-400"
       >
         <Icon name="lucide:file-text" class="w-12 h-12 mx-auto mb-3" />
         <p class="text-lg font-medium">No templates yet</p>
@@ -70,13 +77,13 @@
                     </span>
                     <span
                       v-if="!tpl.variables.length"
-                      class="text-gray-400 dark:text-gray-500"
+                      class="text-gray-500 dark:text-gray-400"
                       >—</span
                     >
                   </div>
                 </td>
                 <td
-                  class="px-4 py-3 text-gray-400 dark:text-gray-500 whitespace-nowrap"
+                  class="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap"
                 >
                   {{ new Date(tpl.updatedAt).toLocaleDateString() }}
                 </td>
@@ -109,7 +116,7 @@
     <Teleport to="body">
       <div
         v-if="showModal"
-        class="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+        class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
         @click.self="showModal = false"
       >
         <div
@@ -121,13 +128,15 @@
             {{ editingId ? "Edit Template" : "Create Template" }}
           </h2>
           <form @submit.prevent="handleSave" class="space-y-4">
-            <div class="grid grid-cols-2 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label
+                  for="template-name"
                   class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
                   >Name</label
                 >
                 <input
+                  id="template-name"
                   v-model="form.name"
                   required
                   placeholder="Template name"
@@ -136,10 +145,12 @@
               </div>
               <div>
                 <label
+                  for="template-subject"
                   class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
                   >Subject</label
                 >
                 <input
+                  id="template-subject"
                   v-model="form.subject"
                   placeholder="Email subject (supports {{variables}})"
                   class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -147,14 +158,16 @@
               </div>
             </div>
 
-            <div class="grid grid-cols-2 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <!-- HTML editor -->
               <div>
                 <label
+                  for="template-html"
                   class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
                   >HTML Body</label
                 >
                 <textarea
+                  id="template-html"
                   v-model="form.html"
                   required
                   rows="12"
@@ -164,23 +177,25 @@
               </div>
               <!-- Preview -->
               <div>
-                <label
+                <span
                   class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-                  >Preview</label
+                  >Preview</span
                 >
                 <div
                   class="w-full h-[282px] border border-gray-300 dark:border-gray-600 rounded-lg overflow-auto bg-white dark:bg-gray-700 p-3"
-                  v-html="form.html"
+                  v-html="previewHtml"
                 />
               </div>
             </div>
 
             <div>
               <label
+                for="template-text"
                 class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
                 >Plain Text (optional)</label
               >
               <textarea
+                id="template-text"
                 v-model="form.text"
                 rows="4"
                 placeholder="Hello {{name}}!"
@@ -199,7 +214,13 @@
               />
             </div>
 
-            <p v-if="formError" class="text-sm text-red-600">{{ formError }}</p>
+            <p
+              v-if="formError"
+              role="alert"
+              class="text-sm text-red-600 dark:text-red-400"
+            >
+              {{ formError }}
+            </p>
 
             <div class="flex justify-end gap-2">
               <UBtn type="button" variant="ghost" @click="showModal = false">
@@ -230,12 +251,30 @@ const showModal = ref(false);
 const editingId = ref<string | null>(null);
 const saving = ref(false);
 const formError = ref("");
+const deleteError = ref("");
 
 const form = reactive({
   name: "",
   subject: "",
   html: "",
   text: "",
+});
+
+// Debounce the live preview so it doesn't re-render the DOM on every keystroke.
+const previewHtml = ref("");
+let previewTimeout: ReturnType<typeof setTimeout> | undefined;
+watch(
+  () => form.html,
+  (v) => {
+    clearTimeout(previewTimeout);
+    previewTimeout = setTimeout(() => {
+      previewHtml.value = v;
+    }, 200);
+  },
+);
+
+onUnmounted(() => {
+  clearTimeout(previewTimeout);
 });
 
 const detectedVars = computed(() => {
@@ -264,6 +303,7 @@ function openCreate() {
   form.subject = "";
   form.html = "";
   form.text = "";
+  previewHtml.value = "";
   formError.value = "";
   showModal.value = true;
 }
@@ -274,6 +314,7 @@ function openEdit(tpl: Template) {
   form.subject = tpl.subject ?? "";
   form.html = tpl.html;
   form.text = tpl.text ?? "";
+  previewHtml.value = tpl.html;
   formError.value = "";
   showModal.value = true;
 }
@@ -308,11 +349,12 @@ async function handleSave() {
 
 async function handleDelete(id: string) {
   if (!confirm("Delete this template?")) return;
+  deleteError.value = "";
   try {
     await api.deleteTemplate(id);
     await fetchTemplates();
   } catch (e: any) {
-    alert(e?.data?.error || "Failed to delete template");
+    deleteError.value = e?.data?.error || "Failed to delete template";
   }
 }
 

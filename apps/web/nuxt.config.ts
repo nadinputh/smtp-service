@@ -2,7 +2,7 @@
 import dotenv from "dotenv";
 dotenv.config({ path: "../../.env", override: false });
 
-const apiTarget = process.env.NUXT_API_TARGET || "http://localhost:3002";
+const apiTarget = process.env.NUXT_API_TARGET || "http://localhost:3001";
 const baseURL = process.env.NUXT_APP_BASE_URL || "/admin/smtp";
 // Normalise: strip trailing slash so path concatenation is consistent
 const base = baseURL.replace(/\/$/, "");

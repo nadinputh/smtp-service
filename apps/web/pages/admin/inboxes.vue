@@ -7,7 +7,7 @@
         <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100">
           Inbox Management
         </h2>
-        <p class="text-sm text-gray-400 dark:text-gray-500">
+        <p class="text-sm text-gray-500 dark:text-gray-400">
           View and manage all inboxes across users
         </p>
       </div>
@@ -25,13 +25,13 @@
         />
       </div>
 
-      <div v-if="loading" class="text-gray-400 dark:text-gray-500">
+      <div v-if="loading" class="text-gray-500 dark:text-gray-400">
         Loading...
       </div>
 
       <div
         v-else-if="!inboxesData?.data.length"
-        class="text-center text-gray-400 dark:text-gray-500 py-12"
+        class="text-center text-gray-500 dark:text-gray-400 py-12"
       >
         <Icon name="lucide:inbox" class="w-12 h-12 mx-auto mb-3 opacity-50" />
         <p>No inboxes found</p>
@@ -72,7 +72,7 @@
                   {{ inbox.ownerName || inbox.ownerEmail }}
                   <span
                     v-if="inbox.ownerName"
-                    class="block text-xs text-gray-400 dark:text-gray-500"
+                    class="block text-xs text-gray-500 dark:text-gray-400"
                   >
                     {{ inbox.ownerEmail }}
                   </span>
@@ -84,7 +84,7 @@
                   >
                     {{ inbox.teamName }}
                   </span>
-                  <span v-else class="text-xs text-gray-400 dark:text-gray-500">
+                  <span v-else class="text-xs text-gray-500 dark:text-gray-400">
                     —
                   </span>
                 </td>
@@ -101,7 +101,7 @@
                   </span>
                 </td>
                 <td
-                  class="px-4 py-3 text-gray-400 dark:text-gray-500 whitespace-nowrap"
+                  class="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap"
                 >
                   {{ formatDate(inbox.createdAt) }}
                 </td>
@@ -132,7 +132,7 @@
           v-if="inboxesData.pagination.pages > 1"
           class="flex items-center justify-between pt-4"
         >
-          <p class="text-xs text-gray-400 dark:text-gray-500">
+          <p class="text-xs text-gray-500 dark:text-gray-400">
             Page {{ inboxesData.pagination.page }} of
             {{ inboxesData.pagination.pages }} ({{
               inboxesData.pagination.total
@@ -176,8 +176,12 @@
       >
         <div
           class="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-sm p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="edit-inbox-title"
         >
           <h2
+            id="edit-inbox-title"
             class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4"
           >
             Edit Inbox
@@ -218,14 +222,15 @@
                   </p>
                   <p
                     v-if="selectedOwner.name"
-                    class="text-xs text-gray-400 dark:text-gray-500 truncate"
+                    class="text-xs text-gray-500 dark:text-gray-400 truncate"
                   >
                     {{ selectedOwner.email }}
                   </p>
                 </div>
                 <button
                   type="button"
-                  class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                  aria-label="Clear selected owner"
+                  class="text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                   @click="clearSelectedOwner"
                 >
                   <Icon name="lucide:x" class="w-4 h-4" />
@@ -236,7 +241,7 @@
               <div v-else class="relative">
                 <Icon
                   name="lucide:search"
-                  class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
+                  class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400"
                 />
                 <input
                   v-model="ownerSearchQuery"
@@ -245,6 +250,7 @@
                   class="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   @input="debouncedOwnerSearch"
                   @focus="showOwnerResults = true"
+                  @blur="handleOwnerBlur"
                 />
               </div>
 
@@ -259,13 +265,13 @@
               >
                 <div
                   v-if="ownerSearching"
-                  class="px-3 py-3 text-sm text-gray-400 text-center"
+                  class="px-3 py-3 text-sm text-gray-500 dark:text-gray-400 text-center"
                 >
                   Searching...
                 </div>
                 <div
                   v-else-if="!ownerSearchResults.length"
-                  class="px-3 py-3 text-sm text-gray-400 text-center"
+                  class="px-3 py-3 text-sm text-gray-500 dark:text-gray-400 text-center"
                 >
                   No users found
                 </div>
@@ -289,7 +295,7 @@
                     </p>
                     <p
                       v-if="user.name"
-                      class="text-xs text-gray-400 dark:text-gray-500 truncate"
+                      class="text-xs text-gray-500 dark:text-gray-400 truncate"
                     >
                       {{ user.email }}
                     </p>
@@ -311,6 +317,7 @@
             </select>
             <p
               v-if="editError"
+              role="alert"
               class="text-sm text-red-600 dark:text-red-400 mb-2"
             >
               {{ editError }}
@@ -335,8 +342,12 @@
       >
         <div
           class="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-sm p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-inbox-title"
         >
           <h2
+            id="delete-inbox-title"
             class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2"
           >
             Delete Inbox
@@ -346,12 +357,13 @@
             <strong>{{ deleteTarget.name }}</strong
             >?
           </p>
-          <p class="text-xs text-gray-400 dark:text-gray-500 mb-4">
+          <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">
             This will permanently delete all {{ deleteTarget.messageCount }}
             messages in this inbox. This cannot be undone.
           </p>
           <p
             v-if="deleteError"
+            role="alert"
             class="text-sm text-red-600 dark:text-red-400 mb-2"
           >
             {{ deleteError }}
@@ -383,6 +395,7 @@ definePageMeta({ layout: "default" });
 useHead({ title: "Inbox Management" });
 
 const api = useApi();
+const toast = useToast();
 
 const loading = ref(true);
 const inboxesData = ref<PaginatedAdminInboxes | null>(null);
@@ -423,9 +436,16 @@ async function fetchTeams() {
   }
 }
 
+function handleKeydown(e: KeyboardEvent) {
+  if (e.key !== "Escape") return;
+  if (editInbox.value) editInbox.value = null;
+  else if (deleteTarget.value) deleteTarget.value = null;
+}
+
 onMounted(() => {
   fetchInboxes();
   fetchTeams();
+  document.addEventListener("keydown", handleKeydown);
 });
 
 // ─── Owner autocomplete ────────────────────────────────────
@@ -476,6 +496,19 @@ function clearSelectedOwner() {
   ownerSearchResults.value = [];
 }
 
+function handleOwnerBlur() {
+  // Delay so a click on a dropdown result registers before it's hidden
+  setTimeout(() => {
+    showOwnerResults.value = false;
+  }, 150);
+}
+
+onUnmounted(() => {
+  document.removeEventListener("keydown", handleKeydown);
+  if (debounceTimer) clearTimeout(debounceTimer);
+  if (ownerSearchTimeout) clearTimeout(ownerSearchTimeout);
+});
+
 // ─── Edit ──────────────────────────────────────────────────
 const editInbox = ref<AdminInbox | null>(null);
 const editForm = reactive({ name: "", userId: "", teamId: "" });
@@ -508,6 +541,7 @@ async function handleEdit() {
       userId: editForm.userId || undefined,
       teamId: editForm.teamId || null,
     });
+    toast.success(`Inbox "${editForm.name || editInbox.value.name}" updated`);
     editInbox.value = null;
     await fetchInboxes();
   } catch (e: any) {
@@ -533,6 +567,7 @@ async function handleDelete() {
   deleteError.value = "";
   try {
     await api.deleteAdminInbox(deleteTarget.value.id);
+    toast.success(`Inbox "${deleteTarget.value.name}" deleted`);
     deleteTarget.value = null;
     await fetchInboxes();
   } catch (e: any) {

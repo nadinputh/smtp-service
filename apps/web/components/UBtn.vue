@@ -30,14 +30,15 @@ const variantClasses: Record<string, string> = {
 };
 
 const sizeClasses: Record<string, string> = {
-  xs: "text-xs px-2.5 py-1 gap-1",
-  sm: "text-sm px-3 py-1.5 gap-1.5",
-  md: "text-sm px-4 py-2 gap-2",
+  xs: "text-xs px-2.5 py-2 gap-1",
+  sm: "text-sm px-3 py-2.5 gap-1.5",
+  md: "text-sm px-4 py-3 gap-2",
 };
 
 const classes = computed(() => {
   return [
     "inline-flex items-center justify-center rounded-lg transition-colors disabled:opacity-50",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800",
     variantClasses[props.variant],
     sizeClasses[props.size],
   ].join(" ");
