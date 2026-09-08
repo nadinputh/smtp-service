@@ -835,7 +835,8 @@ export function useApi() {
   return new Proxy(api, {
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver);
-      if (typeof value !== "function" || prop === "changePassword") return value;
+      if (typeof value !== "function" || prop === "changePassword")
+        return value;
       return async (...args: unknown[]) => {
         try {
           return await (value as (...a: unknown[]) => unknown)(...args);

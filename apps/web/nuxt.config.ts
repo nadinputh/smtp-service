@@ -33,8 +33,8 @@ export default defineNuxtConfig({
   runtimeConfig: {
     apiTarget,
     public: {
-      smtpHost: process.env.SMTP_HOST || "localhost",
-      smtpPort: process.env.SMTP_PORT || "2525",
+      smtpHost: process.env.NUXT_PUBLIC_SMTP_HOST || "localhost",
+      smtpPort: process.env.NUXT_PUBLIC_SMTP_PORT || "2525",
     },
   },
 

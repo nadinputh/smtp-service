@@ -57,7 +57,11 @@ export function useAuth() {
   if (import.meta.client && !_visibilityListenerAdded) {
     _visibilityListenerAdded = true;
     document.addEventListener("visibilitychange", () => {
-      if (!document.hidden && authState.token && isTokenExpired(authState.token)) {
+      if (
+        !document.hidden &&
+        authState.token &&
+        isTokenExpired(authState.token)
+      ) {
         authState.token = null;
         authState.user = null;
         localStorage.removeItem("auth");
