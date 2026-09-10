@@ -171,11 +171,17 @@
 
       <!-- Tab switcher -->
       <div class="border-b border-gray-200 dark:border-gray-700 px-6">
-        <nav class="flex gap-4 -mb-px">
+        <nav
+          class="flex gap-4 -mb-px"
+          role="tablist"
+          aria-label="Message detail sections"
+        >
           <button
             v-for="tab in tabs"
             :key="tab.key"
-            class="py-3 text-sm border-b-2 transition-colors"
+            role="tab"
+            :aria-selected="activeTab === tab.key"
+            class="py-3 text-sm border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900"
             :class="activeTab === tab.key ? 'border-indigo-500 text-indigo-600 font-medium' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-600'"
             @click="activeTab = tab.key"
           >
@@ -195,22 +201,30 @@
           <div
             class="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"
           >
-            <span class="text-xs text-gray-500 dark:text-gray-400"
-              >HTML Preview</span
+            <span
+              class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1"
             >
+              HTML Preview
+              <span class="hidden sm:inline text-gray-400 dark:text-gray-500"
+                >&middot; independent of your dashboard theme</span
+              >
+            </span>
             <div
               class="flex items-center bg-gray-200 dark:bg-gray-700 rounded-md p-0.5"
+              role="group"
+              aria-label="Preview mode"
             >
               <button
                 v-for="opt in previewModes"
                 :key="opt.value"
+                :aria-pressed="previewBg === opt.value"
                 @click="previewBg = opt.value"
                 :title="opt.title"
-                class="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors"
+                class="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800"
                 :class="
                   previewBg === opt.value
-                    ? 'bg-white dark:bg-gray-600 text-gray-800 dark:text-gray-100 shadow-sm'
-                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                    ? 'bg-white dark:bg-gray-600 text-gray-800 dark:text-gray-100 shadow-sm ring-1 ring-indigo-300 dark:ring-indigo-500'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                 "
               >
                 <Icon :name="opt.icon" class="w-3 h-3" />
@@ -218,9 +232,57 @@
               </button>
             </div>
           </div>
-          <!-- iframe -->
+          <!-- Clicked-link bar -->
           <div
-            class="transition-colors"
+            v-if="clickedLink"
+            role="status"
+            aria-live="polite"
+            class="flex items-center gap-2 px-4 py-2 border-b border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-900/20 text-sm"
+          >
+            <Icon
+              name="lucide:link"
+              class="w-4 h-4 shrink-0 text-indigo-600 dark:text-indigo-400"
+            />
+            <span class="text-gray-500 dark:text-gray-400 shrink-0">Link:</span>
+            <code
+              class="flex-1 min-w-0 truncate text-gray-800 dark:text-gray-200"
+              :title="clickedLink"
+              >{{ clickedLink }}</code
+            >
+            <button
+              type="button"
+              @click="copyClickedLink"
+              class="shrink-0 inline-flex items-center gap-1 -my-1.5 py-1.5 px-1 text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300"
+            >
+              <Icon
+                :name="linkCopied ? 'lucide:check' : 'lucide:copy'"
+                class="w-3.5 h-3.5"
+              />
+              {{ linkCopied ? "Copied" : "Copy" }}
+            </button>
+            <a
+              :href="clickedLink"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="shrink-0 inline-flex items-center gap-1 -my-1.5 py-1.5 px-1 text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300"
+            >
+              <Icon name="lucide:external-link" class="w-3.5 h-3.5" />
+              Open
+            </a>
+            <button
+              type="button"
+              @click="clickedLink = null"
+              aria-label="Dismiss link"
+              class="shrink-0 p-1.5 -m-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            >
+              <Icon name="lucide:x" class="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <!-- iframe: ring-inset frames the preview as its own surface, since
+               it renders independently of the surrounding dashboard theme and
+               can land on either side of a light/dark boundary at the edge -->
+          <div
+            class="transition-colors ring-1 ring-inset ring-gray-200/60 dark:ring-gray-700/60"
             :class="previewBg === 'dark' ? 'bg-gray-900' : 'bg-white'"
           >
             <iframe
@@ -228,6 +290,7 @@
               title="Email HTML preview"
               class="w-full min-h-[calc(100vh-300px)] border-0"
               sandbox="allow-same-origin"
+              @load="handleIframeLoad"
             />
           </div>
         </div>
@@ -1106,31 +1169,101 @@ const previewModes = [
 ];
 
 // Strip <script> blocks and inline event handlers from email HTML before
-// rendering in the sandboxed iframe. This prevents browser console errors
-// ("Blocked script execution … sandbox … allow-scripts not set") caused by
-// script content in emails while keeping the sandbox as defence-in-depth.
-function sanitizeEmailHtml(raw: string): string {
-  return raw
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
-    .replace(/\s+on\w+="[^"]*"/gi, "")
-    .replace(/\s+on\w+='[^']*'/gi, "");
+// rendering in the sandboxed iframe (defence-in-depth — the iframe sandbox
+// already blocks script execution). Also neutralize every <a href> to "#",
+// moving the real destination to data-original-href: the iframe sandbox is
+// allow-same-origin with no allow-scripts, so if a link were left to navigate
+// the iframe itself, the destination (this app's own SPA routes, e.g. a
+// password reset link) could never render there — the preview would go
+// permanently blank with no error and no way back. handleIframeLoad()
+// below intercepts the click instead and shows the real URL in a dismissible
+// bar with copy/open-in-new-tab actions.
+function sanitizeEmailHtml(raw: string): { headExtra: string; bodyHtml: string } {
+  const doc = new DOMParser().parseFromString(raw, "text/html");
+
+  doc.querySelectorAll("script").forEach((el) => el.remove());
+  doc.querySelectorAll("*").forEach((el) => {
+    for (const attr of [...el.attributes]) {
+      if (attr.name.toLowerCase().startsWith("on")) el.removeAttribute(attr.name);
+    }
+  });
+  doc.querySelectorAll("a[href]").forEach((el) => {
+    el.setAttribute("data-original-href", el.getAttribute("href") || "");
+    el.setAttribute("href", "#");
+  });
+
+  const headExtra = [...doc.head.querySelectorAll("style")]
+    .map((el) => el.outerHTML)
+    .join("");
+  return { headExtra, bodyHtml: doc.body.innerHTML };
 }
 
 const previewHtml = computed(() => {
   if (!message.value?.html) return "";
-  const safe = sanitizeEmailHtml(message.value.html);
+  const { headExtra, bodyHtml } = sanitizeEmailHtml(message.value.html);
   if (previewBg.value === "dark") {
     // Outlook-style dark mode: invert the entire document (handling all inline
     // colours and background-color declarations automatically), then
     // counter-invert raster media so images/videos retain their natural look.
+    // body{color:#1f2937} is set explicitly (not left to UA default) because
+    // color-scheme:dark alone flips unset text to white, which then exactly
+    // matches the explicit white html{background} below — since invert() is a
+    // uniform transform, two identical pre-filter colors stay identical after
+    // it, silently making the email's own text unreadable at 1:1 contrast.
     const darkStyle = [
       ":root{color-scheme:dark}",
+      "body{color:#1f2937}",
       "html{filter:invert(1) hue-rotate(180deg);background:#ffffff}",
       "img,video,canvas,iframe{filter:invert(1) hue-rotate(180deg)}",
     ].join("");
-    return `<html><head><meta name="color-scheme" content="dark"><style>${darkStyle}</style></head><body style="margin:0">${safe}</body></html>`;
+    return `<html><head><meta name="color-scheme" content="dark"><style>${darkStyle}</style>${headExtra}</head><body style="margin:0">${bodyHtml}</body></html>`;
   }
-  return `<html><head><style>html{background:#ffffff}body{margin:0;color:#1f2937}</style></head><body>${safe}</body></html>`;
+  return `<html><head><style>html{background:#ffffff}body{margin:0;color:#1f2937}</style>${headExtra}</head><body>${bodyHtml}</body></html>`;
+});
+
+// ─── Link-click interception ──────────────────────────────
+// The parent page (unsandboxed) reaching into a same-origin sandboxed
+// iframe's DOM to attach a listener is allowed by allow-same-origin; it does
+// not require allow-scripts, which only gates script tags/handlers *declared
+// inside* the sandboxed document itself.
+const clickedLink = ref<string | null>(null);
+const linkCopied = ref(false);
+let linkCopyTimeout: ReturnType<typeof setTimeout> | undefined;
+
+function handleIframeLoad(e: Event) {
+  clickedLink.value = null;
+  const doc = (e.target as HTMLIFrameElement).contentDocument;
+  if (!doc) return;
+  doc.addEventListener(
+    "click",
+    (ev) => {
+      const link = (ev.target as HTMLElement)?.closest?.(
+        "a[data-original-href]",
+      );
+      if (!link) return;
+      ev.preventDefault();
+      clickedLink.value = link.getAttribute("data-original-href");
+    },
+    true,
+  );
+}
+
+async function copyClickedLink() {
+  if (!clickedLink.value) return;
+  try {
+    await navigator.clipboard.writeText(clickedLink.value);
+    linkCopied.value = true;
+    clearTimeout(linkCopyTimeout);
+    linkCopyTimeout = setTimeout(() => {
+      linkCopied.value = false;
+    }, 2000);
+  } catch {
+    // Clipboard API unavailable — the visible URL and Open button still work.
+  }
+}
+
+onUnmounted(() => {
+  clearTimeout(linkCopyTimeout);
 });
 
 const tabs = [

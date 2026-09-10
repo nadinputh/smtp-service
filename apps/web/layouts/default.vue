@@ -247,12 +247,15 @@
               <div class="px-4 py-2">
                 <div
                   class="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5"
+                  role="group"
+                  aria-label="Dashboard theme"
                 >
                   <button
                     v-for="opt in themeOptions"
                     :key="opt.value"
+                    :aria-pressed="darkMode.mode.value === opt.value"
                     @click="darkMode.setMode(opt.value)"
-                    class="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium transition-colors"
+                    class="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-700"
                     :class="
                       darkMode.mode.value === opt.value
                         ? 'bg-white dark:bg-gray-600 text-gray-800 dark:text-gray-100 shadow-sm'

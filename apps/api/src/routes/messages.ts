@@ -29,6 +29,34 @@ import {
   type OutboundEmailPayload,
 } from "@mailpocket/queue";
 
+// mailparser returns most header values as plain strings, but "structured"
+// headers (Content-Type, Content-Disposition, ...) come back as an object
+// instead — { text } for address-like headers, or { value, params } for
+// MIME-parameter headers. Format both back into the single-line string form
+// the header actually had on the wire; anything else falls back to
+// JSON.stringify so at least something renders instead of throwing.
+function formatHeaderValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value !== null && typeof value === "object") {
+    if ("text" in value && typeof (value as any).text === "string") {
+      return (value as any).text;
+    }
+    if ("value" in value && typeof (value as any).value === "string") {
+      const { value: base, params } = value as {
+        value: string;
+        params?: Record<string, string>;
+      };
+      const paramStr = params
+        ? Object.entries(params)
+            .map(([k, v]) => `${k}=${v}`)
+            .join("; ")
+        : "";
+      return paramStr ? `${base}; ${paramStr}` : base;
+    }
+  }
+  return JSON.stringify(value);
+}
+
 export function registerMessageRoutes(app: FastifyInstance) {
   const env = getEnv();
   const db = getDb(env.DATABASE_URL);
@@ -274,13 +302,7 @@ export function registerMessageRoutes(app: FastifyInstance) {
       // Convert headers to a flat array of {key, value}
       const allHeaders: { key: string; value: string }[] = [];
       parsed.headers.forEach((value, key) => {
-        const strValue =
-          typeof value === "string"
-            ? value
-            : typeof value === "object" && value !== null && "text" in value
-              ? (value as any).text
-              : JSON.stringify(value);
-        allHeaders.push({ key, value: strValue });
+        allHeaders.push({ key, value: formatHeaderValue(value) });
       });
 
       // Group headers by category
