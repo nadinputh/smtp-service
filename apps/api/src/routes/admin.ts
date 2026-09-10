@@ -12,6 +12,7 @@ import { eq, ilike, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { authGuard } from "../middleware/auth.js";
 import { requireAdmin } from "../middleware/access.js";
+import { passwordPolicyError } from "../lib/password-policy.js";
 
 export function registerAdminRoutes(app: FastifyInstance) {
   const env = getEnv();
@@ -34,10 +35,9 @@ export function registerAdminRoutes(app: FastifyInstance) {
           .send({ error: "Email and password are required" });
       }
 
-      if (password.length < 6) {
-        return reply
-          .status(400)
-          .send({ error: "Password must be at least 6 characters" });
+      const createPasswordError = passwordPolicyError(password);
+      if (createPasswordError) {
+        return reply.status(400).send({ error: createPasswordError });
       }
 
       if (role && role !== "admin" && role !== "user") {
@@ -218,10 +218,12 @@ export function registerAdminRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const { password } = request.body;
 
-      if (!password || password.length < 6) {
-        return reply
-          .status(400)
-          .send({ error: "Password must be at least 6 characters" });
+      if (!password) {
+        return reply.status(400).send({ error: "Password is required" });
+      }
+      const setPasswordError = passwordPolicyError(password);
+      if (setPasswordError) {
+        return reply.status(400).send({ error: setPasswordError });
       }
 
       const passwordHash = await bcrypt.hash(password, 12);

@@ -2,7 +2,7 @@
   "name": "mailpocket",
   "private": true,
   "scripts": {
-    "dev": "pnpm --parallel --filter @mailpocket/smtp --filter @mailpocket/workers --filter @mailpocket/api --filter @mailpocket/web dev",
+    "dev": "bash scripts/dev.sh",
     "dev:api": "pnpm --filter @mailpocket/api dev",
     "dev:smtp": "pnpm --filter @mailpocket/smtp dev",
     "dev:workers": "pnpm --filter @mailpocket/workers dev",

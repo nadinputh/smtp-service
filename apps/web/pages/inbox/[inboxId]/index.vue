@@ -11,7 +11,7 @@
           </h2>
           <p class="text-sm text-gray-500 dark:text-gray-400">
             {{ totalMessages }} messages
-            <span v-if="unreadCount > 0" class="text-indigo-600 font-medium"
+            <span v-if="unreadCount > 0" class="text-indigo-600 dark:text-indigo-400 font-medium"
               >&middot; {{ unreadCount }} unread</span
             >
           </p>
@@ -285,7 +285,7 @@
             class="flex items-center gap-1 px-3 py-2 text-sm border rounded-lg transition-colors"
             :class="
               hasActiveFilters
-                ? 'border-indigo-300 bg-indigo-50 text-indigo-600'
+                ? 'border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400'
                 : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
             "
           >
@@ -295,7 +295,7 @@
           <button
             v-if="hasActiveFilters"
             @click="clearFilters"
-            class="px-3 py-2 text-sm text-red-500 hover:text-red-700"
+            class="px-3 py-2 text-sm text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
           >
             Clear
           </button>
@@ -407,10 +407,10 @@
                 class="text-xs px-1.5 py-0.5 rounded-full"
                 :class="
                   msg.status === 'received'
-                    ? 'bg-green-100 text-green-700'
+                    ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400'
                     : msg.status === 'bounced'
-                      ? 'bg-red-100 text-red-700'
-                      : 'bg-gray-100 text-gray-500'
+                      ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
                 "
               >
                 {{ msg.status }}
@@ -471,7 +471,7 @@
     <!-- Webhooks tab -->
     <div v-if="activeTab === 'webhooks'" class="flex-1 overflow-y-auto p-6">
       <div class="flex items-center justify-between mb-4">
-        <p class="text-sm text-gray-500">Event notifications for this inbox</p>
+        <p class="text-sm text-gray-500 dark:text-gray-400">Event notifications for this inbox</p>
         <UBtn v-if="isEditorOrAbove" size="sm" @click="showWebhookModal = true">
           <Icon name="lucide:plus" class="w-4 h-4" /> Add Webhook
         </UBtn>
@@ -494,22 +494,22 @@
               <div class="flex items-center gap-2 mt-1">
                 <span
                   v-if="wh.onDelivered"
-                  class="text-xs px-1.5 py-0.5 rounded-full bg-green-100 text-green-700"
+                  class="text-xs px-1.5 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400"
                   >delivered</span
                 >
                 <span
                   v-if="wh.onBounced"
-                  class="text-xs px-1.5 py-0.5 rounded-full bg-red-100 text-red-700"
+                  class="text-xs px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400"
                   >bounced</span
                 >
                 <span
                   v-if="wh.onOpened"
-                  class="text-xs px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700"
+                  class="text-xs px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400"
                   >opened</span
                 >
                 <span
                   v-if="wh.onReceived"
-                  class="text-xs px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700"
+                  class="text-xs px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-400"
                   >received</span
                 >
               </div>
@@ -552,15 +552,15 @@
                   <span
                     class="px-1.5 py-0.5 rounded-full font-medium"
                     :class="{
-                      'bg-green-100 text-green-700': log.status === 'success',
-                      'bg-red-100 text-red-700': log.status === 'failed',
-                      'bg-yellow-100 text-yellow-700':
+                      'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400': log.status === 'success',
+                      'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400': log.status === 'failed',
+                      'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400':
                         log.status === 'retrying',
-                      'bg-gray-100 text-gray-500': log.status === 'pending',
+                      'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400': log.status === 'pending',
                     }"
                     >{{ log.status }}</span
                   >
-                  <span class="text-gray-500">{{ log.event }}</span>
+                  <span class="text-gray-500 dark:text-gray-400">{{ log.event }}</span>
                   <span v-if="log.statusCode" class="text-gray-500 dark:text-gray-400"
                     >HTTP {{ log.statusCode }}</span
                   >
@@ -608,7 +608,7 @@
           class="flex items-center gap-3 bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700"
         >
           <div
-            class="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-sm font-semibold"
+            class="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-sm font-semibold"
           >
             {{ (member.name || member.email).charAt(0).toUpperCase() }}
           </div>
@@ -623,9 +623,9 @@
           <span
             class="text-xs px-2 py-0.5 rounded-full font-medium"
             :class="{
-              'bg-purple-100 text-purple-700': member.role === 'owner',
-              'bg-blue-100 text-blue-700': member.role === 'editor',
-              'bg-gray-100 text-gray-600': member.role === 'viewer',
+              'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-400': member.role === 'owner',
+              'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400': member.role === 'editor',
+              'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400': member.role === 'viewer',
             }"
           >
             {{ member.role }}
@@ -639,7 +639,7 @@
                 ($event.target as HTMLSelectElement).value,
               )
             "
-            class="text-xs border border-gray-200 rounded px-1.5 py-0.5"
+            class="text-xs border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-1.5 py-0.5"
           >
             <option value="editor">Editor</option>
             <option value="viewer">Viewer</option>
@@ -778,7 +778,7 @@
               <option value="viewer">Viewer</option>
               <option value="editor">Editor</option>
             </select>
-            <p v-if="inviteError" class="text-sm text-red-600">
+            <p v-if="inviteError" class="text-sm text-red-600 dark:text-red-400">
               {{ inviteError }}
             </p>
             <div class="flex justify-end gap-2">
@@ -895,7 +895,7 @@
                 </div>
               </label>
             </div>
-            <p v-if="webhookError" class="text-sm text-red-600">
+            <p v-if="webhookError" class="text-sm text-red-600 dark:text-red-400">
               {{ webhookError }}
             </p>
             <div class="flex justify-end gap-2">
@@ -1004,11 +1004,11 @@
                   role="radio"
                   :aria-checked="ruleForm.color === c"
                   :aria-label="`${c} color`"
-                  class="w-5 h-5 rounded-full transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-500"
+                  class="w-5 h-5 rounded-full transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800 focus-visible:ring-indigo-500"
                   :class="[
                     RULE_COLOR_CLASSES[c].swatch,
                     ruleForm.color === c
-                      ? 'ring-2 ring-offset-1 ring-gray-400 scale-110'
+                      ? 'ring-2 ring-offset-1 dark:ring-offset-gray-800 ring-gray-400 scale-110'
                       : 'hover:scale-105',
                   ]"
                   @click="ruleForm.color = c"
@@ -1132,7 +1132,7 @@
               Add condition
             </button>
 
-            <p v-if="ruleError" class="text-sm text-red-600">
+            <p v-if="ruleError" class="text-sm text-red-600 dark:text-red-400">
               {{ ruleError }}
             </p>
 
@@ -1338,56 +1338,64 @@ const RULE_COLOR_CLASSES: Record<
   { active: string; inactive: string; dot: string; swatch: string }
 > = {
   indigo: {
-    active: "bg-indigo-100 border-indigo-300 text-indigo-700",
+    active:
+      "bg-indigo-100 dark:bg-indigo-900/30 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-400",
     inactive:
       "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400",
     dot: "bg-indigo-500",
     swatch: "bg-indigo-500",
   },
   blue: {
-    active: "bg-blue-100 border-blue-300 text-blue-700",
+    active:
+      "bg-blue-100 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-400",
     inactive:
       "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400",
     dot: "bg-blue-500",
     swatch: "bg-blue-500",
   },
   green: {
-    active: "bg-green-100 border-green-300 text-green-700",
+    active:
+      "bg-green-100 dark:bg-green-900/30 border-green-300 dark:border-green-700 text-green-700 dark:text-green-400",
     inactive:
       "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400",
     dot: "bg-green-500",
     swatch: "bg-green-500",
   },
   yellow: {
-    active: "bg-yellow-100 border-yellow-300 text-yellow-700",
+    active:
+      "bg-yellow-100 dark:bg-yellow-900/30 border-yellow-300 dark:border-yellow-700 text-yellow-700 dark:text-yellow-400",
     inactive:
       "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400",
     dot: "bg-yellow-400",
     swatch: "bg-yellow-400",
   },
   orange: {
-    active: "bg-orange-100 border-orange-300 text-orange-700",
+    active:
+      "bg-orange-100 dark:bg-orange-900/30 border-orange-300 dark:border-orange-700 text-orange-700 dark:text-orange-400",
     inactive:
       "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400",
     dot: "bg-orange-500",
     swatch: "bg-orange-500",
   },
   red: {
-    active: "bg-red-100 border-red-300 text-red-700",
+    active:
+      "bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-700 text-red-700 dark:text-red-400",
     inactive:
       "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400",
     dot: "bg-red-500",
     swatch: "bg-red-500",
   },
   purple: {
-    active: "bg-purple-100 border-purple-300 text-purple-700",
+    active:
+      "bg-purple-100 dark:bg-purple-900/30 border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-400",
     inactive:
       "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400",
     dot: "bg-purple-500",
     swatch: "bg-purple-500",
   },
   pink: {
-    active: "bg-pink-100 border-pink-300 text-pink-700",
+    active:
+      "bg-pink-100 dark:bg-pink-900/30 border-pink-300 dark:border-pink-700 text-pink-700 dark:text-pink-400",
     inactive:
       "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400",
     dot: "bg-pink-500",

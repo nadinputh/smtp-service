@@ -4,7 +4,7 @@ export default defineNuxtRouteMiddleware((to) => {
   const { isAuthenticated } = useAuth();
 
   // Public routes that never require auth
-  const publicPaths = ["/login", "/register"];
+  const publicPaths = ["/login", "/register", "/forgot-password", "/reset-password"];
   const isPublic = publicPaths.some(
     (p) => to.path === p || to.path.startsWith(`${p}/`),
   );
@@ -13,6 +13,7 @@ export default defineNuxtRouteMiddleware((to) => {
   if (isPublic || to.path.startsWith("/auth/")) return;
 
   if (!isAuthenticated.value) {
-    return navigateTo("/login", { replace: true });
+    const query = to.fullPath !== "/" ? { redirect: to.fullPath } : undefined;
+    return navigateTo({ path: "/login", query }, { replace: true });
   }
 });

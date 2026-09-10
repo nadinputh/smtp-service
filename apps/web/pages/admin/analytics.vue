@@ -1,7 +1,7 @@
 <template>
   <div class="h-full overflow-y-auto">
     <div class="max-w-6xl mx-auto px-6 py-8">
-      <div class="flex items-center justify-between mb-6">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
         <div>
           <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100">
             Admin Analytics
@@ -11,16 +11,16 @@
           </p>
         </div>
         <div
-          class="flex items-center gap-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-0.5"
+          class="flex items-center gap-1 self-start sm:self-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-0.5"
         >
           <button
             v-for="p in periods"
             :key="p.value"
             @click="selectedPeriod = p.value"
-            :aria-pressed="selectedPeriod === p.value"
-            class="px-3 py-1.5 text-sm rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+            :aria-pressed="loadedPeriod === p.value"
+            class="px-3 py-1.5 text-sm rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800"
             :class="
-              selectedPeriod === p.value
+              loadedPeriod === p.value
                 ? 'bg-indigo-600 text-white'
                 : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
             "
@@ -34,9 +34,25 @@
         Loading analytics...
       </div>
 
+      <div v-else-if="loadError" class="text-center py-20">
+        <Icon
+          name="lucide:alert-circle"
+          class="w-10 h-10 mx-auto mb-3 text-red-500"
+        />
+        <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          Couldn't load analytics
+        </p>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          Something went wrong fetching system metrics.
+        </p>
+        <UBtn size="sm" @click="fetchAll">Retry</UBtn>
+      </div>
+
       <template v-else>
         <!-- System Entity Cards -->
-        <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+        <div
+          class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6 [&>*:last-child]:col-span-2 md:[&>*:last-child]:col-span-1"
+        >
           <div
             class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5"
           >
@@ -146,23 +162,25 @@
           <div
             class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5"
           >
-            <div class="flex items-center justify-between mb-4">
-              <h3
+            <div
+              class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-4"
+            >
+              <h2
                 class="text-sm font-semibold text-gray-700 dark:text-gray-300"
               >
                 System Email Volume
-              </h3>
+              </h2>
               <div
-                class="flex items-center gap-1 bg-gray-50 dark:bg-gray-900 rounded-lg p-0.5"
+                class="flex items-center gap-1 self-start sm:self-auto bg-gray-50 dark:bg-gray-900 rounded-lg p-0.5"
               >
                 <button
                   v-for="m in metrics"
                   :key="m.value"
                   @click="selectedMetric = m.value"
-                  :aria-pressed="selectedMetric === m.value"
-                  class="px-2 py-1 text-xs rounded transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+                  :aria-pressed="loadedMetric === m.value"
+                  class="px-2 py-1 text-xs rounded transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900"
                   :class="
-                    selectedMetric === m.value
+                    loadedMetric === m.value
                       ? 'bg-white dark:bg-gray-700 shadow text-gray-800 dark:text-gray-100'
                       : 'text-gray-500 dark:text-gray-400'
                   "
@@ -216,21 +234,32 @@
               </div>
             </div>
             <!-- Accessible text alternative for the SVG trend chart -->
-            <table v-if="timeseries" class="sr-only">
-              <caption>{{ chartSummaryLabel }}</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Date</th>
-                  <th scope="col">{{ selectedMetricLabel }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(label, i) in timeseries.labels" :key="label">
-                  <td>{{ label }}</td>
-                  <td>{{ timeseries.values[i] }}</td>
-                </tr>
-              </tbody>
-            </table>
+            <!-- sr-only goes on this wrapping div, not the table itself:
+                 tables ignore explicit width/height and auto-size to their
+                 content regardless of table-layout, so a `sr-only` table
+                 never actually shrinks to 1x1px — it keeps its full
+                 rendered height (one row per data point) and, since
+                 nothing here establishes a positioning context to contain
+                 it, that leaked height was inflating the page's own
+                 scrollable area below the real content. A div has no such
+                 quirk and reliably collapses to 1x1px. -->
+            <div v-if="timeseries" class="sr-only">
+              <table>
+                <caption>{{ chartSummaryLabel }}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Date</th>
+                    <th scope="col">{{ selectedMetricLabel }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(label, i) in timeseries.labels" :key="label">
+                    <td>{{ label }}</td>
+                    <td>{{ timeseries.values[i] }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
             <div
               v-if="timeseries"
               class="flex justify-between mt-1 text-xs text-gray-500 dark:text-gray-400"
@@ -247,11 +276,11 @@
           <div
             class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5"
           >
-            <h3
+            <h2
               class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4"
             >
               Period Breakdown (last {{ overview?.period.days }}d)
-            </h3>
+            </h2>
             <div class="space-y-4">
               <div v-for="bar in periodBars" :key="bar.label">
                 <div class="flex items-center justify-between mb-1">
@@ -285,11 +314,11 @@
           <div
             class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5"
           >
-            <h3
+            <h2
               class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4"
             >
               Top Users by Messages
-            </h3>
+            </h2>
             <div
               v-if="!topUsers.length"
               class="text-sm text-gray-500 dark:text-gray-400 py-4 text-center"
@@ -340,11 +369,11 @@
           <div
             class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5"
           >
-            <h3
+            <h2
               class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4"
             >
               Top Inboxes by Messages
-            </h3>
+            </h2>
             <div
               v-if="!topInboxes.length"
               class="text-sm text-gray-500 dark:text-gray-400 py-4 text-center"
@@ -409,15 +438,26 @@ definePageMeta({ layout: "default" });
 useHead({ title: "Admin Analytics" });
 
 const api = useApi();
+const toast = useToast();
 
 const loading = ref(true);
+const loadError = ref(false);
 const overview = ref<AdminAnalyticsOverview | null>(null);
 const timeseries = ref<TimeseriesData | null>(null);
 const topUsers = ref<AdminTopUser[]>([]);
 const topInboxes = ref<AdminTopInbox[]>([]);
 
 const selectedPeriod = ref("30d");
+// The period actually reflected by the data on screen — only advances on a
+// successful fetch, so the pill never claims a period whose data failed to
+// load (selectedPeriod alone would flip instantly on click, before the
+// fetch even starts).
+const loadedPeriod = ref("30d");
 const selectedMetric = ref("sent");
+// Same pattern as loadedPeriod, for the same reason: the metric pill,
+// chart color, and computed aria-label must reflect the data actually
+// plotted, not the metric that was clicked but failed to load.
+const loadedMetric = ref("sent");
 
 const periods = [
   { label: "7d", value: "7d" },
@@ -450,15 +490,15 @@ const metricColorsDark: Record<string, string> = {
 
 const metricColor = computed(() => {
   const colors = isDark.value ? metricColorsDark : metricColorsLight;
-  return colors[selectedMetric.value] ?? colors.sent;
+  return colors[loadedMetric.value] ?? colors.sent;
 });
 
 const gridStroke = computed(() => (isDark.value ? "#374151" : "#f3f4f6"));
 
 const selectedMetricLabel = computed(
   () =>
-    metrics.find((m) => m.value === selectedMetric.value)?.label ??
-    selectedMetric.value,
+    metrics.find((m) => m.value === loadedMetric.value)?.label ??
+    loadedMetric.value,
 );
 
 const chartSummaryLabel = computed(() => {
@@ -524,6 +564,7 @@ const periodMax = computed(() => {
 // ─── Fetch ──────────────────────────────────────────────────
 async function fetchAll() {
   loading.value = true;
+  loadError.value = false;
   try {
     const [ov, ts, tu, ti] = await Promise.all([
       api.getAdminAnalyticsOverview(selectedPeriod.value),
@@ -538,8 +579,16 @@ async function fetchAll() {
     timeseries.value = ts;
     topUsers.value = tu.users;
     topInboxes.value = ti.inboxes;
+    loadedPeriod.value = selectedPeriod.value;
+    loadedMetric.value = selectedMetric.value;
   } catch {
-    // empty
+    if (overview.value) {
+      // Already showing data from a prior successful load — don't blow it
+      // away over a failed period switch, just say so.
+      toast.error("Couldn't refresh analytics — showing the last loaded data");
+    } else {
+      loadError.value = true;
+    }
   } finally {
     loading.value = false;
   }
@@ -551,8 +600,9 @@ async function fetchTimeseries() {
       selectedMetric.value,
       selectedPeriod.value,
     );
+    loadedMetric.value = selectedMetric.value;
   } catch {
-    // empty
+    toast.error("Couldn't load chart data for that metric");
   }
 }
 

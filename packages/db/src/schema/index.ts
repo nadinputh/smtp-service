@@ -19,3 +19,4 @@ export { userQuotas } from "./user-quotas.js";
 export { teams, teamMembers } from "./teams.js";
 export { teamActivityLog } from "./team-activity-log.js";
 export { teamInvitations } from "./team-invitations.js";
+export { passwordResets } from "./password-resets.js";

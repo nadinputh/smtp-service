@@ -1,12 +1,12 @@
 <template>
   <div class="h-full flex flex-col">
     <header
-      class="px-6 h-20 shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-center justify-between"
+      class="px-6 py-3 min-h-20 shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
     >
       <div>
-        <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100">
+        <h1 class="text-lg font-semibold text-gray-800 dark:text-gray-100">
           Inbox Management
-        </h2>
+        </h1>
         <p class="text-sm text-gray-500 dark:text-gray-400">
           View and manage all inboxes across users
         </p>
@@ -27,6 +27,20 @@
 
       <div v-if="loading" class="text-gray-500 dark:text-gray-400">
         Loading...
+      </div>
+
+      <div v-else-if="loadError" class="text-center py-12">
+        <Icon
+          name="lucide:alert-circle"
+          class="w-10 h-10 mx-auto mb-3 text-red-500"
+        />
+        <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          Couldn't load inboxes
+        </p>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          Something went wrong fetching the inbox list.
+        </p>
+        <UBtn size="sm" @click="fetchInboxes">Retry</UBtn>
       </div>
 
       <div
@@ -109,6 +123,7 @@
                   <UBtn
                     variant="secondary"
                     size="xs"
+                    class="min-h-11"
                     @click="openEditModal(inbox)"
                   >
                     Edit
@@ -116,7 +131,7 @@
                   <UBtn
                     variant="danger"
                     size="xs"
-                    class="ml-1"
+                    class="ml-2 min-h-11"
                     @click="confirmDelete(inbox)"
                   >
                     Delete
@@ -168,42 +183,32 @@
     </div>
 
     <!-- Edit Modal -->
-    <Teleport to="body">
-      <div
-        v-if="editInbox"
-        class="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
-        @click.self="editInbox = null"
-      >
-        <div
-          class="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-sm p-6"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="edit-inbox-title"
+    <Modal v-if="editInbox" title="Edit Inbox" @close="editInbox = null">
+      <form @submit.prevent="handleEdit">
+        <label
+          for="edit-inbox-name"
+          class="block text-sm text-gray-600 dark:text-gray-400 mb-1"
         >
-          <h2
-            id="edit-inbox-title"
-            class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4"
-          >
-            Edit Inbox
-          </h2>
-          <form @submit.prevent="handleEdit">
-            <label class="block text-sm text-gray-600 dark:text-gray-400 mb-1">
-              Name
-            </label>
-            <input
-              v-model="editForm.name"
-              type="text"
-              placeholder="Inbox name"
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-3"
-            />
-            <label class="block text-sm text-gray-600 dark:text-gray-400 mb-1">
-              Owner
-            </label>
-            <div class="relative mb-3">
+          Name
+        </label>
+        <input
+          id="edit-inbox-name"
+          v-model="editForm.name"
+          type="text"
+          placeholder="Inbox name"
+          class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-3"
+        />
+        <label
+          for="edit-inbox-owner-search"
+          class="block text-sm text-gray-600 dark:text-gray-400 mb-1"
+        >
+          Owner
+        </label>
+        <div class="relative mb-3">
               <!-- Selected owner chip -->
               <div
                 v-if="selectedOwner"
-                class="flex items-center gap-2 px-3 py-2 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg"
+                class="flex items-center gap-2 px-3 py-2 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg"
               >
                 <div
                   class="w-7 h-7 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xs font-semibold shrink-0"
@@ -222,7 +227,7 @@
                   </p>
                   <p
                     v-if="selectedOwner.name"
-                    class="text-xs text-gray-500 dark:text-gray-400 truncate"
+                    class="text-xs font-medium text-indigo-700 dark:text-indigo-300 truncate"
                   >
                     {{ selectedOwner.email }}
                   </p>
@@ -244,6 +249,7 @@
                   class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400"
                 />
                 <input
+                  id="edit-inbox-owner-search"
                   v-model="ownerSearchQuery"
                   type="text"
                   placeholder="Search by name or email..."
@@ -275,6 +281,13 @@
                 >
                   No users found
                 </div>
+                <div
+                  v-if="ownerNameCollision"
+                  class="px-3 py-2 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-100 dark:border-amber-800"
+                >
+                  Multiple people share this name — check the email before
+                  choosing.
+                </div>
                 <button
                   v-for="user in ownerSearchResults"
                   :key="user.id"
@@ -295,7 +308,7 @@
                     </p>
                     <p
                       v-if="user.name"
-                      class="text-xs text-gray-500 dark:text-gray-400 truncate"
+                      class="text-xs font-medium text-gray-600 dark:text-gray-300 truncate"
                     >
                       {{ user.email }}
                     </p>
@@ -303,10 +316,14 @@
                 </button>
               </div>
             </div>
-            <label class="block text-sm text-gray-600 dark:text-gray-400 mb-1">
+            <label
+              for="edit-inbox-team"
+              class="block text-sm text-gray-600 dark:text-gray-400 mb-1"
+            >
               Team (optional)
             </label>
             <select
+              id="edit-inbox-team"
               v-model="editForm.teamId"
               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-3"
             >
@@ -330,57 +347,43 @@
                 {{ saving ? "Saving..." : "Save" }}
               </UBtn>
             </div>
-          </form>
-        </div>
-      </div>
+      </form>
+    </Modal>
 
-      <!-- Delete Confirmation -->
-      <div
-        v-if="deleteTarget"
-        class="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
-        @click.self="deleteTarget = null"
+    <!-- Delete Confirmation -->
+    <Modal
+      v-if="deleteTarget"
+      title="Delete Inbox"
+      title-class="mb-2"
+      @close="deleteTarget = null"
+    >
+      <p class="text-sm text-gray-600 dark:text-gray-400 mb-1">
+        Are you sure you want to delete
+        <strong>{{ deleteTarget.name }}</strong
+        >?
+      </p>
+      <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">
+        This will permanently delete all {{ deleteTarget.messageCount }}
+        messages in this inbox. This cannot be undone.
+      </p>
+      <p
+        v-if="deleteError"
+        role="alert"
+        class="text-sm text-red-600 dark:text-red-400 mb-2"
       >
-        <div
-          class="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-sm p-6"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="delete-inbox-title"
+        {{ deleteError }}
+      </p>
+      <div class="flex justify-end gap-2">
+        <UBtn variant="ghost" @click="deleteTarget = null"> Cancel </UBtn>
+        <UBtn
+          variant="danger-filled"
+          :disabled="deleting"
+          @click="handleDelete"
         >
-          <h2
-            id="delete-inbox-title"
-            class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2"
-          >
-            Delete Inbox
-          </h2>
-          <p class="text-sm text-gray-600 dark:text-gray-400 mb-1">
-            Are you sure you want to delete
-            <strong>{{ deleteTarget.name }}</strong
-            >?
-          </p>
-          <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">
-            This will permanently delete all {{ deleteTarget.messageCount }}
-            messages in this inbox. This cannot be undone.
-          </p>
-          <p
-            v-if="deleteError"
-            role="alert"
-            class="text-sm text-red-600 dark:text-red-400 mb-2"
-          >
-            {{ deleteError }}
-          </p>
-          <div class="flex justify-end gap-2">
-            <UBtn variant="ghost" @click="deleteTarget = null"> Cancel </UBtn>
-            <UBtn
-              variant="danger-filled"
-              :disabled="deleting"
-              @click="handleDelete"
-            >
-              {{ deleting ? "Deleting..." : "Delete" }}
-            </UBtn>
-          </div>
-        </div>
+          {{ deleting ? "Deleting..." : "Delete" }}
+        </UBtn>
       </div>
-    </Teleport>
+    </Modal>
   </div>
 </template>
 
@@ -398,6 +401,7 @@ const api = useApi();
 const toast = useToast();
 
 const loading = ref(true);
+const loadError = ref(false);
 const inboxesData = ref<PaginatedAdminInboxes | null>(null);
 const search = ref("");
 const page = ref(1);
@@ -414,6 +418,7 @@ function debouncedFetch() {
 
 async function fetchInboxes() {
   loading.value = true;
+  loadError.value = false;
   try {
     inboxesData.value = await api.getAdminInboxes({
       page: page.value,
@@ -421,7 +426,7 @@ async function fetchInboxes() {
       search: search.value || undefined,
     });
   } catch {
-    // empty
+    loadError.value = true;
   } finally {
     loading.value = false;
   }
@@ -432,20 +437,13 @@ async function fetchTeams() {
     const result = await api.getAdminTeams({ limit: 100 });
     allTeams.value = result.data;
   } catch {
-    // empty
+    toast.error("Couldn't load teams for the owner/team picker");
   }
-}
-
-function handleKeydown(e: KeyboardEvent) {
-  if (e.key !== "Escape") return;
-  if (editInbox.value) editInbox.value = null;
-  else if (deleteTarget.value) deleteTarget.value = null;
 }
 
 onMounted(() => {
   fetchInboxes();
   fetchTeams();
-  document.addEventListener("keydown", handleKeydown);
 });
 
 // ─── Owner autocomplete ────────────────────────────────────
@@ -461,6 +459,19 @@ const selectedOwner = ref<{
 const ownerSearching = ref(false);
 const showOwnerResults = ref(false);
 let ownerSearchTimeout: ReturnType<typeof setTimeout> | null = null;
+
+// True when two or more search results share a display name — the avatar
+// initial and name alone can't disambiguate them, so the UI needs to say so.
+const ownerNameCollision = computed(() => {
+  const seen = new Set<string>();
+  for (const u of ownerSearchResults.value) {
+    if (!u.name) continue;
+    const key = u.name.trim().toLowerCase();
+    if (seen.has(key)) return true;
+    seen.add(key);
+  }
+  return false;
+});
 
 function debouncedOwnerSearch() {
   if (ownerSearchTimeout) clearTimeout(ownerSearchTimeout);
@@ -504,7 +515,6 @@ function handleOwnerBlur() {
 }
 
 onUnmounted(() => {
-  document.removeEventListener("keydown", handleKeydown);
   if (debounceTimer) clearTimeout(debounceTimer);
   if (ownerSearchTimeout) clearTimeout(ownerSearchTimeout);
 });

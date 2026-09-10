@@ -1,5 +1,5 @@
 export function useApi() {
-  const { token, logout } = useAuth();
+  const { token, forceLogout } = useAuth();
 
   function authHeaders(): Record<string, string> {
     return token.value ? { Authorization: `Bearer ${token.value}` } : {};
@@ -842,7 +842,7 @@ export function useApi() {
           return await (value as (...a: unknown[]) => unknown)(...args);
         } catch (err: unknown) {
           if ((err as any)?.response?.status === 401) {
-            logout();
+            forceLogout("expired");
           }
           throw err;
         }

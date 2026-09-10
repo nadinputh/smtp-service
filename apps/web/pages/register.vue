@@ -8,7 +8,7 @@
       >
         <div class="text-center mb-6">
           <Icon
-            name="lucide:mail"
+            name="lucide:mail-plus"
             class="w-10 h-10 text-indigo-600 dark:text-indigo-400 mx-auto mb-2"
           />
           <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100">
@@ -31,7 +31,7 @@
               v-model="name"
               type="text"
               autocomplete="name"
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               placeholder="John Doe"
             />
           </div>
@@ -47,7 +47,7 @@
               type="email"
               required
               autocomplete="email"
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               placeholder="you@example.com"
             />
           </div>
@@ -57,15 +57,27 @@
               class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
               >Password</label
             >
-            <input
+            <PasswordInput
               id="register-password"
               v-model="password"
-              type="password"
               required
               minlength="8"
               autocomplete="new-password"
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              placeholder="••••••••"
+            />
+            <PasswordChecklist :password="password" />
+          </div>
+          <div>
+            <label
+              for="register-confirm-password"
+              class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+              >Confirm password</label
+            >
+            <PasswordInput
+              id="register-confirm-password"
+              v-model="confirmPassword"
+              required
+              minlength="8"
+              autocomplete="new-password"
             />
           </div>
 
@@ -103,11 +115,18 @@ if (isAuthenticated.value) {
 const name = ref("");
 const email = ref("");
 const password = ref("");
+const confirmPassword = ref("");
 const error = ref("");
 const loading = ref(false);
 
 async function handleRegister() {
   error.value = "";
+
+  if (password.value !== confirmPassword.value) {
+    error.value = "Passwords do not match";
+    return;
+  }
+
   loading.value = true;
   try {
     await register(email.value, password.value, name.value || undefined);

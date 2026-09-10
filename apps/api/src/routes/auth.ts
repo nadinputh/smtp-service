@@ -2,13 +2,61 @@ import type { FastifyInstance } from "fastify";
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
 import { getEnv } from "@mailpocket/env";
-import { getDb, users } from "@mailpocket/db";
-import { eq } from "drizzle-orm";
+import { getDb, users, passwordResets } from "@mailpocket/db";
+import { eq, and, isNull, gt } from "drizzle-orm";
+import { createStorage } from "@mailpocket/storage";
+import { createOutboundQueue, createRedisConnection } from "@mailpocket/queue";
 import { signToken, authGuard } from "../middleware/auth.js";
+import { passwordPolicyError } from "../lib/password-policy.js";
+import { getOrCreateSystemInbox } from "../lib/system-inbox.js";
+import { sendSystemEmail } from "../lib/send-system-email.js";
+import { isLdapConfigured } from "../lib/ldap-config.js";
+
+const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000; // 1 hour
+const LDAP_CONNECT_TIMEOUT_MS = 5000;
+const LDAP_OPERATION_TIMEOUT_MS = 10000;
 
 export function registerAuthRoutes(app: FastifyInstance) {
   const env = getEnv();
   const db = getDb(env.DATABASE_URL);
+
+  if (env.LDAP_ENABLED && !isLdapConfigured(env)) {
+    app.log.warn(
+      "LDAP_ENABLED is true but LDAP_URL, LDAP_BIND_DN, LDAP_BIND_PASSWORD, or LDAP_SEARCH_BASE is missing — LDAP login will report a configuration error to every user who tries it",
+    );
+  }
+  if (env.LDAP_ENABLED && env.LDAP_URL && !env.LDAP_URL.startsWith("ldaps://")) {
+    app.log.warn(
+      { url: env.LDAP_URL },
+      "LDAP_URL is not using ldaps:// — service and user credentials will be sent to the directory server unencrypted",
+    );
+  }
+
+  const storage = createStorage(
+    env.STORAGE_DRIVER === "local"
+      ? {
+          driver: "local",
+          basePath: env.STORAGE_LOCAL_PATH,
+          bucket: env.MINIO_BUCKET,
+        }
+      : {
+          driver: "s3",
+          endPoint: env.MINIO_ENDPOINT,
+          port: env.MINIO_PORT,
+          accessKey: env.MINIO_ACCESS_KEY!,
+          secretKey: env.MINIO_SECRET_KEY!,
+          useSSL: env.MINIO_USE_SSL,
+          bucket: env.MINIO_BUCKET,
+        },
+  );
+  const outboundQueue = createOutboundQueue(
+    createRedisConnection({
+      host: env.REDIS_HOST,
+      port: env.REDIS_PORT,
+      password: env.REDIS_PASSWORD,
+    }),
+  );
+
   const authRateLimit = {
     config: {
       rateLimit: {
@@ -40,19 +88,9 @@ export function registerAuthRoutes(app: FastifyInstance) {
     }
 
     // Password strength validation
-    if (password.length < 8) {
-      return reply
-        .status(400)
-        .send({ error: "Password must be at least 8 characters" });
-    }
-    if (
-      !/[A-Z]/.test(password) ||
-      !/[a-z]/.test(password) ||
-      !/[0-9]/.test(password)
-    ) {
-      return reply.status(400).send({
-        error: "Password must contain uppercase, lowercase, and a number",
-      });
+    const passwordError = passwordPolicyError(password);
+    if (passwordError) {
+      return reply.status(400).send({ error: passwordError });
     }
 
     const normalizedEmail = email.trim().toLowerCase();
@@ -155,19 +193,21 @@ export function registerAuthRoutes(app: FastifyInstance) {
         .send({ error: "Username and password are required" });
     }
 
-    if (
-      !env.LDAP_URL ||
-      !env.LDAP_BIND_DN ||
-      !env.LDAP_BIND_PASSWORD ||
-      !env.LDAP_SEARCH_BASE
-    ) {
+    if (!isLdapConfigured(env)) {
+      request.log.error(
+        "LDAP login attempted but LDAP_URL, LDAP_BIND_DN, LDAP_BIND_PASSWORD, or LDAP_SEARCH_BASE is missing",
+      );
       return reply
         .status(500)
         .send({ error: "LDAP configuration is incomplete" });
     }
 
     const ldap = await import("ldapjs");
-    const client = ldap.default.createClient({ url: env.LDAP_URL });
+    const client = ldap.default.createClient({
+      url: env.LDAP_URL!,
+      connectTimeout: LDAP_CONNECT_TIMEOUT_MS,
+      timeout: LDAP_OPERATION_TIMEOUT_MS,
+    });
 
     try {
       // Bind with service account
@@ -188,7 +228,11 @@ export function registerAuthRoutes(app: FastifyInstance) {
           /[\\*()&|!=<>~\x00/]/g,
           (c) => "\\" + c.charCodeAt(0).toString(16).padStart(2, "0"),
         );
-      const searchFilter = env.LDAP_SEARCH_FILTER.replace(
+      // replaceAll, not replace: a filter that offers multiple login
+      // formats (e.g. "(|(sAMAccountName={{username}})(userPrincipalName=
+      // {{username}}))") repeats the placeholder — a single replace() only
+      // fills in the first one and silently breaks every OR branch after it.
+      const searchFilter = env.LDAP_SEARCH_FILTER.replaceAll(
         "{{username}}",
         escapeLdap(username),
       );
@@ -207,7 +251,7 @@ export function registerAuthRoutes(app: FastifyInstance) {
           },
           (err: any, res: any) => {
             if (err) return reject(err);
-            let found: any = null;
+            const matches: any[] = [];
             res.on("searchEntry", (entry: any) => {
               const attrs = entry.pojo?.attributes || entry.attributes || [];
               const obj: any = {
@@ -223,10 +267,19 @@ export function registerAuthRoutes(app: FastifyInstance) {
                   : attr.value || attr.val;
                 obj[name] = val;
               }
-              found = obj;
+              matches.push(obj);
             });
             res.on("error", (err: any) => reject(err));
-            res.on("end", () => resolve(found));
+            res.on("end", () => {
+              if (matches.length > 1) {
+                request.log.error(
+                  { filter: searchFilter, count: matches.length },
+                  "LDAP search matched more than one entry for a single username — refusing to guess",
+                );
+                return reject(new Error("Ambiguous LDAP match"));
+              }
+              resolve(matches[0] ?? null);
+            });
           },
         );
       });
@@ -497,10 +550,9 @@ export function registerAuthRoutes(app: FastifyInstance) {
           .send({ error: "Current password and new password are required" });
       }
 
-      if (newPassword.length < 6) {
-        return reply
-          .status(400)
-          .send({ error: "New password must be at least 6 characters" });
+      const newPasswordError = passwordPolicyError(newPassword);
+      if (newPasswordError) {
+        return reply.status(400).send({ error: newPasswordError });
       }
 
       const [user] = await db
@@ -533,11 +585,118 @@ export function registerAuthRoutes(app: FastifyInstance) {
     },
   );
 
+  // ─── Forgot password ────────────────────────────────────
+  app.post<{
+    Body: { email: string };
+  }>("/api/auth/forgot-password", authRateLimit, async (request, reply) => {
+    const { email } = request.body;
+    if (typeof email !== "string" || !email) {
+      return reply.status(400).send({ error: "Email is required" });
+    }
+
+    // Always the same response whether or not the account exists —
+    // don't let this endpoint be used to enumerate registered emails.
+    const genericResponse = {
+      message:
+        "If an account exists for that email, we've sent a password reset link.",
+    };
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const [user] = await db
+      .select({ id: users.id, email: users.email })
+      .from(users)
+      .where(eq(users.email, normalizedEmail))
+      .limit(1);
+
+    if (!user) {
+      return genericResponse;
+    }
+
+    const token = crypto.randomBytes(32).toString("hex");
+    await db.insert(passwordResets).values({
+      userId: user.id,
+      token,
+      expiresAt: new Date(Date.now() + PASSWORD_RESET_TTL_MS),
+    });
+
+    const resetUrl = `${env.WEB_APP_URL}/reset-password?token=${token}`;
+
+    try {
+      const systemInbox = await getOrCreateSystemInbox(db);
+      await sendSystemEmail({
+        db,
+        storage,
+        outboundQueue,
+        systemInboxId: systemInbox.id,
+        from: "noreply@mailpocket.local",
+        to: user.email,
+        subject: "Reset your MailPocket password",
+        text: `We got a request to reset your MailPocket password. This link expires in 1 hour:\n\n${resetUrl}\n\nIf you didn't request this, you can ignore this email.`,
+        html: `<p>We got a request to reset your MailPocket password. This link expires in 1 hour:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you didn't request this, you can ignore this email.</p>`,
+      });
+    } catch (err) {
+      // Delivery failure shouldn't leak account existence or block the
+      // generic response — log server-side for operators to investigate.
+      app.log.error({ err, userId: user.id }, "Failed to send password reset email");
+    }
+
+    return genericResponse;
+  });
+
+  // ─── Reset password ─────────────────────────────────────
+  app.post<{
+    Body: { token: string; newPassword: string };
+  }>("/api/auth/reset-password", authRateLimit, async (request, reply) => {
+    const { token, newPassword } = request.body;
+    if (!token || !newPassword) {
+      return reply
+        .status(400)
+        .send({ error: "Token and new password are required" });
+    }
+
+    const newPasswordError = passwordPolicyError(newPassword);
+    if (newPasswordError) {
+      return reply.status(400).send({ error: newPasswordError });
+    }
+
+    const [reset] = await db
+      .select({ id: passwordResets.id, userId: passwordResets.userId })
+      .from(passwordResets)
+      .where(
+        and(
+          eq(passwordResets.token, token),
+          isNull(passwordResets.usedAt),
+          gt(passwordResets.expiresAt, new Date()),
+        ),
+      )
+      .limit(1);
+
+    if (!reset) {
+      return reply
+        .status(400)
+        .send({ error: "This reset link is invalid or has expired" });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+
+    await db
+      .update(users)
+      .set({ passwordHash, updatedAt: new Date() })
+      .where(eq(users.id, reset.userId));
+
+    await db
+      .update(passwordResets)
+      .set({ usedAt: new Date() })
+      .where(eq(passwordResets.id, reset.id));
+
+    return { success: true };
+  });
+
   // ─── Auth providers info (system config) ─────────────────
   app.get("/api/auth/providers", async () => {
     return {
       local: true,
-      ldap: env.LDAP_ENABLED,
+      ldap: isLdapConfigured(env),
       oauth2: env.OAUTH2_ENABLED,
     };
   });

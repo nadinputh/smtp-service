@@ -65,6 +65,9 @@ const envSchema = z
     // Tracking
     TRACKING_BASE_URL: z.string().default("http://localhost:3001"),
 
+    // Web app (used to build links in system emails, e.g. password reset)
+    WEB_APP_URL: z.string().default("http://localhost:2121/admin/smtp"),
+
     // CORS
     CORS_ORIGINS: z.string().optional(), // Comma-separated allowed origins
 

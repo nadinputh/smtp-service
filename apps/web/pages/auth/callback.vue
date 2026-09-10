@@ -56,7 +56,9 @@ onMounted(async () => {
 
   try {
     await handleOAuth2Callback(code, state);
-    await navigateTo("/");
+    const redirectTarget = sessionStorage.getItem("oauth2_redirect");
+    sessionStorage.removeItem("oauth2_redirect");
+    await navigateTo(redirectTarget || "/");
   } catch (e: any) {
     error.value = e?.data?.error || e?.message || "Authentication failed";
   } finally {

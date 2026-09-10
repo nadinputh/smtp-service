@@ -32,7 +32,27 @@ function isTokenExpired(token: string): boolean {
   }
 }
 
+// Where to send a user whose session just ended without them asking —
+// carries them back to where they were, and lets login.vue explain why
+// they're suddenly looking at a sign-in form again.
+//
+// Uses the app-relative route path (via useRoute()), NOT window.location —
+// this app is served under a configurable app.baseURL (e.g. /admin/smtp),
+// which window.location.pathname would include and Nuxt's navigateTo()
+// would then prepend a second time.
+function buildForcedLoginUrl(reason: string): string {
+  const here = useRoute().fullPath;
+  const isAuthPath =
+    here.startsWith("/login") ||
+    here.startsWith("/register") ||
+    here.startsWith("/auth/");
+  const params = new URLSearchParams({ reason });
+  if (!isAuthPath) params.set("redirect", here);
+  return `/login?${params.toString()}`;
+}
+
 let _visibilityListenerAdded = false;
+let _storageListenerAdded = false;
 
 export function useAuth() {
   // Hydrate from localStorage on first call (client-side only)
@@ -62,10 +82,33 @@ export function useAuth() {
         authState.token &&
         isTokenExpired(authState.token)
       ) {
-        authState.token = null;
-        authState.user = null;
-        localStorage.removeItem("auth");
-        navigateTo("/login");
+        forceLogout("expired");
+      }
+    });
+  }
+
+  // Keep sibling tabs in sync: a logout/forceLogout in one tab shouldn't
+  // leave another tab quietly rendering authenticated UI until its next
+  // request happens to 401.
+  if (import.meta.client && !_storageListenerAdded) {
+    _storageListenerAdded = true;
+    window.addEventListener("storage", (event) => {
+      if (event.key !== "auth") return;
+
+      if (!event.newValue) {
+        // Cleared in another tab.
+        if (authState.token) forceLogout("expired");
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(event.newValue);
+        if (parsed.token && !isTokenExpired(parsed.token)) {
+          authState.token = parsed.token;
+          authState.user = parsed.user;
+        }
+      } catch {
+        // Ignore malformed cross-tab payloads.
       }
     });
   }
@@ -108,7 +151,7 @@ export function useAuth() {
     return res;
   }
 
-  async function loginOAuth2() {
+  async function loginOAuth2(redirectTarget?: string | null) {
     // Generate PKCE verifier on the client — never send it to the server
     const codeVerifier = crypto
       .getRandomValues(new Uint8Array(32))
@@ -131,6 +174,9 @@ export function useAuth() {
     if (import.meta.client) {
       sessionStorage.setItem("oauth2_code_verifier", codeVerifier);
       sessionStorage.setItem("oauth2_state", res.state);
+      if (redirectTarget) {
+        sessionStorage.setItem("oauth2_redirect", redirectTarget);
+      }
     }
 
     // Redirect to OAuth2 provider
@@ -184,6 +230,20 @@ export function useAuth() {
     return res;
   }
 
+  async function forgotPassword(email: string) {
+    return await $fetch<{ message: string }>("/api/auth/forgot-password", {
+      method: "POST",
+      body: { email },
+    });
+  }
+
+  async function resetPassword(token: string, newPassword: string) {
+    return await $fetch<{ success: boolean }>("/api/auth/reset-password", {
+      method: "POST",
+      body: { token, newPassword },
+    });
+  }
+
   function logout() {
     authState.token = null;
     authState.user = null;
@@ -191,6 +251,18 @@ export function useAuth() {
       localStorage.removeItem("auth");
     }
     navigateTo("/login");
+  }
+
+  // Like logout(), but for when the session ends without the user asking —
+  // expiry or a 401 from the API. Tells login.vue why, and where to return
+  // the user once they've signed back in.
+  function forceLogout(reason: string) {
+    authState.token = null;
+    authState.user = null;
+    if (import.meta.client) {
+      localStorage.removeItem("auth");
+      navigateTo(buildForcedLoginUrl(reason));
+    }
   }
 
   const isAuthenticated = computed(
@@ -208,6 +280,9 @@ export function useAuth() {
     loginOAuth2,
     handleOAuth2Callback,
     register,
+    forgotPassword,
+    resetPassword,
     logout,
+    forceLogout,
   };
 }

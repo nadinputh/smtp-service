@@ -25,7 +25,7 @@
         <button
           @click="sidebar.close()"
           aria-label="Close sidebar"
-          class="lg:hidden p-2 -m-2 text-gray-500 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300 transition-colors"
+          class="lg:hidden -m-2 min-w-11 min-h-11 flex items-center justify-center text-gray-500 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300 transition-colors"
         >
           <Icon name="lucide:x" class="w-5 h-5" />
         </button>
@@ -42,7 +42,7 @@
           <button
             @click="showCreateModal = true"
             aria-label="Create inbox"
-            class="p-1.5 -m-1.5 text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400 transition-colors"
+            class="-m-1.5 min-w-11 min-h-11 flex items-center justify-center text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400 transition-colors"
             title="Create inbox"
           >
             <Icon name="lucide:plus" class="w-4 h-4" />
@@ -58,7 +58,7 @@
           <li v-for="inbox in inboxes" :key="inbox.id">
             <NuxtLink
               :to="`/inbox/${inbox.id}`"
-              class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors"
+              class="flex items-center gap-2 px-3 py-3 rounded-lg text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800"
               :class="
                 route.params.inboxId === inbox.id
                   ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 font-medium'
@@ -109,7 +109,7 @@
               v-for="item in mailNav"
               :key="item.to"
               :to="item.to"
-              class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors"
+              class="flex items-center gap-2 px-3 py-3 rounded-lg text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800"
               :class="
                 route.path === item.to
                   ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 font-medium'
@@ -133,7 +133,7 @@
               v-for="item in manageNav"
               :key="item.to"
               :to="item.to"
-              class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors"
+              class="flex items-center gap-2 px-3 py-3 rounded-lg text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800"
               :class="
                 route.path === item.to
                   ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 font-medium'
@@ -141,7 +141,13 @@
               "
             >
               <Icon :name="item.icon" class="w-4 h-4 shrink-0" />
-              <span>{{ item.label }}</span>
+              <span class="flex-1">{{ item.label }}</span>
+              <span
+                v-if="item.upcoming"
+                class="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400 font-medium shrink-0"
+              >
+                Upcoming
+              </span>
             </NuxtLink>
           </div>
         </div>
@@ -161,7 +167,7 @@
               v-for="item in adminNav"
               :key="item.to"
               :to="item.to"
-              class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors"
+              class="flex items-center gap-2 px-3 py-3 rounded-lg text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800"
               :class="
                 route.path === item.to
                   ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 font-medium'
@@ -315,7 +321,7 @@
         <button
           @click="sidebar.open()"
           aria-label="Open sidebar"
-          class="p-1.5 -m-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+          class="-m-1.5 min-w-11 min-h-11 flex items-center justify-center text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
         >
           <Icon name="lucide:menu" class="w-6 h-6" />
         </button>
@@ -330,74 +336,55 @@
     </main>
 
     <!-- Create Inbox Modal -->
-    <Teleport to="body">
-      <div
-        v-if="showCreateModal"
-        class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
-        @click.self="showCreateModal = false"
-      >
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="create-inbox-title"
-          class="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-sm p-6"
+    <Modal v-if="showCreateModal" title="Create Inbox" @close="showCreateModal = false">
+      <form @submit.prevent="handleCreateInbox">
+        <label
+          for="create-inbox-name"
+          class="block text-sm text-gray-600 dark:text-gray-400 mb-1"
         >
-          <h2
-            id="create-inbox-title"
-            class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4"
+          Inbox name
+        </label>
+        <input
+          id="create-inbox-name"
+          v-model="newInboxName"
+          type="text"
+          required
+          placeholder="Inbox name"
+          class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+        />
+        <label
+          for="create-inbox-team"
+          class="block text-sm text-gray-600 dark:text-gray-400 mt-3 mb-1"
+        >
+          Team (optional)
+        </label>
+        <select
+          id="create-inbox-team"
+          v-model="newInboxTeamId"
+          class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+        >
+          <option value="">No team</option>
+          <option v-for="team in userTeams" :key="team.id" :value="team.id">
+            {{ team.name }}
+          </option>
+        </select>
+        <p v-if="createError" role="alert" class="text-sm text-red-600 dark:text-red-400 mt-2">
+          {{ createError }}
+        </p>
+        <div class="flex justify-end gap-2 mt-4">
+          <UBtn
+            type="button"
+            variant="ghost"
+            @click="showCreateModal = false"
           >
-            Create Inbox
-          </h2>
-          <form @submit.prevent="handleCreateInbox">
-            <label
-              for="create-inbox-name"
-              class="block text-sm text-gray-600 dark:text-gray-400 mb-1"
-            >
-              Inbox name
-            </label>
-            <input
-              id="create-inbox-name"
-              v-model="newInboxName"
-              type="text"
-              required
-              placeholder="Inbox name"
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            />
-            <label
-              for="create-inbox-team"
-              class="block text-sm text-gray-600 dark:text-gray-400 mt-3 mb-1"
-            >
-              Team (optional)
-            </label>
-            <select
-              id="create-inbox-team"
-              v-model="newInboxTeamId"
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            >
-              <option value="">No team</option>
-              <option v-for="team in userTeams" :key="team.id" :value="team.id">
-                {{ team.name }}
-              </option>
-            </select>
-            <p v-if="createError" role="alert" class="text-sm text-red-600 dark:text-red-400 mt-2">
-              {{ createError }}
-            </p>
-            <div class="flex justify-end gap-2 mt-4">
-              <UBtn
-                type="button"
-                variant="ghost"
-                @click="showCreateModal = false"
-              >
-                Cancel
-              </UBtn>
-              <UBtn type="submit" :disabled="creating">
-                {{ creating ? "Creating..." : "Create" }}
-              </UBtn>
-            </div>
-          </form>
+            Cancel
+          </UBtn>
+          <UBtn type="submit" :disabled="creating">
+            {{ creating ? "Creating..." : "Create" }}
+          </UBtn>
         </div>
-      </div>
-    </Teleport>
+      </form>
+    </Modal>
 
     <!-- Toast notifications -->
     <Teleport to="body">
@@ -498,9 +485,14 @@ const themeOptions = [
 ];
 
 const manageNav = [
-  { to: "/domains", icon: "lucide:globe", label: "Domains" },
-  { to: "/suppressions", icon: "lucide:shield-off", label: "Suppressions" },
-  { to: "/api-keys", icon: "lucide:key", label: "API Keys" },
+  { to: "/domains", icon: "lucide:globe", label: "Domains", upcoming: true },
+  {
+    to: "/suppressions",
+    icon: "lucide:shield-off",
+    label: "Suppressions",
+    upcoming: true,
+  },
+  { to: "/api-keys", icon: "lucide:key", label: "API Keys", upcoming: true },
   { to: "/teams", icon: "lucide:users-round", label: "Teams" },
 ];
 
@@ -538,9 +530,7 @@ function handleDocumentClick(e: MouseEvent) {
 
 function handleDocumentKeydown(e: KeyboardEvent) {
   if (e.key !== "Escape") return;
-  if (showCreateModal.value) {
-    showCreateModal.value = false;
-  } else if (showProfileMenu.value) {
+  if (showProfileMenu.value) {
     showProfileMenu.value = false;
   }
 }

@@ -74,13 +74,12 @@
                   Current Password
                   <span class="text-red-500 dark:text-red-400">*</span>
                 </label>
-                <input
+                <PasswordInput
                   id="current-password"
                   v-model="form.currentPassword"
-                  type="password"
                   required
+                  autocomplete="current-password"
                   placeholder="Enter current password"
-                  class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                 />
               </div>
               <div>
@@ -91,15 +90,15 @@
                   New Password
                   <span class="text-red-500 dark:text-red-400">*</span>
                 </label>
-                <input
+                <PasswordInput
                   id="new-password"
                   v-model="form.newPassword"
-                  type="password"
                   required
-                  minlength="6"
-                  placeholder="Min 6 characters"
-                  class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  minlength="8"
+                  autocomplete="new-password"
+                  placeholder="Min 8 characters"
                 />
+                <PasswordChecklist :password="form.newPassword" />
               </div>
               <div>
                 <label
@@ -109,14 +108,13 @@
                   Confirm New Password
                   <span class="text-red-500 dark:text-red-400">*</span>
                 </label>
-                <input
+                <PasswordInput
                   id="confirm-password"
                   v-model="form.confirmPassword"
-                  type="password"
                   required
-                  minlength="6"
+                  minlength="8"
+                  autocomplete="new-password"
                   placeholder="Repeat new password"
-                  class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                 />
               </div>
               <p v-if="error" role="alert" class="text-sm text-red-600 dark:text-red-400">

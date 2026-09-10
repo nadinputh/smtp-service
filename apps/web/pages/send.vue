@@ -233,7 +233,7 @@
           <button
             type="button"
             @click="showHeaders = !showHeaders"
-            class="text-sm text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+            class="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 flex items-center gap-1"
           >
             <Icon
               :name="
@@ -271,7 +271,7 @@
             <button
               type="button"
               @click="customHeaders.push({ key: '', value: '' })"
-              class="text-sm text-indigo-600 hover:text-indigo-800"
+              class="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300"
             >
               + Add header
             </button>
@@ -324,7 +324,7 @@
           <NuxtLink
             v-if="form.inboxId"
             :to="`/inbox/${form.inboxId}/message/${sendResult.id}`"
-            class="text-indigo-600 hover:text-indigo-800 text-xs mt-1 inline-block"
+            class="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 text-xs mt-1 inline-block"
           >
             View message →
           </NuxtLink>

@@ -19,6 +19,18 @@
           </p>
         </div>
 
+        <div
+          v-if="showExpiredBanner"
+          role="status"
+          class="mb-4 flex items-start gap-2 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 px-3 py-2.5 text-sm text-blue-800 dark:text-blue-300"
+        >
+          <Icon name="lucide:clock" class="w-4 h-4 shrink-0 mt-0.5" />
+          <span
+            >Your session timed out. Sign back in and we'll take you right
+            back to where you left off.</span
+          >
+        </div>
+
         <!-- Auth method tabs -->
         <div
           v-if="showTabs"
@@ -68,24 +80,29 @@
               type="email"
               required
               autocomplete="email"
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               placeholder="you@example.com"
             />
           </div>
           <div>
-            <label
-              for="login-password"
-              class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-              >Password</label
-            >
-            <input
+            <div class="flex items-center justify-between mb-1">
+              <label
+                for="login-password"
+                class="block text-sm font-medium text-gray-700 dark:text-gray-300"
+                >Password</label
+              >
+              <NuxtLink
+                to="/forgot-password"
+                class="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300 font-medium"
+              >
+                Forgot password?
+              </NuxtLink>
+            </div>
+            <PasswordInput
               id="login-password"
               v-model="password"
-              type="password"
               required
               autocomplete="current-password"
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              placeholder="••••••••"
             />
           </div>
 
@@ -114,7 +131,7 @@
               type="text"
               required
               autocomplete="username"
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               placeholder="jdoe"
             />
           </div>
@@ -124,14 +141,11 @@
               class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
               >Password</label
             >
-            <input
+            <PasswordInput
               id="login-ldap-password"
               v-model="ldapPassword"
-              type="password"
               required
               autocomplete="current-password"
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              placeholder="••••••••"
             />
           </div>
 
@@ -176,7 +190,7 @@
           Don't have an account?
           <NuxtLink
             to="/register"
-            class="text-indigo-600 hover:text-indigo-500 font-medium"
+            class="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300 font-medium"
           >
             Register
           </NuxtLink>
@@ -192,10 +206,26 @@ useHead({ title: "Sign In" });
 
 const { login, loginLdap, loginOAuth2, fetchProviders, isAuthenticated } =
   useAuth();
+const route = useRoute();
+
+// Where to send the user after a successful sign-in. Only ever a same-app
+// relative path — never trust the query string with an off-site redirect,
+// and never bounce back into the auth pages themselves.
+function safeRedirectTarget(): string | null {
+  const raw = route.query.redirect;
+  const target = Array.isArray(raw) ? raw[0] : raw;
+  if (!target || typeof target !== "string") return null;
+  if (!target.startsWith("/") || target.startsWith("//")) return null;
+  if (target.startsWith("/login") || target.startsWith("/register"))
+    return null;
+  return target;
+}
+
+const showExpiredBanner = route.query.reason === "expired";
 
 // Redirect if already logged in
 if (isAuthenticated.value) {
-  await navigateTo("/");
+  await navigateTo(safeRedirectTarget() ?? "/");
 }
 
 const email = ref("");
@@ -238,7 +268,7 @@ async function handleLogin() {
   loading.value = true;
   try {
     await login(email.value, password.value);
-    await navigateTo("/", { replace: true });
+    await navigateTo(safeRedirectTarget() ?? "/", { replace: true });
   } catch (e: any) {
     error.value = e?.data?.error || "Login failed";
     loading.value = false;
@@ -250,7 +280,7 @@ async function handleLdapLogin() {
   loading.value = true;
   try {
     await loginLdap(ldapUsername.value, ldapPassword.value);
-    await navigateTo("/", { replace: true });
+    await navigateTo(safeRedirectTarget() ?? "/", { replace: true });
   } catch (e: any) {
     error.value = e?.data?.error || "LDAP login failed";
     loading.value = false;
@@ -261,7 +291,7 @@ async function handleOAuth2() {
   error.value = "";
   loading.value = true;
   try {
-    await loginOAuth2();
+    await loginOAuth2(safeRedirectTarget());
   } catch (e: any) {
     error.value = e?.data?.error || "OAuth2 login failed";
     loading.value = false;

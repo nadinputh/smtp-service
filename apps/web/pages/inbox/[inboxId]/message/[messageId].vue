@@ -515,7 +515,7 @@
                     >Attempt #{{ log.attempts }}</span
                   >
                 </div>
-                <div class="mt-1 text-xs text-gray-500 space-y-0.5">
+                <div class="mt-1 text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
                   <p v-if="log.mxHost">MX: {{ log.mxHost }}</p>
                   <p v-if="log.smtpCode">
                     SMTP {{ log.smtpCode }}: {{ log.smtpResponse }}
@@ -700,14 +700,14 @@
                   class="font-mono text-xs font-semibold text-gray-800 dark:text-gray-100"
                   >{{ rule.rule }}</span
                 >
-                <p class="text-sm text-gray-500">{{ rule.description }}</p>
+                <p class="text-sm text-gray-500 dark:text-gray-400">{{ rule.description }}</p>
               </div>
               <span
                 class="text-sm font-medium shrink-0 ml-4"
                 :class="{
-                  'text-yellow-600': rule.score < 2,
-                  'text-orange-600': rule.score >= 2 && rule.score < 3,
-                  'text-red-600': rule.score >= 3,
+                  'text-yellow-600 dark:text-yellow-400': rule.score < 2,
+                  'text-orange-600 dark:text-orange-400': rule.score >= 2 && rule.score < 3,
+                  'text-red-600 dark:text-red-400': rule.score >= 3,
                 }"
               >
                 +{{ rule.score }}
@@ -1432,9 +1432,14 @@ const groupLabels: Record<string, string> = {
 };
 
 function spamVerdict(score: number): { label: string; color: string } {
-  if (score < 3) return { label: "Clean", color: "text-green-600" };
-  if (score < 6) return { label: "Suspicious", color: "text-yellow-600" };
-  return { label: "Spam", color: "text-red-600" };
+  if (score < 3)
+    return { label: "Clean", color: "text-green-600 dark:text-green-400" };
+  if (score < 6)
+    return {
+      label: "Suspicious",
+      color: "text-yellow-600 dark:text-yellow-400",
+    };
+  return { label: "Spam", color: "text-red-600 dark:text-red-400" };
 }
 
 const ruleSuggestionMap: Record<string, string> = {

@@ -204,7 +204,7 @@
             </div>
 
             <!-- Detected variables -->
-            <div v-if="detectedVars.length" class="text-sm text-gray-500">
+            <div v-if="detectedVars.length" class="text-sm text-gray-500 dark:text-gray-400">
               <span class="font-medium">Detected variables:</span>
               <span
                 v-for="v in detectedVars"
