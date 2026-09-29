@@ -3,7 +3,10 @@ import { getEnv } from "@mailpocket/env";
 import { getDb, suppressions } from "@mailpocket/db";
 import { eq, and, desc, ilike, count, sql } from "drizzle-orm";
 import { authGuard } from "../middleware/auth.js";
-import { isOwnerOrAdmin, isGlobalAdmin } from "../middleware/access.js";
+import { isOwnerOrAdmin, isGlobalAdmin, isUuid } from "../middleware/access.js";
+import { normalizeEmail } from "../lib/address.js";
+
+const MANUAL_REASONS = ["manual", "hard_bounce", "complaint"];
 
 export function registerSuppressionRoutes(app: FastifyInstance) {
   const env = getEnv();
@@ -24,8 +27,10 @@ export function registerSuppressionRoutes(app: FastifyInstance) {
     if (!admin) {
       conditions.push(eq(suppressions.userId, userId));
     }
-    if (q) {
-      conditions.push(ilike(suppressions.email, `%${q}%`));
+    if (typeof q === "string" && q) {
+      // Escape LIKE wildcards so the search is a literal substring match.
+      const literal = q.replace(/[\\%_]/g, "\\$&");
+      conditions.push(ilike(suppressions.email, `%${literal}%`));
     }
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
@@ -51,10 +56,19 @@ export function registerSuppressionRoutes(app: FastifyInstance) {
     "/api/suppressions",
     { preHandler: authGuard },
     async (request, reply) => {
-      const { email, reason = "manual" } = request.body;
+      const { reason = "manual" } = request.body ?? {};
+      const email = normalizeEmail(request.body?.email);
 
       if (!email) {
-        return reply.status(400).send({ error: "email is required" });
+        return reply
+          .status(400)
+          .send({ error: "A valid email address is required" });
+      }
+
+      if (!MANUAL_REASONS.includes(reason)) {
+        return reply.status(400).send({
+          error: `reason must be one of: ${MANUAL_REASONS.join(", ")}`,
+        });
       }
 
       // Upsert — ignore if already exists
@@ -62,7 +76,7 @@ export function registerSuppressionRoutes(app: FastifyInstance) {
         .insert(suppressions)
         .values({
           userId: request.user!.userId,
-          email: email.toLowerCase().trim(),
+          email,
           reason,
         })
         .onConflictDoNothing()
@@ -82,6 +96,10 @@ export function registerSuppressionRoutes(app: FastifyInstance) {
     { preHandler: authGuard },
     async (request, reply) => {
       const { id } = request.params;
+
+      if (!isUuid(id)) {
+        return reply.status(404).send({ error: "Suppression not found" });
+      }
 
       const [existing] = await db
         .select({ id: suppressions.id, userId: suppressions.userId })

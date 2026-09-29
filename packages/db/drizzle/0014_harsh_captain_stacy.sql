@@ -1,0 +1,2 @@
+CREATE UNIQUE INDEX "domains_user_domain_idx" ON "domains" USING btree ("user_id","domain");--> statement-breakpoint
+CREATE UNIQUE INDEX "domains_verified_domain_idx" ON "domains" USING btree ("domain") WHERE "domains"."verified" = true;

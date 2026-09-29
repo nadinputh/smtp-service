@@ -20,6 +20,13 @@ import {
 import { eq, and, inArray } from "drizzle-orm";
 import { authGuard } from "../middleware/auth.js";
 import { resolveInboxRole, hasMinRole } from "../middleware/access.js";
+import {
+  normalizeEmail,
+  parseRecipients,
+  splitAddressList,
+  type ParsedRecipient,
+} from "../lib/address.js";
+import { findSuppressed } from "../lib/suppression.js";
 
 interface SendBody {
   from: string;
@@ -134,6 +141,20 @@ export function registerSendRoutes(app: FastifyInstance) {
           .send({ error: "from, to, and inboxId are required" });
       }
 
+      const toEntries = parseRecipients(to);
+      const ccEntries = cc ? parseRecipients(cc) : undefined;
+      const bccEntries = bcc ? parseRecipients(bcc) : undefined;
+      if (
+        !normalizeEmail(from) ||
+        !toEntries ||
+        ccEntries === null ||
+        bccEntries === null
+      ) {
+        return reply.status(400).send({
+          error: "from, to, cc, and bcc must be valid email addresses",
+        });
+      }
+
       // Verify inbox access (editor or above can send)
       const inboxRole = await resolveInboxRole(request.user!.userId, inboxId);
       if (!hasMinRole(inboxRole, "editor")) {
@@ -141,11 +162,10 @@ export function registerSendRoutes(app: FastifyInstance) {
       }
 
       // ─── Quota check ─────────────────────────────────────
-      const recipients = Array.isArray(to) ? to : [to];
       const quotaError = await checkAndIncrementQuota(
         db,
         request.user!.userId,
-        recipients.length,
+        toEntries.length,
       );
       if (quotaError) {
         return reply.status(429).send({ error: quotaError });
@@ -182,10 +202,6 @@ export function registerSendRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: "subject is required" });
       }
 
-      const toList = Array.isArray(to) ? to : [to];
-      const ccList = cc ? (Array.isArray(cc) ? cc : [cc]) : undefined;
-      const bccList = bcc ? (Array.isArray(bcc) ? bcc : [bcc]) : undefined;
-
       if (!text && !html) {
         return reply
           .status(400)
@@ -219,20 +235,17 @@ export function registerSendRoutes(app: FastifyInstance) {
       }
 
       // Check suppression list
-      const allRecipients = [...toList, ...(ccList ?? []), ...(bccList ?? [])];
-      const suppressedRows = await db
-        .select({ email: suppressions.email })
-        .from(suppressions)
-        .where(
-          and(
-            eq(suppressions.userId, request.user!.userId),
-            inArray(suppressions.email, allRecipients),
-          ),
-        );
-      const suppressedEmails = new Set(suppressedRows.map((r) => r.email));
-      const activeToList = toList.filter((e) => !suppressedEmails.has(e));
+      const suppressedEmails = await findSuppressed(
+        db,
+        request.user!.userId,
+        [...toEntries, ...(ccEntries ?? []), ...(bccEntries ?? [])].map(
+          (r) => r.email,
+        ),
+      );
+      const isActive = (r: ParsedRecipient) => !suppressedEmails.has(r.email);
+      const activeTo = toEntries.filter(isActive);
 
-      if (activeToList.length === 0) {
+      if (activeTo.length === 0) {
         return reply.status(422).send({
           error: "All recipients are suppressed",
           suppressedEmails: [...suppressedEmails],
@@ -242,9 +255,15 @@ export function registerSendRoutes(app: FastifyInstance) {
       // Build MIME message
       const mailOpts: Record<string, unknown> = {
         from,
-        to: activeToList.join(", "),
-        cc: ccList?.filter((e) => !suppressedEmails.has(e)).join(", "),
-        bcc: bccList?.filter((e) => !suppressedEmails.has(e)).join(", "),
+        to: activeTo.map((r) => r.raw).join(", "),
+        cc: ccEntries
+          ?.filter(isActive)
+          .map((r) => r.raw)
+          .join(", "),
+        bcc: bccEntries
+          ?.filter(isActive)
+          .map((r) => r.raw)
+          .join(", "),
         subject,
         text,
         html,
@@ -280,7 +299,7 @@ export function registerSendRoutes(app: FastifyInstance) {
         id: messageId,
         inboxId,
         from,
-        to: activeToList,
+        to: activeTo.map((r) => r.email),
         subject,
         text: text ?? null,
         html: html ?? null,
@@ -294,8 +313,9 @@ export function registerSendRoutes(app: FastifyInstance) {
       // Enqueue for delivery
       const payload: OutboundEmailPayload = {
         messageId,
+        userId: request.user!.userId,
         from,
-        to: activeToList,
+        to: activeTo.map((r) => r.email),
         rawKey,
       };
 
@@ -367,9 +387,38 @@ export function registerSendRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Inbox not found" });
       }
 
-      const toList = to.split(",").map((s) => s.trim());
-      const ccList = cc ? cc.split(",").map((s) => s.trim()) : undefined;
-      const bccList = bcc ? bcc.split(",").map((s) => s.trim()) : undefined;
+      const toEntries = parseRecipients(splitAddressList(to));
+      const ccEntries = cc ? parseRecipients(splitAddressList(cc)) : undefined;
+      const bccEntries = bcc
+        ? parseRecipients(splitAddressList(bcc))
+        : undefined;
+      if (
+        !normalizeEmail(from) ||
+        !toEntries ||
+        ccEntries === null ||
+        bccEntries === null
+      ) {
+        return reply.status(400).send({
+          error: "from, to, cc, and bcc must be valid email addresses",
+        });
+      }
+
+      const suppressedEmails = await findSuppressed(
+        db,
+        request.user!.userId,
+        [...toEntries, ...(ccEntries ?? []), ...(bccEntries ?? [])].map(
+          (r) => r.email,
+        ),
+      );
+      const isActive = (r: ParsedRecipient) => !suppressedEmails.has(r.email);
+      const activeTo = toEntries.filter(isActive);
+
+      if (activeTo.length === 0) {
+        return reply.status(422).send({
+          error: "All recipients are suppressed",
+          suppressedEmails: [...suppressedEmails],
+        });
+      }
 
       if (!text && !html) {
         return reply
@@ -380,9 +429,15 @@ export function registerSendRoutes(app: FastifyInstance) {
       // Build MIME with attachments
       const mail = new MailComposer({
         from,
-        to: toList.join(", "),
-        cc: ccList?.join(", "),
-        bcc: bccList?.join(", "),
+        to: activeTo.map((r) => r.raw).join(", "),
+        cc: ccEntries
+          ?.filter(isActive)
+          .map((r) => r.raw)
+          .join(", "),
+        bcc: bccEntries
+          ?.filter(isActive)
+          .map((r) => r.raw)
+          .join(", "),
         subject,
         text,
         html,
@@ -414,7 +469,7 @@ export function registerSendRoutes(app: FastifyInstance) {
         id: messageId,
         inboxId,
         from,
-        to: toList,
+        to: activeTo.map((r) => r.email),
         subject,
         text: text ?? null,
         html: html ?? null,
@@ -425,8 +480,9 @@ export function registerSendRoutes(app: FastifyInstance) {
 
       const payload: OutboundEmailPayload = {
         messageId,
+        userId: request.user!.userId,
         from,
-        to: toList,
+        to: activeTo.map((r) => r.email),
         rawKey,
       };
 
@@ -438,6 +494,9 @@ export function registerSendRoutes(app: FastifyInstance) {
         id: messageId,
         status: "queued",
         message: "Message queued for delivery",
+        ...(suppressedEmails.size > 0
+          ? { suppressed: [...suppressedEmails] }
+          : {}),
       });
     },
   );
@@ -460,7 +519,12 @@ export function registerSendRoutes(app: FastifyInstance) {
         recipients,
       } = request.body;
 
-      if (!from || !inboxId || !recipients?.length) {
+      if (
+        !from ||
+        !inboxId ||
+        !Array.isArray(recipients) ||
+        !recipients.length
+      ) {
         return reply
           .status(400)
           .send({ error: "from, inboxId, and recipients are required" });
@@ -470,6 +534,26 @@ export function registerSendRoutes(app: FastifyInstance) {
         return reply
           .status(400)
           .send({ error: "Maximum 1000 recipients per batch" });
+      }
+
+      const batch: Array<{
+        raw: string;
+        email: string;
+        variables?: Record<string, string>;
+      }> = [];
+      for (const r of recipients) {
+        const email = normalizeEmail(r?.to);
+        if (!email) {
+          return reply
+            .status(400)
+            .send({ error: "Every recipient needs a valid email address" });
+        }
+        batch.push({ raw: r.to.trim(), email, variables: r.variables });
+      }
+      if (!normalizeEmail(from)) {
+        return reply
+          .status(400)
+          .send({ error: "from must be a valid email address" });
       }
 
       // Verify inbox access (editor or above can send)
@@ -518,25 +602,19 @@ export function registerSendRoutes(app: FastifyInstance) {
       }
 
       // Check suppression list for all recipients
-      const allEmails = recipients.map((r) => r.to);
-      const suppressedRows = await db
-        .select({ email: suppressions.email })
-        .from(suppressions)
-        .where(
-          and(
-            eq(suppressions.userId, request.user!.userId),
-            inArray(suppressions.email, allEmails),
-          ),
-        );
-      const suppressedEmails = new Set(suppressedRows.map((r) => r.email));
+      const suppressedEmails = await findSuppressed(
+        db,
+        request.user!.userId,
+        batch.map((r) => r.email),
+      );
 
       const batchId = randomUUID();
       const messageIds: string[] = [];
       const suppressed: string[] = [];
 
-      for (const recipient of recipients) {
-        if (suppressedEmails.has(recipient.to)) {
-          suppressed.push(recipient.to);
+      for (const recipient of batch) {
+        if (suppressedEmails.has(recipient.email)) {
+          suppressed.push(recipient.email);
           continue;
         }
 
@@ -557,7 +635,7 @@ export function registerSendRoutes(app: FastifyInstance) {
 
         const mail = new MailComposer({
           from,
-          to: recipient.to,
+          to: recipient.raw,
           subject,
           text,
           html,
@@ -583,7 +661,7 @@ export function registerSendRoutes(app: FastifyInstance) {
           id: messageId,
           inboxId,
           from,
-          to: [recipient.to],
+          to: [recipient.email],
           subject,
           text: text ?? null,
           html: html ?? null,
@@ -596,8 +674,9 @@ export function registerSendRoutes(app: FastifyInstance) {
           "send",
           {
             messageId,
+            userId: request.user!.userId,
             from,
-            to: [recipient.to],
+            to: [recipient.email],
             rawKey,
           } satisfies OutboundEmailPayload,
           {

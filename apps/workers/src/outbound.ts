@@ -13,7 +13,7 @@ import {
 } from "@mailpocket/db";
 import type { StorageClient } from "@mailpocket/storage";
 import { type OutboundEmailPayload } from "@mailpocket/queue";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import type { Env } from "@mailpocket/env";
 import type Redis from "ioredis";
 import { injectTracking } from "./tracking.js";
@@ -31,21 +31,82 @@ async function resolveMx(domain: string): Promise<string> {
 }
 
 // ─── Classify SMTP errors ─────────────────────────────────
-function classifySmtpError(code: number): "temporary" | "permanent" {
+export function classifySmtpError(code: number): "temporary" | "permanent" {
   // 4xx = temporary, 5xx = permanent
   if (code >= 400 && code < 500) return "temporary";
   return "permanent";
 }
 
-function extractSmtpCode(err: any): number {
+// Codes nodemailer's smtp-connection assigns to `err.code` when no SMTP
+// dialogue ever happened (connect/greeting/socket timeout, connection
+// refused) — see its own internal `transientCodes` in _onError. These are
+// not the receiving server rejecting the message, so they must not be
+// classified as a permanent 5xx bounce.
+const CONNECTION_LEVEL_ERROR_CODES = [
+  "ETIMEDOUT",
+  "ESOCKET",
+  "ECONNECTION",
+  "EDNS",
+];
+
+export function extractSmtpCode(err: any): number {
   if (err.responseCode) return err.responseCode;
+  if (CONNECTION_LEVEL_ERROR_CODES.includes(err.code)) return 421;
   const match = err.message?.match(/(\d{3})/);
-  return match ? parseInt(match[1], 10) : 550;
+  // No SMTP response and no connection-level code we recognize: still no
+  // evidence the recipient's server rejected anything, so default to the
+  // standard temporary "service not available, try again later" code
+  // rather than assuming a permanent bounce.
+  return match ? parseInt(match[1], 10) : 421;
+}
+
+// ─── Sender / owner resolution ────────────────────────────
+/** Lowercased domain of `user@host` or `Name <user@host>`, or null. */
+export function extractSenderDomain(from: string): string | null {
+  const addr = /<([^<>]+)>\s*$/.exec(from)?.[1] ?? from;
+  const at = addr.lastIndexOf("@");
+  if (at === -1) return null;
+  return (
+    addr
+      .slice(at + 1)
+      .trim()
+      .toLowerCase() || null
+  );
+}
+
+// Only a "the mailbox doesn't exist" style rejection is grounds for
+// permanently suppressing an address; other 5xx replies (policy blocks,
+// full mailboxes, sender reputation) say nothing about the recipient.
+const RECIPIENT_REJECTION_RE =
+  /\b5\.1\.\d{1,3}\b|user unknown|no such user|unknown user|does not exist|mailbox (?:not found|unavailable)|invalid recipient|recipient (?:address )?rejected/i;
+
+export function isRecipientRejection(err: any): boolean {
+  return RECIPIENT_REJECTION_RE.test(
+    `${err?.response ?? ""} ${err?.message ?? ""}`,
+  );
+}
+
+/** Account whose suppression list and domains apply to this message. */
+async function resolveOwnerId(
+  db: ReturnType<typeof getDb>,
+  messageId: string,
+  userId?: string,
+): Promise<string | null> {
+  if (userId) return userId;
+  const [row] = await db
+    .select({ userId: inboxes.userId })
+    .from(messages)
+    .innerJoin(inboxes, eq(inboxes.id, messages.inboxId))
+    .where(eq(messages.id, messageId))
+    .limit(1);
+  return row?.userId ?? null;
 }
 
 // ─── DKIM Lookup ──────────────────────────────────────────
-async function getDkimConfig(
+// Sign only with a verified domain owned by the sending account.
+export async function getDkimConfig(
   db: ReturnType<typeof getDb>,
+  ownerId: string,
   senderDomain: string,
 ): Promise<{
   domainName: string;
@@ -59,7 +120,13 @@ async function getDkimConfig(
       privateKey: domains.dkimPrivateKey,
     })
     .from(domains)
-    .where(eq(domains.domain, senderDomain))
+    .where(
+      and(
+        eq(domains.domain, senderDomain),
+        eq(domains.userId, ownerId),
+        eq(domains.verified, true),
+      ),
+    )
     .limit(1);
 
   if (!domain?.privateKey) return null;
@@ -136,7 +203,7 @@ export function createOutboundProcessor(
   redisPub: InstanceType<typeof Redis.default>,
 ) {
   return async function processOutboundEmail(job: Job<OutboundEmailPayload>) {
-    const { messageId, from, to, rawKey } = job.data;
+    const { messageId, userId, from, to, rawKey } = job.data;
 
     console.log(`📤 Outbound delivery: ${messageId} → ${to.join(", ")}`);
 
@@ -189,8 +256,32 @@ export function createOutboundProcessor(
     }
 
     // 3. Look up DKIM config for sender domain
-    const senderDomain = from.includes("@") ? from.split("@")[1] : null;
-    const dkim = senderDomain ? await getDkimConfig(db, senderDomain) : null;
+    const ownerId = await resolveOwnerId(db, messageId, userId);
+    const senderDomain = extractSenderDomain(from);
+    const dkim =
+      ownerId && senderDomain
+        ? await getDkimConfig(db, ownerId, senderDomain)
+        : null;
+
+    // Re-check suppressions now: the address may have been suppressed (or
+    // bounced) after this message was queued, e.g. scheduled sends.
+    const suppressedNow = new Set<string>();
+    if (ownerId) {
+      const rows = await db
+        .select({ email: suppressions.email })
+        .from(suppressions)
+        .where(
+          and(
+            eq(suppressions.userId, ownerId),
+            inArray(
+              suppressions.email,
+              to.map((r) => r.toLowerCase()),
+            ),
+          ),
+        );
+      for (const r of rows) suppressedNow.add(r.email);
+    }
+    let attempted = 0;
 
     if (dkim) {
       console.log(
@@ -203,6 +294,19 @@ export function createOutboundProcessor(
     const isTestingMode = env.APP_MODE === "testing";
 
     for (const recipient of to) {
+      if (suppressedNow.has(recipient.toLowerCase())) {
+        await db.insert(deliveryLogs).values({
+          messageId,
+          recipient,
+          status: "suppressed",
+          attempts: (job.attemptsMade || 0) + 1,
+          lastAttemptAt: new Date(),
+        });
+        console.log(`  🚫 ${recipient} skipped (suppressed)`);
+        continue;
+      }
+      attempted++;
+
       // Create delivery log entry
       const [log] = await db
         .insert(deliveryLogs)
@@ -310,34 +414,25 @@ export function createOutboundProcessor(
             error: err.message?.substring(0, 500),
           });
 
-          // Auto-suppress hard-bounced address
-          try {
-            const [msg] = await db
-              .select({ inboxId: messages.inboxId })
-              .from(messages)
-              .where(eq(messages.id, messageId))
-              .limit(1);
-            if (msg) {
-              const [inbox] = await db
-                .select({ userId: inboxes.userId })
-                .from(inboxes)
-                .where(eq(inboxes.id, msg.inboxId))
-                .limit(1);
-              if (inbox) {
-                await db
-                  .insert(suppressions)
-                  .values({
-                    userId: inbox.userId,
-                    email: recipient.toLowerCase(),
-                    reason: "hard_bounce",
-                    source: messageId,
-                  })
-                  .onConflictDoNothing();
-                console.log(`  🚫 Auto-suppressed ${recipient} (hard bounce)`);
-              }
+          // Auto-suppress recipients the remote server says don't exist
+          if (ownerId && isRecipientRejection(err)) {
+            try {
+              await db
+                .insert(suppressions)
+                .values({
+                  userId: ownerId,
+                  email: recipient.toLowerCase(),
+                  reason: "hard_bounce",
+                  source: messageId,
+                })
+                .onConflictDoNothing();
+              console.log(`  🚫 Auto-suppressed ${recipient} (hard bounce)`);
+            } catch (suppErr) {
+              console.warn(
+                `  ⚠️ Failed to auto-suppress ${recipient}:`,
+                suppErr,
+              );
             }
-          } catch (suppErr) {
-            console.warn(`  ⚠️ Failed to auto-suppress ${recipient}:`, suppErr);
           }
         }
       }
@@ -347,7 +442,7 @@ export function createOutboundProcessor(
     const allDelivered = true; // simplified — check logs in production
     await db
       .update(messages)
-      .set({ status: "delivered" })
+      .set({ status: attempted === 0 ? "suppressed" : "delivered" })
       .where(eq(messages.id, messageId));
 
     // 5. Publish real-time event so the UI refreshes

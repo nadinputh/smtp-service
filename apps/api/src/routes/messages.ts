@@ -17,6 +17,8 @@ import {
 import { buildRuleWhere } from "../lib/rule-conditions.js";
 import { authGuard } from "../middleware/auth.js";
 import { requireInboxRole, requireMessageRole } from "../middleware/access.js";
+import { normalizeEmail } from "../lib/address.js";
+import { findSuppressed } from "../lib/suppression.js";
 import { simpleParser } from "mailparser";
 import MailComposer from "nodemailer/lib/mail-composer/index.js";
 import { randomUUID } from "node:crypto";
@@ -534,10 +536,22 @@ export function registerMessageRoutes(app: FastifyInstance) {
     { preHandler: [authGuard, requireMessageRole("editor")] },
     async (request, reply) => {
       const { id } = request.params;
-      const { to } = request.body;
+      const toEmail = normalizeEmail(request.body?.to);
 
-      if (!to) {
-        return reply.status(400).send({ error: "to is required" });
+      if (!toEmail) {
+        return reply
+          .status(400)
+          .send({ error: "to must be a valid email address" });
+      }
+
+      const suppressed = await findSuppressed(db, request.user!.userId, [
+        toEmail,
+      ]);
+      if (suppressed.size > 0) {
+        return reply.status(422).send({
+          error: "Recipient is suppressed",
+          suppressedEmails: [...suppressed],
+        });
       }
 
       // Fetch the message
@@ -560,7 +574,7 @@ export function registerMessageRoutes(app: FastifyInstance) {
 
       const mail = new MailComposer({
         from: fromAddr,
-        to,
+        to: request.body.to.trim(),
         subject: fwdSubject,
         text: `---------- Forwarded message ----------\nFrom: ${message.from}\nSubject: ${message.subject ?? ""}\nDate: ${message.date?.toISOString() ?? ""}\n\n${message.text ?? ""}`,
         html: message.html
@@ -596,7 +610,7 @@ export function registerMessageRoutes(app: FastifyInstance) {
         id: fwdMessageId,
         inboxId: message.inboxId,
         from: fromAddr,
-        to: [to],
+        to: [toEmail],
         subject: fwdSubject,
         text: message.text ?? null,
         html: message.html ?? null,
@@ -608,8 +622,9 @@ export function registerMessageRoutes(app: FastifyInstance) {
       // Queue for delivery
       const payload: OutboundEmailPayload = {
         messageId: fwdMessageId,
+        userId: request.user!.userId,
         from: fromAddr,
-        to: [to],
+        to: [toEmail],
         rawKey,
       };
       await outboundQueue.add("send", payload, { jobId: fwdMessageId });

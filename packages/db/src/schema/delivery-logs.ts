@@ -16,7 +16,7 @@ export const deliveryLogs = pgTable("delivery_logs", {
 
   recipient: varchar("recipient", { length: 512 }).notNull(),
 
-  // queued → sending → delivered | deferred | bounced | failed
+  // queued → sending → delivered | deferred | bounced | failed | suppressed
   status: varchar("status", { length: 50 }).notNull().default("queued"),
 
   // SMTP response info

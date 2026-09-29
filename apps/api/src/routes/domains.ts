@@ -1,11 +1,29 @@
 import type { FastifyInstance } from "fastify";
-import { generateKeyPairSync } from "node:crypto";
+import { generateKeyPair } from "node:crypto";
+import { promisify } from "node:util";
 import { promises as dns } from "node:dns";
 import { getEnv } from "@mailpocket/env";
 import { getDb, domains } from "@mailpocket/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or } from "drizzle-orm";
 import { authGuard } from "../middleware/auth.js";
-import { isOwnerOrAdmin, isGlobalAdmin } from "../middleware/access.js";
+import { isOwnerOrAdmin, isGlobalAdmin, isUuid } from "../middleware/access.js";
+import { normalizeDomain } from "../lib/address.js";
+
+const generateKeyPairAsync = promisify(generateKeyPair);
+
+/** True if any TXT record's `p=` tag equals the expected public key. */
+function dkimKeyMatches(records: string[][], expectedKey: string): boolean {
+  return records.some((parts) => {
+    const tag = /(?:^|;)\s*p=([^;]*)/.exec(parts.join(""));
+    return tag !== null && tag[1].replace(/\s+/g, "") === expectedKey;
+  });
+}
+
+/** Postgres unique_violation, whether raw or wrapped by drizzle. */
+function isUniqueViolation(err: unknown): boolean {
+  const e = err as { code?: string; cause?: { code?: string } };
+  return (e?.code ?? e?.cause?.code) === "23505";
+}
 
 export function registerDomainRoutes(app: FastifyInstance) {
   const env = getEnv();
@@ -38,35 +56,40 @@ export function registerDomainRoutes(app: FastifyInstance) {
     "/api/domains",
     { preHandler: authGuard },
     async (request, reply) => {
-      const { domain: domainName } = request.body;
+      const domainName = normalizeDomain(request.body?.domain);
 
       if (!domainName) {
-        return reply.status(400).send({ error: "domain is required" });
+        return reply.status(400).send({ error: "A valid domain is required" });
       }
 
-      // Validate domain format
-      if (!/^[a-zA-Z0-9][a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(domainName)) {
-        return reply.status(400).send({ error: "Invalid domain format" });
-      }
-
-      // Check if domain already exists for this user
+      // Reject a repeat by this account, or a domain another account has
+      // already proven it controls. Unverified claims by others don't block.
       const [existing] = await db
-        .select({ id: domains.id })
+        .select({ userId: domains.userId })
         .from(domains)
         .where(
           and(
-            eq(domains.userId, request.user!.userId),
-            eq(domains.domain, domainName.toLowerCase()),
+            eq(domains.domain, domainName),
+            or(
+              eq(domains.userId, request.user!.userId),
+              eq(domains.verified, true),
+            ),
           ),
         )
         .limit(1);
 
       if (existing) {
-        return reply.status(409).send({ error: "Domain already added" });
+        return reply.status(409).send({
+          error:
+            existing.userId === request.user!.userId
+              ? "Domain already added"
+              : "Domain is already verified by another account",
+        });
       }
 
       // Generate DKIM RSA key pair
-      const { publicKey, privateKey } = generateKeyPairSync("rsa", {
+      // Async so the CPU-bound RSA keygen runs off the event loop.
+      const { publicKey, privateKey } = await generateKeyPairAsync("rsa", {
         modulusLength: 2048,
         publicKeyEncoding: { type: "spki", format: "pem" },
         privateKeyEncoding: { type: "pkcs8", format: "pem" },
@@ -82,12 +105,18 @@ export function registerDomainRoutes(app: FastifyInstance) {
         .insert(domains)
         .values({
           userId: request.user!.userId,
-          domain: domainName.toLowerCase(),
+          domain: domainName,
           dkimSelector: "smtp1",
           dkimPrivateKey: privateKey,
           dkimPublicKey: pubKeyBase64,
         })
+        .onConflictDoNothing()
         .returning();
+
+      // Lost a race with a concurrent request for the same domain.
+      if (!domain) {
+        return reply.status(409).send({ error: "Domain already added" });
+      }
 
       return reply.status(201).send({
         ...domain,
@@ -95,12 +124,12 @@ export function registerDomainRoutes(app: FastifyInstance) {
         dnsRecords: {
           dkim: {
             type: "TXT",
-            name: `smtp1._domainkey.${domainName.toLowerCase()}`,
+            name: `smtp1._domainkey.${domainName}`,
             value: `v=DKIM1; k=rsa; p=${pubKeyBase64}`,
           },
           spf: {
             type: "TXT",
-            name: domainName.toLowerCase(),
+            name: domainName,
             value: `v=spf1 ip4:<YOUR_SERVER_IP> -all`,
             note: "Replace <YOUR_SERVER_IP> with your server's public IP address",
           },
@@ -112,9 +141,16 @@ export function registerDomainRoutes(app: FastifyInstance) {
   // Verify domain DNS records (DKIM TXT lookup)
   app.post<{ Params: { id: string } }>(
     "/api/domains/:id/verify",
-    { preHandler: authGuard },
+    {
+      preHandler: authGuard,
+      config: { rateLimit: { max: 20, timeWindow: 60000 } },
+    },
     async (request, reply) => {
       const { id } = request.params;
+
+      if (!isUuid(id)) {
+        return reply.status(404).send({ error: "Domain not found" });
+      }
 
       const [domain] = await db
         .select()
@@ -131,27 +167,51 @@ export function registerDomainRoutes(app: FastifyInstance) {
       }
 
       const errors: string[] = [];
+      let transientFailure = false;
       const dkimHost = `${domain.dkimSelector}._domainkey.${domain.domain}`;
 
-      try {
-        const records = await dns.resolveTxt(dkimHost);
-        const flat = records.map((r) => r.join("")).join("");
-        if (!flat.includes(domain.dkimPublicKey ?? "")) {
-          errors.push(
-            `DKIM TXT record at ${dkimHost} does not contain the expected public key`,
-          );
+      if (!domain.dkimPublicKey) {
+        errors.push("Domain has no DKIM public key on record");
+      } else {
+        try {
+          const records = await dns.resolveTxt(dkimHost);
+          if (!dkimKeyMatches(records, domain.dkimPublicKey)) {
+            errors.push(
+              `DKIM TXT record at ${dkimHost} does not contain the expected public key`,
+            );
+          }
+        } catch (err) {
+          const code = (err as NodeJS.ErrnoException).code;
+          if (code === "ENOTFOUND" || code === "ENODATA") {
+            errors.push(`No TXT record found at ${dkimHost}`);
+          } else {
+            transientFailure = true;
+            errors.push(
+              `DNS lookup for ${dkimHost} failed (${code ?? "unknown error"}); try again`,
+            );
+          }
         }
-      } catch {
-        errors.push(`No TXT record found at ${dkimHost}`);
       }
 
       const verified = errors.length === 0;
 
-      if (verified) {
-        await db
-          .update(domains)
-          .set({ verified: true, updatedAt: new Date() })
-          .where(eq(domains.id, id));
+      // Verification tracks the current DNS state, but a transient resolver
+      // failure must not revoke an already-verified domain.
+      if (!transientFailure && verified !== domain.verified) {
+        try {
+          await db
+            .update(domains)
+            .set({ verified, updatedAt: new Date() })
+            .where(eq(domains.id, id));
+        } catch (err) {
+          // Another account verified this domain first.
+          if (isUniqueViolation(err)) {
+            return reply.status(409).send({
+              error: "Domain is already verified by another account",
+            });
+          }
+          throw err;
+        }
       }
 
       return { verified, errors };
@@ -164,6 +224,11 @@ export function registerDomainRoutes(app: FastifyInstance) {
     { preHandler: authGuard },
     async (request, reply) => {
       const { id } = request.params;
+
+      if (!isUuid(id)) {
+        return reply.status(404).send({ error: "Domain not found" });
+      }
+
       const [domain] = await db
         .select({ id: domains.id, userId: domains.userId })
         .from(domains)

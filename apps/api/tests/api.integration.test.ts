@@ -166,6 +166,87 @@ describe("API Integration Tests", () => {
       expect(body.length).toBeGreaterThanOrEqual(1);
     });
 
+    it("POST /api/domains/:id/verify reports unverified when no DNS record is published", async () => {
+      const { status, body } = await api(`/api/domains/${domainId}/verify`, {
+        method: "POST",
+      });
+      expect(status).toBe(200);
+      expect(body.verified).toBe(false);
+      expect(body.errors.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("POST /api/domains/:id/verify 404s for an unknown domain id", async () => {
+      const { status } = await api(
+        "/api/domains/00000000-0000-0000-0000-000000000000/verify",
+        { method: "POST" },
+      );
+      expect(status).toBe(404);
+    });
+
+    it.each(["a..b.com", "-a.com", "localhost", "", 42])(
+      "POST /api/domains rejects invalid domain %j",
+      async (domain) => {
+        const { status } = await api("/api/domains", {
+          method: "POST",
+          body: JSON.stringify({ domain }),
+        });
+        expect(status).toBe(400);
+      },
+    );
+
+    it("POST /api/domains rejects a duplicate regardless of case", async () => {
+      const name = `dup-${Date.now()}.example.com`;
+      const first = await api("/api/domains", {
+        method: "POST",
+        body: JSON.stringify({ domain: name }),
+      });
+      expect(first.status).toBe(201);
+      const second = await api("/api/domains", {
+        method: "POST",
+        body: JSON.stringify({ domain: name.toUpperCase() }),
+      });
+      expect(second.status).toBe(409);
+      await api(`/api/domains/${first.body.id}`, { method: "DELETE" });
+    });
+
+    it("a domain claimed by another account can still be added while unverified", async () => {
+      const name = `shared-${Date.now()}.example.com`;
+      const mine = await api("/api/domains", {
+        method: "POST",
+        body: JSON.stringify({ domain: name }),
+      });
+      expect(mine.status).toBe(201);
+
+      const ownerToken = token;
+      const other = await api("/api/auth/register", {
+        method: "POST",
+        body: JSON.stringify({
+          email: `other-${Date.now()}@integration.test`,
+          password: "IntegrationTest123!",
+        }),
+      });
+      token = other.body.token;
+      try {
+        const theirs = await api("/api/domains", {
+          method: "POST",
+          body: JSON.stringify({ domain: name }),
+        });
+        expect(theirs.status).toBe(201);
+      } finally {
+        token = ownerToken;
+      }
+      await api(`/api/domains/${mine.body.id}`, { method: "DELETE" });
+    });
+
+    it("verify and delete 404 on a malformed id", async () => {
+      const verify = await api("/api/domains/not-a-uuid/verify", {
+        method: "POST",
+      });
+      expect(verify.status).toBe(404);
+      const del = await api("/api/domains/not-a-uuid", { method: "DELETE" });
+      expect(del.status).toBe(404);
+    });
+
     it("DELETE /api/domains/:id deletes domain", async () => {
       const { status, body } = await api(`/api/domains/${domainId}`, {
         method: "DELETE",
@@ -363,6 +444,59 @@ describe("API Integration Tests", () => {
       expect(status).toBe(409);
     });
 
+    it("POST /api/suppressions treats addresses case-insensitively", async () => {
+      const { status } = await api("/api/suppressions", {
+        method: "POST",
+        body: JSON.stringify({ email: "  Blocked@Example.COM " }),
+      });
+      expect(status).toBe(409);
+    });
+
+    it.each(["", "   ", "not-an-email", "a@localhost", 42])(
+      "POST /api/suppressions rejects invalid email %j",
+      async (email) => {
+        const { status } = await api("/api/suppressions", {
+          method: "POST",
+          body: JSON.stringify({ email }),
+        });
+        expect(status).toBe(400);
+      },
+    );
+
+    it("POST /api/suppressions rejects an unknown reason", async () => {
+      const { status } = await api("/api/suppressions", {
+        method: "POST",
+        body: JSON.stringify({ email: "reason@example.com", reason: "x".repeat(80) }),
+      });
+      expect(status).toBe(400);
+    });
+
+    it("DELETE /api/suppressions/:id 404s on a malformed id", async () => {
+      const { status } = await api("/api/suppressions/not-a-uuid", {
+        method: "DELETE",
+      });
+      expect(status).toBe(404);
+    });
+
+    it("send skips a suppressed address whatever its case or display name", async () => {
+      const inbox = await api("/api/inboxes", {
+        method: "POST",
+        body: JSON.stringify({ name: "Suppression Send Inbox" }),
+      });
+      const { status, body } = await api("/v1/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          inboxId: inbox.body.id,
+          from: "test@example.com",
+          to: ["Blocked <BLOCKED@example.com>"],
+          subject: "Suppressed",
+          text: "hi",
+        }),
+      });
+      expect(status).toBe(422);
+      expect(body.suppressedEmails).toEqual(["blocked@example.com"]);
+    });
+
     it("GET /api/suppressions lists with pagination", async () => {
       const { status, body } = await api("/api/suppressions");
       expect(status).toBe(200);
@@ -507,6 +641,38 @@ describe("API Integration Tests", () => {
       expect(status).toBe(202);
       expect(body.id).toBeDefined();
       expect(body.status).toBeDefined();
+    });
+
+    it("POST /v1/messages rejects an invalid recipient", async () => {
+      const { status } = await api("/v1/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          inboxId,
+          from: "test@example.com",
+          to: ["not-an-email"],
+          subject: "Bad recipient",
+          text: "hi",
+        }),
+      });
+      expect(status).toBe(400);
+    });
+
+    it("POST /api/messages/:id/forward rejects an invalid recipient", async () => {
+      const sent = await api("/v1/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          inboxId,
+          from: "test@example.com",
+          to: ["recipient@example.com"],
+          subject: "Forward me",
+          text: "hi",
+        }),
+      });
+      const { status } = await api(`/api/messages/${sent.body.id}/forward`, {
+        method: "POST",
+        body: JSON.stringify({ to: "not-an-email" }),
+      });
+      expect(status).toBe(400);
     });
 
     it("POST /v1/messages rejects missing inboxId", async () => {

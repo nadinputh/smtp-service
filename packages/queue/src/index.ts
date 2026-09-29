@@ -21,6 +21,8 @@ export interface IncomingEmailPayload {
 
 export interface OutboundEmailPayload {
   messageId: string;
+  /** Sending user; suppression and DKIM are resolved against this account. */
+  userId?: string;
   from: string;
   to: string[];
   rawKey: string;
