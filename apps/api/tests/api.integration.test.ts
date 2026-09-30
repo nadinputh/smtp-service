@@ -365,6 +365,67 @@ describe("API Integration Tests", () => {
       }
     });
 
+    it("PATCH edits a key and rotate replaces only the secret", async () => {
+      const k = await makeKey(["read"]);
+      const edited = await api(`/api/keys/${k.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: "renamed", scopes: ["send"] }),
+      });
+      expect(edited.status).toBe(200);
+      expect(edited.body).toMatchObject({ name: "renamed", scopes: ["send"] });
+      expect(await withKey(k.raw, "/api/templates")).toBe(403);
+
+      for (const bad of [
+        {},
+        { scopes: [] },
+        { scopes: ["nope"] },
+        { expiresAt: "2001-01-01" },
+      ]) {
+        const r = await api(`/api/keys/${k.id}`, {
+          method: "PATCH",
+          body: JSON.stringify(bad),
+        });
+        expect(r.status).toBe(400);
+      }
+
+      const rotated = await api(`/api/keys/${k.id}/rotate`, {
+        method: "POST",
+      });
+      expect(rotated.status).toBe(200);
+      expect(rotated.body).toMatchObject({ id: k.id, name: "renamed" });
+      expect(rotated.body.rawKey).not.toBe(k.raw);
+      expect(await withKey(k.raw, "/api/templates")).toBe(401);
+      await api(`/api/keys/${k.id}`, { method: "DELETE" });
+    });
+
+    it("an expired key is rejected", async () => {
+      const k = await makeKey(["read"]);
+      await api(`/api/keys/${k.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          expiresAt: new Date(Date.now() + 1500).toISOString(),
+        }),
+      });
+      await new Promise((r) => setTimeout(r, 2000));
+      expect(await withKey(k.raw, "/api/templates")).toBe(401);
+      await api(`/api/keys/${k.id}`, { method: "DELETE" });
+    });
+
+    it("a key never reveals inbox SMTP credentials", async () => {
+      const inbox = await api("/api/inboxes", {
+        method: "POST",
+        body: JSON.stringify({ name: "key-cred-test" }),
+      });
+      const k = await makeKey(["read"]);
+      const res = await fetch(`${API_BASE}/api/inboxes/${inbox.body.id}`, {
+        headers: { "x-api-key": k.raw },
+      });
+      expect(res.status).toBe(200);
+      expect((await res.json()).smtpPassword).toBeUndefined();
+      await api(`/api/keys/${k.id}`, { method: "DELETE" });
+      await api(`/api/inboxes/${inbox.body.id}`, { method: "DELETE" });
+    });
+
     it("DELETE /api/keys/:id 404s on a malformed id", async () => {
       const { status } = await api("/api/keys/not-a-uuid", {
         method: "DELETE",

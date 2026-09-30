@@ -81,14 +81,17 @@ export function registerInboxRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Inbox not found" });
       }
       // SMTP credentials let the holder deliver into the inbox, so read-only
-      // viewers don't get the password.
+      // viewers and API keys (a read scope must not hand out write access)
+      // don't get the password.
       const { smtpPassword, ...detail } = result.rows[0] as Record<
         string,
         unknown
       >;
       return {
         ...detail,
-        ...(request.inboxRole !== "viewer" ? { smtpPassword } : {}),
+        ...(request.inboxRole !== "viewer" && !request.apiKeyScopes
+          ? { smtpPassword }
+          : {}),
         currentUserRole: request.inboxRole,
       };
     },

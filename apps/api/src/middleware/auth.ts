@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import { createHash } from "node:crypto";
 import { getEnv } from "@mailpocket/env";
 import { getDb, apiKeys, users } from "@mailpocket/db";
-import { eq } from "drizzle-orm";
+import { eq, and, like } from "drizzle-orm";
 
 export const API_KEY_SCOPES = ["send", "read", "delete"] as const;
 
@@ -175,7 +175,8 @@ export async function authGuard(request: FastifyRequest, reply: FastifyReply) {
     const db = getDb(env.DATABASE_URL);
 
     // Current keys are stored as a SHA-256 digest (direct lookup); keys
-    // created before that were bcrypt-hashed and are matched by prefix.
+    // created before that were bcrypt-hashed and are matched by prefix, then
+    // upgraded to SHA-256 so each legacy key is only ever slow once.
     let key = (
       await db
         .select()
@@ -188,7 +189,14 @@ export async function authGuard(request: FastifyRequest, reply: FastifyReply) {
       const candidates = await db
         .select()
         .from(apiKeys)
-        .where(eq(apiKeys.prefix, token.slice(0, 14)))
+        .where(
+          and(
+            eq(apiKeys.prefix, token.slice(0, 14)),
+            // Only bcrypt rows: SHA-256 keys sharing the prefix must not
+            // use up the candidate slots.
+            like(apiKeys.keyHash, "$2%"),
+          ),
+        )
         .limit(5);
       for (const candidate of candidates) {
         if (
@@ -196,6 +204,10 @@ export async function authGuard(request: FastifyRequest, reply: FastifyReply) {
           (await bcrypt.compare(token, candidate.keyHash))
         ) {
           key = candidate;
+          await db
+            .update(apiKeys)
+            .set({ keyHash: hashApiKey(token) })
+            .where(eq(apiKeys.id, candidate.id));
           break;
         }
       }
@@ -219,10 +231,14 @@ export async function authGuard(request: FastifyRequest, reply: FastifyReply) {
 
     request.user = { userId: key.userId, email: "" };
     request.apiKeyScopes = key.scopes;
-    db.update(apiKeys)
-      .set({ lastUsedAt: new Date() })
-      .where(eq(apiKeys.id, key.id))
-      .catch(() => {});
+    // Once a minute is precise enough for "last used" and spares a write on
+    // every request.
+    if (!key.lastUsedAt || Date.now() - key.lastUsedAt.getTime() > 60_000) {
+      db.update(apiKeys)
+        .set({ lastUsedAt: new Date() })
+        .where(eq(apiKeys.id, key.id))
+        .catch(() => {});
+    }
     return;
   }
 

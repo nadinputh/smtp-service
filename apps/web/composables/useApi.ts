@@ -388,6 +388,24 @@ export function useApi() {
       });
     },
 
+    async updateApiKey(
+      keyId: string,
+      data: { name?: string; scopes?: string[]; expiresAt?: string | null },
+    ) {
+      return await $fetch<ApiKey>(`/api/keys/${keyId}`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: data,
+      });
+    },
+
+    async rotateApiKey(keyId: string) {
+      return await $fetch<ApiKeyCreateResponse>(`/api/keys/${keyId}/rotate`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+    },
+
     async deleteApiKey(keyId: string) {
       return await $fetch<{ success: boolean }>(`/api/keys/${keyId}`, {
         method: "DELETE",

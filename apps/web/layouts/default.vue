@@ -171,9 +171,6 @@
             >
               <Icon :name="item.icon" class="w-4 h-4 shrink-0" />
               <span class="flex-1">{{ item.label }}</span>
-              <Badge v-if="item.upcoming" tone="purple" class="shrink-0">
-                Upcoming
-              </Badge>
             </NavLink>
           </div>
         </div>
@@ -519,7 +516,8 @@ const themeOptions = [
 const manageNav = [
   { to: "/domains", icon: "lucide:globe", label: "Domains" },
   { to: "/suppressions", icon: "lucide:shield-off", label: "Suppressions" },
-  { to: "/api-keys", icon: "lucide:key", label: "API Keys", upcoming: true },
+  { to: "/api-keys", icon: "lucide:key", label: "API Keys" },
+  { to: "/docs", icon: "lucide:book-open", label: "API Docs" },
   { to: "/teams", icon: "lucide:users-round", label: "Teams" },
 ];
 

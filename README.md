@@ -249,9 +249,13 @@ Supports `templateId` + `variables`, `sendAt` for scheduling, and custom `X-*` h
 
 | Method | Endpoint                | Description                  |
 | ------ | ----------------------- | ---------------------------- |
+| PATCH  | `/api/keys/:id` | Edit name, scopes or expiry       |
+| POST   | `/api/keys/:id/rotate` | New secret for the same key (returns raw key once) |
 | POST   | `/api/suppressions`     | Add suppressed email         |
 | GET    | `/api/suppressions`     | List (paginated, searchable) |
 | DELETE | `/api/suppressions/:id` | Remove suppression           |
+
+The dashboard has a usage guide at `/docs` (API Docs) listing every endpoint a key can call. Key management needs a user session, not an API key. Changing or resetting a password revokes all of that user's API keys.
 
 #### Teams
 
