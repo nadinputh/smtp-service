@@ -35,6 +35,7 @@ export function registerInboxRoutes(app: FastifyInstance) {
           i.team_id AS "teamId",
           t.name AS "teamName",
           COALESCE((SELECT COUNT(*) FROM messages m WHERE m.inbox_id = i.id AND m.is_read = false), 0)::int AS "unreadCount",
+          COALESCE((SELECT COUNT(*) FROM messages m WHERE m.inbox_id = i.id AND m.status IN ('bounced','failed')), 0)::int AS "failedCount",
           CASE
             WHEN i.user_id = ${userId} THEN 'owner'
             WHEN im.user_id IS NOT NULL THEN im.role::text

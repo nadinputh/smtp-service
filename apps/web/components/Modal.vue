@@ -7,22 +7,40 @@
       <div
         ref="dialogRef"
         tabindex="-1"
-        class="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full p-6 focus:outline-none"
-        :class="maxWidth === 'md' ? 'max-w-md' : 'max-w-sm'"
-        role="dialog"
+        class="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full p-6 focus:outline-none max-h-[calc(100dvh-2rem)] overflow-y-auto"
+        :class="WIDTHS[maxWidth]"
+        :role="role"
         aria-modal="true"
         :aria-labelledby="title ? titleId : undefined"
+        :aria-describedby="describedBy"
         @keydown="handleKeydown"
       >
-        <h2
+        <div
           v-if="title"
-          :id="titleId"
-          class="text-lg font-semibold text-gray-800 dark:text-gray-100"
+          class="flex items-start justify-between gap-3"
           :class="titleClass"
         >
-          {{ title }}
-        </h2>
+          <h2
+            :id="titleId"
+            class="text-lg font-semibold text-gray-800 dark:text-gray-100"
+          >
+            {{ title }}
+          </h2>
+          <button
+            v-if="closable"
+            type="button"
+            data-modal-close
+            aria-label="Close"
+            class="icon-btn -mt-1.5 -mr-2 shrink-0"
+            @click="emit('close')"
+          >
+            <Icon name="lucide:x" class="w-5 h-5" />
+          </button>
+        </div>
         <slot />
+        <div v-if="$slots.footer" class="flex justify-end gap-2 mt-4">
+          <slot name="footer" />
+        </div>
       </div>
     </div>
   </Teleport>
@@ -32,18 +50,32 @@
 const props = withDefaults(
   defineProps<{
     title?: string;
-    maxWidth?: "sm" | "md";
+    maxWidth?: "sm" | "md" | "lg" | "xl";
     closeOnBackdrop?: boolean;
     closeOnEscape?: boolean;
     titleClass?: string;
+    /** Destructive confirmations use "alertdialog". */
+    role?: "dialog" | "alertdialog";
+    /** id of the element that describes the dialog's consequence. */
+    describedBy?: string;
+    closable?: boolean;
   }>(),
   {
     maxWidth: "sm",
     closeOnBackdrop: true,
     closeOnEscape: true,
     titleClass: "mb-4",
+    role: "dialog",
+    closable: true,
   },
 );
+
+const WIDTHS = {
+  sm: "max-w-sm",
+  md: "max-w-md",
+  lg: "max-w-lg",
+  xl: "max-w-4xl",
+} as const;
 
 const emit = defineEmits<{ close: [] }>();
 
@@ -117,7 +149,13 @@ function ensureFocusInsideDialog() {
 onMounted(() => {
   previouslyFocused = document.activeElement as HTMLElement | null;
   nextTick(() => {
-    focusableElements()[0]?.focus();
+    // Land on the first real control, not the close button, so a destructive
+    // confirmation opens on Cancel.
+    (
+      dialogRef.value?.querySelector<HTMLElement>("[data-autofocus]") ??
+      focusableElements().find((el) => !el.hasAttribute("data-modal-close")) ??
+      focusableElements()[0]
+    )?.focus();
   });
   if (dialogRef.value) {
     observer = new MutationObserver(ensureFocusInsideDialog);

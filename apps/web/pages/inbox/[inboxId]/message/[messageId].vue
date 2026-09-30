@@ -1,1088 +1,231 @@
 <template>
   <div class="h-full flex flex-col">
-    <!-- Header -->
     <header
-      class="px-6 h-20 shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-center gap-4"
+      class="px-6 py-3 min-h-20 shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-wrap items-center gap-x-4 gap-y-3"
     >
-      <NuxtLink
-        :to="`/inbox/${inboxId}`"
-        aria-label="Back to inbox"
-        class="text-gray-500 dark:text-gray-400 hover:text-gray-600 transition-colors"
-      >
+      <NuxtLink :to="backTo" aria-label="Back to inbox" class="icon-btn -ml-2">
         <Icon name="lucide:arrow-left" class="w-5 h-5" />
       </NuxtLink>
-      <div class="min-w-0 flex-1">
-        <h2
+      <div class="min-w-0 flex-1 basis-48">
+        <h1
           class="text-lg font-semibold text-gray-800 dark:text-gray-100 truncate"
         >
-          {{ message?.subject || "(no subject)" }}
-        </h2>
-        <p class="text-sm text-gray-500 dark:text-gray-400">From: {{ message?.from }}</p>
-      </div>
-      <button
-        @click="
-          authedDownload(
-            `${apiBase}/api/messages/${messageId}/raw`,
-            `${messageId}.eml`,
-          )
-        "
-        class="inline-flex items-center justify-center rounded-lg transition-colors text-xs px-2.5 py-1 border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 shrink-0"
-      >
-        Download .eml
-      </button>
-      <UBtn variant="secondary" size="xs" @click="showForwardModal = true">
-        Forward
-      </UBtn>
-      <UBtn
-        v-if="message?.status === 'scheduled'"
-        variant="warning"
-        size="xs"
-        @click="handleCancelSchedule"
-      >
-        Cancel Schedule
-      </UBtn>
-      <UBtn variant="danger" size="xs" @click="handleDelete"> Delete </UBtn>
-    </header>
-
-    <p
-      v-if="downloadError"
-      role="alert"
-      aria-live="assertive"
-      class="px-6 py-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border-b border-red-100 dark:border-red-900"
-    >
-      {{ downloadError }}
-    </p>
-    <p
-      v-if="cancelScheduleError"
-      role="alert"
-      aria-live="assertive"
-      class="px-6 py-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border-b border-red-100 dark:border-red-900"
-    >
-      {{ cancelScheduleError }}
-    </p>
-
-    <div v-if="pending" class="p-6 text-gray-500 dark:text-gray-400">Loading...</div>
-
-    <div v-else-if="message" class="flex-1 overflow-y-auto">
-      <!-- Metadata -->
-      <div
-        class="px-6 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm space-y-1"
-      >
-        <!-- To recipients -->
-        <div class="flex items-start gap-2">
-          <span class="text-gray-500 dark:text-gray-400 w-12 shrink-0 pt-0.5"
-            >To:</span
-          >
-          <div class="flex-1">
-            <!-- Collapsed: first 3 inline + badge -->
-            <div v-if="!toExpanded" class="flex flex-wrap items-center gap-1.5">
-              <span
-                v-for="addr in message.to.slice(0, RECIPIENTS_PREVIEW)"
-                :key="addr"
-                class="inline-block px-2 py-0.5 rounded-md bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs font-mono truncate max-w-xs"
-                >{{ addr }}</span
-              >
-              <button
-                v-if="message.to.length > RECIPIENTS_PREVIEW"
-                @click="toExpanded = true"
-                class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline shrink-0"
-              >
-                +{{ message.to.length - RECIPIENTS_PREVIEW }} more
-              </button>
-            </div>
-            <!-- Expanded: framed chip list -->
-            <div
-              v-else
-              class="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-2"
-            >
-              <div class="flex flex-wrap gap-1.5 mb-2">
-                <span
-                  v-for="addr in message.to"
-                  :key="addr"
-                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs font-mono"
-                  >{{ addr }}</span
-                >
-              </div>
-              <button
-                @click="toExpanded = false"
-                class="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 flex items-center gap-1"
-              >
-                <Icon name="lucide:chevron-up" class="w-3 h-3" /> Collapse
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Cc recipients -->
-        <div v-if="message.cc?.length" class="flex items-start gap-2">
-          <span class="text-gray-500 dark:text-gray-400 w-12 shrink-0 pt-0.5"
-            >Cc:</span
-          >
-          <div class="flex-1">
-            <div v-if="!ccExpanded" class="flex flex-wrap items-center gap-1.5">
-              <span
-                v-for="addr in message.cc.slice(0, RECIPIENTS_PREVIEW)"
-                :key="addr"
-                class="inline-block px-2 py-0.5 rounded-md bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs font-mono truncate max-w-xs"
-                >{{ addr }}</span
-              >
-              <button
-                v-if="message.cc.length > RECIPIENTS_PREVIEW"
-                @click="ccExpanded = true"
-                class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline shrink-0"
-              >
-                +{{ message.cc.length - RECIPIENTS_PREVIEW }} more
-              </button>
-            </div>
-            <div
-              v-else
-              class="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-2"
-            >
-              <div class="flex flex-wrap gap-1.5 mb-2">
-                <span
-                  v-for="addr in message.cc"
-                  :key="addr"
-                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs font-mono"
-                  >{{ addr }}</span
-                >
-              </div>
-              <button
-                @click="ccExpanded = false"
-                class="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 flex items-center gap-1"
-              >
-                <Icon name="lucide:chevron-up" class="w-3 h-3" /> Collapse
-              </button>
-            </div>
-          </div>
-        </div>
-        <div class="text-gray-700 dark:text-gray-300">
-          <span class="text-gray-500 dark:text-gray-400 w-12 inline-block"
-            >Date:</span
-          >
           {{
-            message.date
-              ? new Date(message.date).toLocaleString()
-              : message.createdAt
-                ? new Date(message.createdAt).toLocaleString()
-                : "—"
+            message?.subject ||
+            (messageError ? "Message unavailable" : "(no subject)")
           }}
-        </div>
+        </h1>
+        <p
+          v-if="message"
+          class="text-sm text-gray-600 dark:text-gray-400 truncate"
+        >
+          From: {{ message.from }}
+        </p>
       </div>
-
-      <!-- Tab switcher -->
-      <div class="border-b border-gray-200 dark:border-gray-700 px-6">
-        <nav
-          class="flex gap-4 -mb-px"
-          role="tablist"
-          aria-label="Message detail sections"
+      <div v-if="message" class="flex items-center gap-2">
+        <div
+          class="flex items-center"
+          role="group"
+          aria-label="Message navigation"
         >
           <button
-            v-for="tab in tabs"
-            :key="tab.key"
-            role="tab"
-            :aria-selected="activeTab === tab.key"
-            class="py-3 text-sm border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900"
-            :class="activeTab === tab.key ? 'border-indigo-500 text-indigo-600 font-medium' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-600'"
-            @click="activeTab = tab.key"
+            type="button"
+            class="icon-btn"
+            aria-label="Previous message (press [)"
+            title="Previous message ( [ )"
+            :disabled="!canPrev || navigating"
+            @click="go('prev')"
           >
-            {{ tab.label }}
+            <Icon name="lucide:chevron-up" class="w-5 h-5" />
           </button>
-        </nav>
+          <button
+            type="button"
+            class="icon-btn"
+            aria-label="Next message (press ])"
+            title="Next message ( ] )"
+            :disabled="!canNext || navigating"
+            @click="go('next')"
+          >
+            <Icon name="lucide:chevron-down" class="w-5 h-5" />
+          </button>
+        </div>
+        <UBtn
+          variant="secondary"
+          size="sm"
+          icon="lucide:forward"
+          @click="showForward = true"
+          >Forward</UBtn
+        >
+        <ActionMenu label="More" :items="menuItems" @select="onMenu" />
+      </div>
+    </header>
+
+    <InlineError
+      v-if="downloadError"
+      block
+      dismissible
+      @dismiss="downloadError = ''"
+      >{{ downloadError }}</InlineError
+    >
+    <InlineError v-if="cancelError" block>{{ cancelError }}</InlineError>
+
+    <p
+      v-if="pending && !message"
+      role="status"
+      class="p-6 text-gray-600 dark:text-gray-400"
+    >
+      Loading message…
+    </p>
+
+    <div
+      v-else-if="messageError && !message"
+      class="flex-1 flex flex-col items-center justify-center"
+    >
+      <EmptyState icon="lucide:mail-x" title="This message isn't available">
+        It may have been deleted, or you no longer have access to this inbox.
+        <template #action>
+          <div class="flex gap-2 justify-center">
+            <UBtn size="sm" variant="secondary" @click="refresh()"
+              >Try again</UBtn
+            >
+            <UBtn size="sm" :to="backTo">Back to inbox</UBtn>
+          </div>
+        </template>
+      </EmptyState>
+    </div>
+
+    <div v-else-if="message" class="flex-1 overflow-y-auto">
+      <MessageDiagnosis
+        :status="message.status"
+        :logs="deliveryLogs"
+        :resending="resending"
+        @resend="resend"
+      />
+
+      <div
+        class="px-6 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm space-y-1.5"
+      >
+        <RecipientList label="To" :addresses="message.to ?? []" />
+        <RecipientList label="Cc" :addresses="message.cc ?? []" />
+        <RecipientList label="Bcc" :addresses="message.bcc ?? []" />
+        <div class="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+          <span class="text-gray-600 dark:text-gray-400 w-12 shrink-0"
+            >Date:</span
+          >
+          <time :datetime="messageDate" :title="formatFullDate(messageDate)">{{
+            formatDateTime(messageDate)
+          }}</time>
+          <StatusBadge :status="message.status" class="ml-2" />
+        </div>
       </div>
 
-      <!-- Body -->
-      <div class="flex-1 p-6">
-        <!-- HTML preview -->
-        <div
-          v-if="activeTab === 'html' && message.html"
-          class="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden"
-        >
-          <!-- Preview toolbar -->
-          <div
-            class="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"
-          >
-            <span
-              class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1"
-            >
-              HTML Preview
-              <span class="hidden sm:inline text-gray-400 dark:text-gray-500"
-                >&middot; independent of your dashboard theme</span
-              >
-            </span>
-            <div
-              class="flex items-center bg-gray-200 dark:bg-gray-700 rounded-md p-0.5"
-              role="group"
-              aria-label="Preview mode"
-            >
-              <button
-                v-for="opt in previewModes"
-                :key="opt.value"
-                :aria-pressed="previewBg === opt.value"
-                @click="previewBg = opt.value"
-                :title="opt.title"
-                class="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800"
-                :class="
-                  previewBg === opt.value
-                    ? 'bg-white dark:bg-gray-600 text-gray-800 dark:text-gray-100 shadow-sm ring-1 ring-indigo-300 dark:ring-indigo-500'
-                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                "
-              >
-                <Icon :name="opt.icon" class="w-3 h-3" />
-                {{ opt.label }}
-              </button>
-            </div>
-          </div>
-          <!-- Clicked-link bar -->
-          <div
-            v-if="clickedLink"
-            role="status"
-            aria-live="polite"
-            class="flex items-center gap-2 px-4 py-2 border-b border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-900/20 text-sm"
-          >
-            <Icon
-              name="lucide:link"
-              class="w-4 h-4 shrink-0 text-indigo-600 dark:text-indigo-400"
-            />
-            <span class="text-gray-500 dark:text-gray-400 shrink-0">Link:</span>
-            <code
-              class="flex-1 min-w-0 truncate text-gray-800 dark:text-gray-200"
-              :title="clickedLink"
-              >{{ clickedLink }}</code
-            >
-            <button
-              type="button"
-              @click="copyClickedLink"
-              class="shrink-0 inline-flex items-center gap-1 -my-1.5 py-1.5 px-1 text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300"
-            >
-              <Icon
-                :name="linkCopied ? 'lucide:check' : 'lucide:copy'"
-                class="w-3.5 h-3.5"
-              />
-              {{ linkCopied ? "Copied" : "Copy" }}
-            </button>
-            <a
-              :href="clickedLink"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="shrink-0 inline-flex items-center gap-1 -my-1.5 py-1.5 px-1 text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300"
-            >
-              <Icon name="lucide:external-link" class="w-3.5 h-3.5" />
-              Open
-            </a>
-            <button
-              type="button"
-              @click="clickedLink = null"
-              aria-label="Dismiss link"
-              class="shrink-0 p-1.5 -m-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-            >
-              <Icon name="lucide:x" class="w-3.5 h-3.5" />
-            </button>
-          </div>
-          <!-- iframe: ring-inset frames the preview as its own surface, since
-               it renders independently of the surrounding dashboard theme and
-               can land on either side of a light/dark boundary at the edge -->
-          <div
-            class="transition-colors ring-1 ring-inset ring-gray-200/60 dark:ring-gray-700/60"
-            :class="previewBg === 'dark' ? 'bg-gray-900' : 'bg-white'"
-          >
-            <iframe
-              :srcdoc="previewHtml"
-              title="Email HTML preview"
-              class="w-full min-h-[calc(100vh-300px)] border-0"
-              sandbox="allow-same-origin"
-              @load="handleIframeLoad"
+      <TabBar
+        v-model="activeTab"
+        :tabs="tabs"
+        label="Message detail sections"
+        id-prefix="msg"
+      />
+
+      <div class="p-6">
+        <TabPanel id-prefix="msg" tab="preview" :active="activeTab">
+          <div class="mb-3" v-if="message.html && message.text">
+            <SegmentedControl
+              :model-value="previewMode"
+              :options="[
+                { value: 'html', label: 'HTML' },
+                { value: 'text', label: 'Plain text' },
+              ]"
+              label="Body format"
+              @update:model-value="
+                previewOverride = $event === 'text' ? 'text' : 'html'
+              "
             />
           </div>
-        </div>
-        <p
-          v-else-if="activeTab === 'html'"
-          class="text-gray-500 dark:text-gray-400 text-sm"
-        >
-          No HTML body
-        </p>
-
-        <!-- Plain text -->
-        <pre
-          v-if="activeTab === 'text'"
-          class="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4"
-          >{{ message.text || "No plain text body" }}</pre
-        >
-
-        <!-- Attachments -->
-        <div v-if="activeTab === 'attachments'">
-          <div
-            v-if="!message.attachments?.length"
-            class="text-sm text-gray-500 dark:text-gray-400"
-          >
-            No attachments
-          </div>
-          <template v-else>
-            <!-- Image thumbnails grid -->
-            <div v-if="imageAttachments.length" class="mb-6">
-              <p
-                class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3"
-              >
-                Images
-              </p>
-              <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <button
-                  v-for="{ att, idx } in imageAttachments"
-                  :key="idx"
-                  type="button"
-                  class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden group text-left w-full"
-                  @click="previewAttachment = idx"
-                >
-                  <img
-                    :src="attachmentBlobUrls[idx]"
-                    :alt="att.filename"
-                    class="w-full h-32 object-cover"
-                    loading="lazy"
-                  />
-                  <div class="p-2">
-                    <p
-                      class="text-xs font-medium text-gray-700 dark:text-gray-300 truncate"
-                    >
-                      {{ att.filename }}
-                    </p>
-                    <p class="text-[10px] text-gray-500 dark:text-gray-400">
-                      {{ formatBytes(att.size) }}
-                    </p>
-                  </div>
-                </button>
-              </div>
-            </div>
-
-            <!-- All attachments list -->
-            <p
-              v-if="imageAttachments.length && nonImageAttachments.length"
-              class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3"
-            >
-              Other Files
-            </p>
-            <ul class="space-y-2">
-              <li
-                v-for="{ att, idx } in imageAttachments.length
-                  ? nonImageAttachments
-                  : allAttachments"
-                :key="idx"
-                class="flex items-center gap-3 p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700"
-              >
-                <Icon
-                  name="lucide:paperclip"
-                  class="w-4 h-4 text-gray-500 dark:text-gray-400 shrink-0"
-                />
-                <div class="min-w-0 flex-1">
-                  <p
-                    class="text-sm font-medium text-gray-700 dark:text-gray-300 truncate"
-                  >
-                    {{ att.filename }}
-                  </p>
-                  <p class="text-xs text-gray-500 dark:text-gray-400">
-                    {{ att.contentType }} &middot; {{ formatBytes(att.size) }}
-                  </p>
-                </div>
-                <div class="flex items-center gap-2 shrink-0">
-                  <UBtn
-                    v-if="isPreviewable(att)"
-                    variant="secondary"
-                    size="xs"
-                    @click="previewAttachment = idx"
-                  >
-                    Preview
-                  </UBtn>
-                  <a
-                    class="text-xs px-2 py-1 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
-                    @click.prevent="
-                      authedDownload(
-                        `${apiBase}/api/messages/${messageId}/attachments/${idx}`,
-                        att.filename,
-                      )
-                    "
-                  >
-                    Download
-                  </a>
-                </div>
-              </li>
-            </ul>
-
-            <!-- Inline Preview Modal -->
-            <Teleport to="body">
-              <div
-                v-if="previewAttachment !== null"
-                class="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
-                @click.self="previewAttachment = null"
-              >
-                <div
-                  role="dialog"
-                  aria-modal="true"
-                  aria-label="Attachment preview"
-                  class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col m-4"
-                >
-                  <div
-                    class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700"
-                  >
-                    <h3
-                      class="text-sm font-semibold text-gray-700 dark:text-gray-300 truncate"
-                    >
-                      {{ message.attachments[previewAttachment].filename }}
-                    </h3>
-                    <div class="flex items-center gap-2">
-                      <a
-                        class="text-xs px-3 py-1.5 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
-                        @click.prevent="
-                          authedDownload(
-                            `${apiBase}/api/messages/${messageId}/attachments/${previewAttachment}`,
-                            message.attachments[previewAttachment].filename,
-                          )
-                        "
-                      >
-                        Download
-                      </a>
-                      <button
-                        @click="previewAttachment = null"
-                        aria-label="Close preview"
-                        class="text-gray-500 dark:text-gray-400 hover:text-gray-600 transition-colors"
-                      >
-                        <Icon name="lucide:x" class="w-5 h-5" />
-                      </button>
-                    </div>
-                  </div>
-                  <div class="flex-1 overflow-auto p-4">
-                    <!-- Image preview -->
-                    <img
-                      v-if="isImage(message.attachments[previewAttachment])"
-                      :src="attachmentBlobUrls[previewAttachment]"
-                      :alt="message.attachments[previewAttachment].filename"
-                      class="max-w-full mx-auto"
-                    />
-                    <!-- PDF preview -->
-                    <iframe
-                      v-else-if="isPdf(message.attachments[previewAttachment])"
-                      :src="attachmentBlobUrls[previewAttachment]"
-                      title="PDF attachment preview"
-                      class="w-full h-[70vh] border-0"
-                    />
-                    <!-- Text preview -->
-                    <pre
-                      v-else-if="isText(message.attachments[previewAttachment])"
-                      class="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300 font-mono bg-gray-50 dark:bg-gray-900 rounded-lg p-4 max-h-[70vh] overflow-auto"
-                      >{{ textPreviewContent }}</pre
-                    >
-                    <!-- Unsupported -->
-                    <div v-else class="text-center py-16 text-gray-500 dark:text-gray-400">
-                      <Icon
-                        name="lucide:file"
-                        class="w-16 h-16 mx-auto mb-4 opacity-50"
-                      />
-                      <p>Preview not available for this file type</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </Teleport>
-          </template>
-        </div>
-
-        <!-- Delivery Logs -->
-        <div v-if="activeTab === 'delivery'">
-          <!-- Inbound message — no delivery logs expected -->
-          <div
-            v-if="message?.status === 'received'"
-            class="flex items-start gap-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-4 text-sm text-gray-500 dark:text-gray-400"
-          >
-            <Icon
-              name="lucide:info"
-              class="w-4 h-4 mt-0.5 shrink-0 text-gray-500 dark:text-gray-400"
-            />
-            <span
-              >This is an inbound message. Delivery logs are only recorded for
-              messages sent via MailPocket.</span
-            >
-          </div>
-          <template v-else>
-            <!-- Header row with refresh -->
-            <div class="flex items-center justify-between mb-3">
-              <span
-                class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider"
-                >Delivery Logs</span
-              >
-              <button
-                @click="refreshDeliveryLogs"
-                :disabled="deliveryLogsLoading"
-                class="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 disabled:opacity-50 transition-colors"
-              >
-                <Icon
-                  name="lucide:refresh-cw"
-                  class="w-3.5 h-3.5 motion-reduce:animate-none"
-                  :class="{ 'animate-spin': deliveryLogsLoading }"
-                />
-                Refresh
-              </button>
-            </div>
-            <div
-              v-if="deliveryLogsLoading && deliveryLogs === null"
-              class="text-sm text-gray-500 dark:text-gray-400"
-            >
-              Loading...
-            </div>
-            <div
-              v-else-if="deliveryLogsError"
-              role="alert"
-              aria-live="assertive"
-              class="flex items-center gap-2 text-sm text-red-500 dark:text-red-400"
-            >
-              <Icon name="lucide:alert-circle" class="w-4 h-4 shrink-0" />
-              Failed to load delivery logs.
-              <button
-                @click="refreshDeliveryLogs"
-                class="underline hover:no-underline"
-              >
-                Retry
-              </button>
-            </div>
-            <div
-              v-else-if="!deliveryLogs?.length"
-              class="text-sm text-gray-500 dark:text-gray-400"
-            >
-              No delivery logs yet. The message may still be queued or
-              processing.
-            </div>
-            <div v-else class="space-y-3">
-              <div
-                v-for="log in deliveryLogs"
-                :key="log.id"
-                class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3"
-              >
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-2">
-                    <span
-                      class="text-sm font-medium text-gray-800 dark:text-gray-100"
-                      >{{ log.recipient }}</span
-                    >
-                    <span
-                      class="text-xs px-1.5 py-0.5 rounded-full"
-                      :class="{
-                        'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':
-                          log.status === 'delivered',
-                        'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':
-                          log.status === 'bounced' || log.status === 'failed',
-                        'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400':
-                          log.status === 'deferred' || log.status === 'sending',
-                        'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400': log.status === 'queued',
-                      }"
-                    >
-                      {{ log.status }}
-                    </span>
-                  </div>
-                  <span class="text-xs text-gray-500 dark:text-gray-400"
-                    >Attempt #{{ log.attempts }}</span
-                  >
-                </div>
-                <div class="mt-1 text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
-                  <p v-if="log.mxHost">MX: {{ log.mxHost }}</p>
-                  <p v-if="log.smtpCode">
-                    SMTP {{ log.smtpCode }}: {{ log.smtpResponse }}
-                  </p>
-                  <p v-if="log.deliveredAt">
-                    Delivered: {{ new Date(log.deliveredAt).toLocaleString() }}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </template>
-        </div>
-
-        <!-- Headers -->
-        <div v-if="activeTab === 'headers'">
-          <div
-            v-if="headersLoading && headersData === null"
-            class="text-sm text-gray-500 dark:text-gray-400"
-          >
-            Loading...
-          </div>
-          <div
-            v-else-if="headersError"
-            role="alert"
-            aria-live="assertive"
-            class="flex items-center gap-2 text-sm text-red-500 dark:text-red-400"
-          >
-            <Icon name="lucide:alert-circle" class="w-4 h-4 shrink-0" />
-            Failed to load headers.
-            <button @click="loadHeaders" class="underline hover:no-underline">
-              Retry
-            </button>
-          </div>
-          <template v-else-if="headersData">
-            <!-- Auth badges -->
-            <div
-              v-if="headersData.authChecks.length"
-              class="flex items-center gap-2 mb-4"
-            >
-              <span class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase"
-                >Auth:</span
-              >
-              <span
-                v-for="check in headersData.authChecks"
-                :key="check.method"
-                class="text-xs px-2 py-0.5 rounded-full font-medium"
-                :class="authBadgeClass(check.result)"
-              >
-                {{ check.method }}: {{ check.result }}
-              </span>
-            </div>
-
-            <!-- Hop trace -->
-            <div v-if="headersData.hops.length" class="mb-4">
-              <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">
-                Routing Hops ({{ headersData.hops.length }})
-              </p>
-              <div class="space-y-1">
-                <div
-                  v-for="(hop, idx) in headersData.hops"
-                  :key="idx"
-                  class="flex items-center gap-2 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-3 py-1.5"
-                >
-                  <span class="font-mono text-gray-600 dark:text-gray-400"
-                    >{{ idx + 1 }}.</span
-                  >
-                  <span class="text-gray-800 dark:text-gray-200">{{
-                    hop.from
-                  }}</span>
-                  <Icon
-                    name="lucide:arrow-right"
-                    class="w-3 h-3 text-gray-500 dark:text-gray-400 shrink-0"
-                  />
-                  <span class="text-gray-800 dark:text-gray-200">{{
-                    hop.by
-                  }}</span>
-                  <span
-                    v-if="hop.delay"
-                    class="ml-auto text-indigo-600 dark:text-indigo-400 font-medium"
-                    >+{{ hop.delay }}</span
-                  >
-                  <span
-                    v-if="hop.timestamp"
-                    class="text-gray-500 dark:text-gray-400 shrink-0"
-                  >
-                    {{ new Date(hop.timestamp).toLocaleString() }}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Grouped headers -->
-            <div class="space-y-3">
-              <template v-for="(group, key) in headersData.groups" :key="key">
-                <details v-if="group.length" class="group" open>
-                  <summary
-                    class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase cursor-pointer hover:text-gray-600 mb-1"
-                  >
-                    {{ groupLabels[key] || key }} ({{ group.length }})
-                  </summary>
-                  <div class="space-y-1">
-                    <div
-                      v-for="(h, idx) in group"
-                      :key="idx"
-                      class="bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 px-3 py-2 text-sm"
-                    >
-                      <span
-                        class="font-mono font-semibold text-indigo-600 dark:text-indigo-400"
-                        >{{ h.key }}:</span
-                      >
-                      <span
-                        class="ml-2 text-gray-700 dark:text-gray-300 break-all"
-                        >{{ h.value }}</span
-                      >
-                    </div>
-                  </div>
-                </details>
-              </template>
-            </div>
-          </template>
-        </div>
-
-        <!-- Raw Source -->
-        <div v-if="activeTab === 'source'">
-          <div
-            v-if="sourceLoading && rawSource === null"
-            class="text-sm text-gray-500 dark:text-gray-400"
-          >
-            Loading...
-          </div>
-          <div
-            v-else-if="sourceError"
-            role="alert"
-            aria-live="assertive"
-            class="flex items-center gap-2 text-sm text-red-500 dark:text-red-400"
-          >
-            <Icon name="lucide:alert-circle" class="w-4 h-4 shrink-0" />
-            Failed to load message source.
-            <button @click="loadSource" class="underline hover:no-underline">
-              Retry
-            </button>
-          </div>
+          <MessageHtmlPreview
+            v-if="previewMode === 'html' && message.html"
+            :html="message.html"
+          />
           <pre
-            v-else-if="rawSource !== null"
-            class="whitespace-pre-wrap text-xs font-mono text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 max-h-[600px] overflow-auto"
-            >{{ rawSource }}</pre
-          >
-        </div>
+            v-else-if="message.text"
+            class="whitespace-pre-wrap break-words text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4"
+            >{{ message.text }}</pre>
+          <EmptyState
+            v-else
+            icon="lucide:file-question"
+            title="This message has no body"
+            compact
+          />
+        </TabPanel>
 
-        <!-- Spam Analysis -->
-        <div v-if="activeTab === 'spam'">
-          <div class="mb-4 flex items-center gap-3">
-            <div
-              class="text-2xl font-bold"
-              :class="spamVerdict(message.spamScore ?? 0).color"
-            >
-              {{ message.spamScore ?? 0 }}
-            </div>
-            <span
-              class="text-xs px-2 py-0.5 rounded-full font-medium"
-              :class="{
-                'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400': (message.spamScore ?? 0) < 3,
-                'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400':
-                  (message.spamScore ?? 0) >= 3 && (message.spamScore ?? 0) < 6,
-                'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400': (message.spamScore ?? 0) >= 6,
-              }"
-            >
-              {{ spamVerdict(message.spamScore ?? 0).label }}
-            </span>
-          </div>
-          <div v-if="!message.spamRules?.length" class="text-sm text-gray-500 dark:text-gray-400">
-            No spam rules triggered — email looks clean!
-          </div>
-          <div v-else class="space-y-2">
-            <div
-              v-for="(rule, idx) in message.spamRules"
-              :key="idx"
-              class="bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 px-3 py-2 flex items-center justify-between"
-            >
-              <div>
-                <span
-                  class="font-mono text-xs font-semibold text-gray-800 dark:text-gray-100"
-                  >{{ rule.rule }}</span
-                >
-                <p class="text-sm text-gray-500 dark:text-gray-400">{{ rule.description }}</p>
-              </div>
-              <span
-                class="text-sm font-medium shrink-0 ml-4"
-                :class="{
-                  'text-yellow-600 dark:text-yellow-400': rule.score < 2,
-                  'text-orange-600 dark:text-orange-400': rule.score >= 2 && rule.score < 3,
-                  'text-red-600 dark:text-red-400': rule.score >= 3,
-                }"
-              >
-                +{{ rule.score }}
-              </span>
-            </div>
-          </div>
+        <TabPanel id-prefix="msg" tab="files" :active="activeTab">
+          <MessageAttachmentsPanel
+            :message-id="messageId"
+            :attachments="message.attachments ?? []"
+          />
+        </TabPanel>
 
-          <!-- Suggestions -->
-          <div
-            v-if="spamSuggestions.length"
-            class="mt-5 border-t border-gray-100 dark:border-gray-700 pt-4"
-          >
-            <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">
-              Suggestions
-            </p>
-            <ul class="space-y-1">
-              <li
-                v-for="(s, idx) in spamSuggestions"
-                :key="idx"
-                class="flex items-start gap-2 text-sm text-gray-600 dark:text-gray-300"
-              >
-                <Icon
-                  name="lucide:lightbulb"
-                  class="w-4 h-4 text-yellow-500 shrink-0 mt-0.5"
-                />
-                {{ s }}
-              </li>
-            </ul>
-          </div>
-        </div>
+        <TabPanel id-prefix="msg" tab="delivery" :active="activeTab">
+          <MessageDeliveryPanel
+            :status="message.status"
+            :logs="deliveryLogs"
+            :loading="deliveryLoading"
+            :error="deliveryError"
+            @refresh="loadDelivery"
+          />
+        </TabPanel>
 
-        <!-- Compatibility -->
-        <div v-if="activeTab === 'compatibility'">
-          <div
-            v-if="compatibilityLoading && compatibilityData === null"
-            class="text-sm text-gray-500 dark:text-gray-400"
-          >
-            Loading...
-          </div>
-          <div
-            v-else-if="compatibilityError"
-            role="alert"
-            aria-live="assertive"
-            class="flex items-center gap-2 text-sm text-red-500 dark:text-red-400"
-          >
-            <Icon name="lucide:alert-circle" class="w-4 h-4 shrink-0" />
-            Failed to load compatibility data.
-            <button
-              @click="loadCompatibility"
-              class="underline hover:no-underline"
-            >
-              Retry
-            </button>
-          </div>
-          <template
-            v-else-if="
-              compatibilityData &&
-              compatibilityData.summary.totalFeaturesDetected === 0
-            "
-          >
-            <div class="text-center py-12">
-              <Icon
-                name="lucide:file-text"
-                class="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-600"
-              />
-              <p class="text-sm text-gray-500 dark:text-gray-400">
-                No HTML content to analyze
-              </p>
-            </div>
-          </template>
-          <template v-else-if="compatibilityData">
-            <!-- Summary -->
-            <div class="mb-6 flex items-center gap-4 text-sm">
-              <div
-                class="flex items-center gap-1.5 text-gray-500 dark:text-gray-400"
-              >
-                <Icon name="lucide:scan-search" class="w-4 h-4" />
-                <span
-                  ><strong class="text-gray-800 dark:text-gray-100">{{
-                    compatibilityData.summary.totalFeaturesDetected
-                  }}</strong>
-                  features detected</span
-                >
-              </div>
-              <div
-                class="flex items-center gap-1.5 text-gray-500 dark:text-gray-400"
-              >
-                <Icon
-                  name="lucide:circle-check"
-                  class="w-4 h-4 text-green-500"
-                />
-                <span
-                  ><strong class="text-gray-800 dark:text-gray-100">{{
-                    compatibilityData.summary.fullyCompatibleClients
-                  }}</strong>
-                  fully compatible clients</span
-                >
-              </div>
-              <div
-                class="flex items-center gap-1.5 text-gray-500 dark:text-gray-400"
-              >
-                <Icon
-                  name="lucide:triangle-alert"
-                  class="w-4 h-4 text-yellow-500"
-                />
-                <span
-                  ><strong class="text-gray-800 dark:text-gray-100">{{
-                    compatibilityData.summary.problematicFeatures
-                  }}</strong>
-                  problematic features</span
-                >
-              </div>
-            </div>
+        <TabPanel id-prefix="msg" tab="headers" :active="activeTab">
+          <MessageHeadersPanel :message-id="messageId" />
+        </TabPanel>
 
-            <!-- Client Score Cards -->
-            <div
-              class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 mb-6"
-            >
-              <div
-                v-for="client in compatibilityData.overallScores"
-                :key="client.id"
-                class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3 text-center"
-              >
-                <div class="flex items-center justify-center gap-1.5 mb-2">
-                  <Icon
-                    :name="client.icon"
-                    class="w-4 h-4 text-gray-500 dark:text-gray-400"
-                  />
-                  <span
-                    class="text-xs font-medium text-gray-700 dark:text-gray-300 truncate"
-                    >{{ client.name }}</span
-                  >
-                </div>
-                <div
-                  class="text-2xl font-bold"
-                  :class="scoreColor(client.score)"
-                >
-                  {{ client.score }}%
-                </div>
-                <div
-                  class="mt-1.5 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5"
-                >
-                  <div
-                    class="h-1.5 rounded-full transition-all"
-                    :class="scoreBarColor(client.score)"
-                    :style="{ width: client.score + '%' }"
-                  />
-                </div>
-                <span
-                  class="text-[10px] text-gray-500 dark:text-gray-400 mt-1 inline-block"
-                  >{{ client.category }}</span
-                >
-              </div>
-            </div>
-
-            <!-- Feature Details Table -->
-            <div class="space-y-4">
-              <details
-                v-for="cat in compatibilityCategories"
-                :key="cat.key"
-                class="group"
-                open
-              >
-                <summary
-                  class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase cursor-pointer hover:text-gray-600 mb-2"
-                >
-                  {{ cat.label }} ({{ cat.features.length }})
-                </summary>
-                <div class="overflow-x-auto">
-                  <table class="w-full text-sm">
-                    <thead>
-                      <tr class="border-b border-gray-200 dark:border-gray-700">
-                        <th
-                          class="text-left py-2 px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase w-48"
-                        >
-                          Feature
-                        </th>
-                        <th
-                          class="text-center py-2 px-1 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase w-12"
-                        >
-                          Uses
-                        </th>
-                        <th
-                          v-for="client in compatibilityData.overallScores"
-                          :key="client.id"
-                          class="text-center py-2 px-1 text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase whitespace-nowrap"
-                        >
-                          {{ client.name }}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr
-                        v-for="feat in cat.features"
-                        :key="feat.name"
-                        class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50"
-                      >
-                        <td class="py-2 px-3">
-                          <span
-                            class="font-medium text-gray-800 dark:text-gray-100"
-                            >{{ feat.name }}</span
-                          >
-                          <p
-                            class="text-[11px] text-gray-500 dark:text-gray-400"
-                          >
-                            {{ feat.description }}
-                          </p>
-                        </td>
-                        <td
-                          class="text-center py-2 px-1 text-gray-500 dark:text-gray-400 font-mono text-xs"
-                        >
-                          {{ feat.usageCount }}
-                        </td>
-                        <td
-                          v-for="client in compatibilityData.overallScores"
-                          :key="client.id"
-                          class="text-center py-2 px-1"
-                        >
-                          <span
-                            class="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px]"
-                            :class="supportBadgeClass(feat.clients[client.id])"
-                            :title="feat.clients[client.id]"
-                          >
-                            <Icon
-                              v-if="feat.clients[client.id] === 'full'"
-                              name="lucide:check"
-                              class="w-3 h-3"
-                            />
-                            <Icon
-                              v-else-if="feat.clients[client.id] === 'partial'"
-                              name="lucide:minus"
-                              class="w-3 h-3"
-                            />
-                            <Icon v-else name="lucide:x" class="w-3 h-3" />
-                          </span>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </details>
-            </div>
-          </template>
-        </div>
+        <TabPanel id-prefix="msg" tab="quality" :active="activeTab">
+          <MessageQualityPanel
+            :message-id="messageId"
+            :spam-score="message.spamScore ?? null"
+            :spam-rules="message.spamRules ?? null"
+          />
+        </TabPanel>
       </div>
     </div>
 
-    <!-- Forward Modal -->
-    <Teleport to="body">
-      <div
-        v-if="showForwardModal"
-        class="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
-        @click.self="showForwardModal = false"
-      >
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="forward-modal-title"
-          class="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-sm p-6"
+    <Modal
+      v-if="showForward"
+      title="Forward Message"
+      @close="showForward = false"
+    >
+      <form id="forward-form" @submit.prevent="forward">
+        <label
+          for="forward-to"
+          class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+          >Forward to</label
         >
-          <h2
-            id="forward-modal-title"
-            class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4"
-          >
-            Forward Message
-          </h2>
-          <form @submit.prevent="handleForward">
-            <label
-              for="forward-to"
-              class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-              >Forward to</label
-            >
-            <input
-              id="forward-to"
-              v-model="forwardTo"
-              type="email"
-              required
-              placeholder="recipient@example.com"
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            <p
-              v-if="forwardError"
-              role="alert"
-              aria-live="assertive"
-              class="text-sm text-red-600 dark:text-red-400 mt-2"
-            >
-              {{ forwardError }}
-            </p>
-            <p
-              v-if="forwardSuccess"
-              role="status"
-              aria-live="polite"
-              class="text-sm text-green-600 dark:text-green-400 mt-2"
-            >
-              Message forwarded and queued!
-            </p>
-            <div class="flex justify-end gap-2 mt-4">
-              <UBtn
-                type="button"
-                variant="ghost"
-                @click="showForwardModal = false"
-              >
-                Cancel
-              </UBtn>
-              <UBtn type="submit" :disabled="forwarding">
-                {{ forwarding ? "Forwarding..." : "Forward" }}
-              </UBtn>
-            </div>
-          </form>
-        </div>
-      </div>
-    </Teleport>
+        <input
+          id="forward-to"
+          v-model="forwardTo"
+          type="email"
+          required
+          placeholder="recipient@example.com"
+          class="field"
+        />
+        <InlineError v-if="forwardError" class="mt-2">{{
+          forwardError
+        }}</InlineError>
+      </form>
+      <template #footer>
+        <UBtn type="button" variant="ghost" @click="showForward = false"
+          >Cancel</UBtn
+        >
+        <UBtn type="submit" form="forward-form" :loading="forwarding">{{
+          forwarding ? "Forwarding…" : "Forward"
+        }}</UBtn>
+      </template>
+    </Modal>
+
+    <InboxShortcutsModal
+      v-if="showHelp"
+      scope="message"
+      @close="showHelp = false"
+    />
   </div>
 </template>
 
@@ -1091,300 +234,103 @@ definePageMeta({ layout: "default" });
 
 const route = useRoute();
 const api = useApi();
+const toast = useToast();
+const { confirm } = useConfirm();
 const inboxId = route.params.inboxId as string;
 const messageId = route.params.messageId as string;
-const apiBase = useRuntimeConfig().app.baseURL.replace(/\/$/, "");
-const { token } = useAuth();
+const { apiBase, error: downloadError, download } = useAuthedDownload();
 
-function authedFetch(url: string): Promise<Response> {
-  return fetch(url, {
-    headers: token.value ? { Authorization: `Bearer ${token.value}` } : {},
-  });
-}
-
-const downloadError = ref("");
-
-function authedDownload(url: string, filename: string) {
-  downloadError.value = "";
-  authedFetch(url)
-    .then((r) => r.blob())
-    .then((blob) => {
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(a.href);
-    })
-    .catch(() => {
-      downloadError.value = "Download failed. Please try again.";
-    });
-}
-
-// Blob URL cache for attachment previews (avoids repeated authenticated fetches)
-const attachmentBlobUrls = ref<Record<number, string>>({});
-onUnmounted(() => {
-  Object.values(attachmentBlobUrls.value).forEach(URL.revokeObjectURL);
+// ─── Navigation: back to the list you came from; prev/next through it ────────
+const listQuery = computed(() => {
+  const q: Record<string, string> = {};
+  for (const k of LIST_QUERY_KEYS) {
+    const v = route.query[k];
+    if (typeof v === "string" && v) q[k] = v;
+  }
+  return q;
 });
+const backTo = computed(() => ({
+  path: `/inbox/${inboxId}`,
+  query: listQuery.value,
+}));
 
-async function loadAttachmentBlobUrl(idx: number): Promise<string> {
-  if (attachmentBlobUrls.value[idx]) return attachmentBlobUrls.value[idx];
-  const r = await authedFetch(
-    `${apiBase}/api/messages/${messageId}/attachments/${idx}`,
-  );
-  const blob = await r.blob();
-  const url = URL.createObjectURL(blob);
-  attachmentBlobUrls.value[idx] = url;
-  return url;
-}
-
-const RECIPIENTS_PREVIEW = 2;
-const toExpanded = ref(false);
-const ccExpanded = ref(false);
-
-const activeTab = ref<
-  | "html"
-  | "text"
-  | "attachments"
-  | "delivery"
-  | "source"
-  | "headers"
-  | "spam"
-  | "compatibility"
->("html");
-
-// ─── HTML preview background toggle ──────────────────────
-// Always defaults to "light" regardless of the admin's own dashboard theme —
-// this preview approximates how the email renders for recipients, which has
-// nothing to do with the viewer's personal dashboard preference.
-const previewBg = ref<"light" | "dark">("light");
-const previewModes = [
-  { value: "light" as const, icon: "lucide:sun", label: "Light" },
-  {
-    value: "dark" as const,
-    icon: "lucide:moon",
-    label: "Simulate dark mode",
-    title:
-      "Approximates how some email clients auto-invert colors in dark mode. This is a simulation, not the actual email rendering.",
-  },
-];
-
-// Strip <script> blocks and inline event handlers from email HTML before
-// rendering in the sandboxed iframe (defence-in-depth — the iframe sandbox
-// already blocks script execution). Also neutralize every <a href> to "#",
-// moving the real destination to data-original-href: the iframe sandbox is
-// allow-same-origin with no allow-scripts, so if a link were left to navigate
-// the iframe itself, the destination (this app's own SPA routes, e.g. a
-// password reset link) could never render there — the preview would go
-// permanently blank with no error and no way back. handleIframeLoad()
-// below intercepts the click instead and shows the real URL in a dismissible
-// bar with copy/open-in-new-tab actions.
-function sanitizeEmailHtml(raw: string): { headExtra: string; bodyHtml: string } {
-  const doc = new DOMParser().parseFromString(raw, "text/html");
-
-  doc.querySelectorAll("script").forEach((el) => el.remove());
-  doc.querySelectorAll("*").forEach((el) => {
-    for (const attr of [...el.attributes]) {
-      if (attr.name.toLowerCase().startsWith("on")) el.removeAttribute(attr.name);
-    }
-  });
-  doc.querySelectorAll("a[href]").forEach((el) => {
-    el.setAttribute("data-original-href", el.getAttribute("href") || "");
-    el.setAttribute("href", "#");
-  });
-
-  const headExtra = [...doc.head.querySelectorAll("style")]
-    .map((el) => el.outerHTML)
-    .join("");
-  return { headExtra, bodyHtml: doc.body.innerHTML };
-}
-
-const previewHtml = computed(() => {
-  if (!message.value?.html) return "";
-  const { headExtra, bodyHtml } = sanitizeEmailHtml(message.value.html);
-  if (previewBg.value === "dark") {
-    // Outlook-style dark mode: invert the entire document (handling all inline
-    // colours and background-color declarations automatically), then
-    // counter-invert raster media so images/videos retain their natural look.
-    // body{color:#1f2937} is set explicitly (not left to UA default) because
-    // color-scheme:dark alone flips unset text to white, which then exactly
-    // matches the explicit white html{background} below — since invert() is a
-    // uniform transform, two identical pre-filter colors stay identical after
-    // it, silently making the email's own text unreadable at 1:1 contrast.
-    const darkStyle = [
-      ":root{color-scheme:dark}",
-      "body{color:#1f2937}",
-      "html{filter:invert(1) hue-rotate(180deg);background:#ffffff}",
-      "img,video,canvas,iframe{filter:invert(1) hue-rotate(180deg)}",
-    ].join("");
-    return `<html><head><meta name="color-scheme" content="dark"><style>${darkStyle}</style>${headExtra}</head><body style="margin:0">${bodyHtml}</body></html>`;
-  }
-  return `<html><head><style>html{background:#ffffff}body{margin:0;color:#1f2937}</style>${headExtra}</head><body>${bodyHtml}</body></html>`;
-});
-
-// ─── Link-click interception ──────────────────────────────
-// The parent page (unsandboxed) reaching into a same-origin sandboxed
-// iframe's DOM to attach a listener is allowed by allow-same-origin; it does
-// not require allow-scripts, which only gates script tags/handlers *declared
-// inside* the sandboxed document itself.
-const clickedLink = ref<string | null>(null);
-const linkCopied = ref(false);
-let linkCopyTimeout: ReturnType<typeof setTimeout> | undefined;
-
-function handleIframeLoad(e: Event) {
-  clickedLink.value = null;
-  const doc = (e.target as HTMLIFrameElement).contentDocument;
-  if (!doc) return;
-  doc.addEventListener(
-    "click",
-    (ev) => {
-      const link = (ev.target as HTMLElement)?.closest?.(
-        "a[data-original-href]",
-      );
-      if (!link) return;
-      ev.preventDefault();
-      clickedLink.value = link.getAttribute("data-original-href");
-    },
-    true,
-  );
-}
-
-async function copyClickedLink() {
-  if (!clickedLink.value) return;
-  try {
-    await navigator.clipboard.writeText(clickedLink.value);
-    linkCopied.value = true;
-    clearTimeout(linkCopyTimeout);
-    linkCopyTimeout = setTimeout(() => {
-      linkCopied.value = false;
-    }, 2000);
-  } catch {
-    // Clipboard API unavailable — the visible URL and Open button still work.
-  }
-}
-
-onUnmounted(() => {
-  clearTimeout(linkCopyTimeout);
-});
-
-const tabs = [
-  { key: "html" as const, label: "HTML" },
-  { key: "text" as const, label: "Text" },
-  { key: "attachments" as const, label: "Attachments" },
-  { key: "delivery" as const, label: "Delivery" },
-  { key: "headers" as const, label: "Headers" },
-  { key: "source" as const, label: "Source" },
-  { key: "spam" as const, label: "Spam" },
-  { key: "compatibility" as const, label: "Compatibility" },
-];
-
-const deliveryLogs = ref<Awaited<
-  ReturnType<typeof api.getDeliveryLogs>
-> | null>(null);
-const deliveryLogsLoading = ref(false);
-const deliveryLogsError = ref(false);
-
-async function refreshDeliveryLogs() {
-  deliveryLogsLoading.value = true;
-  deliveryLogsError.value = false;
-  try {
-    deliveryLogs.value = await api.getDeliveryLogs(messageId);
-  } catch {
-    deliveryLogsError.value = true;
-  } finally {
-    deliveryLogsLoading.value = false;
-  }
-}
-
-const rawSource = ref<string | null>(null);
-const sourceLoading = ref(false);
-const sourceError = ref(false);
-
-async function loadSource() {
-  sourceLoading.value = true;
-  sourceError.value = false;
-  try {
-    rawSource.value = await api.getMessageSource(messageId);
-  } catch {
-    sourceError.value = true;
-  } finally {
-    sourceLoading.value = false;
-  }
-}
-
-const headersData = ref<Awaited<
-  ReturnType<typeof api.getMessageHeaders>
-> | null>(null);
-const headersLoading = ref(false);
-const headersError = ref(false);
-
-async function loadHeaders() {
-  headersLoading.value = true;
-  headersError.value = false;
-  try {
-    headersData.value = await api.getMessageHeaders(messageId);
-  } catch {
-    headersError.value = true;
-  } finally {
-    headersLoading.value = false;
-  }
-}
-
-const compatibilityData = ref<Awaited<
-  ReturnType<typeof api.getMessageCompatibility>
-> | null>(null);
-const compatibilityLoading = ref(false);
-const compatibilityError = ref(false);
-
-async function loadCompatibility() {
-  compatibilityLoading.value = true;
-  compatibilityError.value = false;
-  try {
-    compatibilityData.value = await api.getMessageCompatibility(messageId);
-  } catch {
-    compatibilityError.value = true;
-  } finally {
-    compatibilityLoading.value = false;
-  }
-}
-
-watch(activeTab, async (tab) => {
-  if (
-    tab === "delivery" &&
-    deliveryLogs.value === null &&
-    !deliveryLogsError.value
-  ) {
-    await refreshDeliveryLogs();
-  }
-  if (tab === "source" && rawSource.value === null && !sourceError.value) {
-    await loadSource();
-  }
-  if (tab === "headers" && headersData.value === null && !headersError.value) {
-    await loadHeaders();
-  }
-  if (
-    tab === "compatibility" &&
-    compatibilityData.value === null &&
-    !compatibilityError.value
-  ) {
-    await loadCompatibility();
-  }
-  // Pre-load blob URLs for all image attachments so thumbnails render
-  if (tab === "attachments" && message.value?.attachments?.length) {
-    for (const { idx } of imageAttachments.value) {
-      loadAttachmentBlobUrl(idx).catch(() => {});
-    }
-  }
-});
-
-const { data: message, pending } = useAsyncData(
-  `message-${messageId}`,
-  () => api.getMessage(messageId),
-  { server: false },
+const listNav = useListNav();
+useLastOpened().value = { inboxId, messageId };
+const navIndex = computed(() =>
+  listNav.value.inboxId === inboxId ? listNav.value.ids.indexOf(messageId) : -1,
+);
+const canPrev = computed(
+  () => navIndex.value > 0 || (navIndex.value === 0 && listNav.value.page > 1),
+);
+const canNext = computed(
+  () =>
+    navIndex.value >= 0 &&
+    (navIndex.value < listNav.value.ids.length - 1 ||
+      listNav.value.page < listNav.value.totalPages),
 );
 
-useHead({
-  title: computed(() => message.value?.subject || "Message"),
+const navigating = ref(false);
+async function go(dir: "prev" | "next") {
+  if (navigating.value || navIndex.value < 0) return;
+  const { ids, page } = listNav.value;
+  const step = dir === "prev" ? -1 : 1;
+  const linkTo = (id: string, pg: number) =>
+    navigateTo({
+      path: `/inbox/${inboxId}/message/${id}`,
+      query: {
+        ...listQuery.value,
+        ...(pg > 1 ? { page: String(pg) } : { page: undefined }),
+      },
+    });
+  const inPage = ids[navIndex.value + step];
+  if (inPage) return linkTo(inPage, page);
+
+  // Past the edge of the loaded page: load the neighbouring page of the same list.
+  navigating.value = true;
+  try {
+    const target = page + step;
+    const q = listQuery.value;
+    const res = await api.getInboxMessages(inboxId, {
+      q: q.q,
+      status: q.status,
+      after: q.after,
+      before: q.before,
+      ruleId: q.rule,
+      page: target,
+      limit: INBOX_PAGE_SIZE,
+    });
+    if (!res.messages.length) return;
+    listNav.value = {
+      inboxId,
+      ids: res.messages.map((m) => m.id),
+      page: target,
+      totalPages: Math.max(1, Math.ceil(res.total / INBOX_PAGE_SIZE)),
+    };
+    const next =
+      dir === "next" ? res.messages[0] : res.messages[res.messages.length - 1];
+    await linkTo(next.id, target);
+  } catch {
+    toast.error("Couldn't load the next page of messages.");
+  } finally {
+    navigating.value = false;
+  }
+}
+
+// ─── Message ─────────────────────────────────────────────────────────────────
+const {
+  data: message,
+  pending,
+  error: messageError,
+  refresh,
+} = useAsyncData(`message-${messageId}`, () => api.getMessage(messageId), {
+  server: false,
 });
+
+useHead({ title: computed(() => message.value?.subject || "Message") });
+
+const messageDate = computed(
+  () => (message.value?.date || message.value?.createdAt || "") as string,
+);
 
 // Auto-mark message as read when viewed
 watch(
@@ -1398,261 +344,230 @@ watch(
   { immediate: true },
 );
 
-// ─── Attachment Helpers ───────────────────────────────────
-const previewAttachment = ref<number | null>(null);
-const textPreviewContent = ref<string>("");
+// ─── Delivery (also feeds the diagnosis banner) ──────────────────────────────
+const deliveryLogs = ref<Awaited<
+  ReturnType<typeof api.getDeliveryLogs>
+> | null>(null);
+const deliveryLoading = ref(false);
+const deliveryError = ref(false);
 
-const imageTypes = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-  "image/svg+xml",
-]);
-const textTypes = new Set([
-  "text/plain",
-  "text/csv",
-  "text/xml",
-  "text/html",
-  "application/json",
-  "application/xml",
-]);
-
-function isImage(att: { contentType: string }) {
-  return imageTypes.has(att.contentType);
-}
-function isPdf(att: { contentType: string }) {
-  return att.contentType === "application/pdf";
-}
-function isText(att: { contentType: string }) {
-  return textTypes.has(att.contentType) || att.contentType.startsWith("text/");
-}
-function isPreviewable(att: { contentType: string }) {
-  return isImage(att) || isPdf(att) || isText(att);
-}
-
-type AttEntry = {
-  att: {
-    filename: string;
-    contentType: string;
-    size: number;
-    storageKey: string;
-  };
-  idx: number;
-};
-
-const allAttachments = computed<AttEntry[]>(() =>
-  (message.value?.attachments ?? []).map((att, idx) => ({ att, idx })),
-);
-const imageAttachments = computed<AttEntry[]>(() =>
-  allAttachments.value.filter(({ att }) => isImage(att)),
-);
-const nonImageAttachments = computed<AttEntry[]>(() =>
-  allAttachments.value.filter(({ att }) => !isImage(att)),
-);
-
-watch(previewAttachment, async (idx) => {
-  if (idx === null || !message.value?.attachments?.[idx]) return;
-  const att = message.value.attachments[idx];
-  // Always ensure blob URL is available for the preview modal
-  await loadAttachmentBlobUrl(idx).catch(() => {});
-  // For text attachments, also load the text content
-  if (isText(att)) {
-    try {
-      const r = await authedFetch(
-        `${apiBase}/api/messages/${messageId}/attachments/${idx}`,
-      );
-      textPreviewContent.value = await r.text();
-    } catch {
-      textPreviewContent.value = "Failed to load preview";
-    }
+async function loadDelivery() {
+  deliveryLoading.value = true;
+  deliveryError.value = false;
+  try {
+    deliveryLogs.value = await api.getDeliveryLogs(messageId);
+  } catch {
+    deliveryError.value = true;
+  } finally {
+    deliveryLoading.value = false;
   }
+}
+// Inbound mail has no delivery logs; for everything else load them up front so
+// a failure's reason can be shown next to the status.
+watch(
+  message,
+  (m) => {
+    if (
+      m &&
+      m.status !== "received" &&
+      deliveryLogs.value === null &&
+      !deliveryLoading.value
+    )
+      loadDelivery();
+  },
+  { immediate: true },
+);
+
+// ─── Tabs: open on what matters for this message ─────────────────────────────
+const FAILED = ["bounced", "failed", "deferred", "suppressed"];
+const userTab = ref<string | null>(null);
+const activeTab = computed<string>({
+  get: () =>
+    userTab.value ??
+    (message.value && FAILED.includes(message.value.status)
+      ? "delivery"
+      : "preview"),
+  set: (v) => (userTab.value = v),
 });
 
-// Close the attachment preview modal on Escape while it is open.
-function handlePreviewKeydown(e: KeyboardEvent) {
-  if (e.key === "Escape") previewAttachment.value = null;
-}
-watch(previewAttachment, (idx) => {
-  if (idx !== null) {
-    document.addEventListener("keydown", handlePreviewKeydown);
-  } else {
-    document.removeEventListener("keydown", handlePreviewKeydown);
+const previewOverride = ref<"html" | "text" | null>(null);
+const previewMode = computed<"html" | "text">(
+  () => previewOverride.value ?? (message.value?.html ? "html" : "text"),
+);
+
+const tabs = computed(() => {
+  const verdict = spamVerdict(message.value?.spamScore);
+  return [
+    { key: "preview", label: "Preview" },
+    {
+      key: "files",
+      label: "Files",
+      badge: message.value?.attachments?.length || null,
+      badgeLabel: message.value?.attachments?.length
+        ? `${message.value.attachments.length} attachment${message.value.attachments.length === 1 ? "" : "s"}`
+        : undefined,
+    },
+    { key: "delivery", label: "Delivery" },
+    { key: "headers", label: "Headers & source" },
+    {
+      key: "quality",
+      label: "Quality",
+      badge:
+        verdict.label === "Clean"
+          ? null
+          : `${verdict.label} ${message.value?.spamScore}`,
+      badgeTone: verdict.tone,
+    },
+  ];
+});
+
+// ─── Actions ─────────────────────────────────────────────────────────────────
+const menuItems = computed(() => [
+  { key: "link", label: "Copy link", icon: "lucide:link" },
+  { key: "eml", label: "Download .eml", icon: "lucide:download" },
+  ...(message.value?.status === "scheduled"
+    ? [
+        {
+          key: "cancel",
+          label: "Cancel scheduled delivery",
+          icon: "lucide:calendar-x",
+        },
+      ]
+    : []),
+  {
+    key: "help",
+    label: "Keyboard shortcuts",
+    icon: "lucide:keyboard",
+    separatorBefore: true,
+  },
+  {
+    key: "delete",
+    label: "Delete message",
+    icon: "lucide:trash-2",
+    danger: true,
+    separatorBefore: true,
+  },
+]);
+
+async function copyLink() {
+  const url = new URL(
+    useRouter().resolve({ path: `/inbox/${inboxId}/message/${messageId}` })
+      .href,
+    location.origin,
+  ).href;
+  try {
+    await navigator.clipboard.writeText(url);
+    toast.success("Link copied");
+  } catch {
+    toast.error("Couldn't copy the link.");
   }
-});
-onUnmounted(() => {
-  document.removeEventListener("keydown", handlePreviewKeydown);
-});
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-async function handleDelete() {
-  if (!confirm("Are you sure you want to delete this message?")) return;
-  await api.deleteMessage(messageId);
-  navigateTo(`/inbox/${inboxId}`);
+function onMenu(key: string) {
+  if (key === "link") copyLink();
+  else if (key === "help") showHelp.value = true;
+  else if (key === "eml")
+    download(`${apiBase}/api/messages/${messageId}/raw`, `${messageId}.eml`);
+  else if (key === "cancel") cancelSchedule();
+  else if (key === "delete") remove();
 }
 
-// ─── Forward ──────────────────────────────────────────────
-const showForwardModal = ref(false);
+async function remove() {
+  const ok = await confirm({
+    title: "Delete this message?",
+    message: `“${message.value?.subject || "(no subject)"}” will be permanently deleted.`,
+    confirmLabel: "Delete message",
+    danger: true,
+  });
+  if (!ok) return;
+  try {
+    await api.deleteMessage(messageId);
+    toast.success("Message deleted");
+    navigateTo(backTo.value);
+  } catch {
+    toast.error("Couldn't delete the message. Please try again.");
+  }
+}
+
+// Re-queue a bounced/failed message, then poll until it settles again.
+const resending = ref(false);
+let pollTimer: ReturnType<typeof setInterval> | undefined;
+async function resend() {
+  resending.value = true;
+  try {
+    await api.resendMessage(messageId);
+    if (message.value) message.value.status = "queued";
+    toast.info("Resend queued");
+    let polls = 0;
+    clearInterval(pollTimer);
+    pollTimer = setInterval(async () => {
+      polls++;
+      try {
+        const fresh = await api.getMessage(messageId);
+        if (message.value) message.value.status = fresh.status;
+        await loadDelivery();
+        if (!["queued", "sending"].includes(fresh.status) || polls >= 15)
+          clearInterval(pollTimer);
+      } catch {
+        clearInterval(pollTimer);
+      }
+    }, 2000);
+  } catch (e: any) {
+    toast.error(e?.data?.error || "Couldn't resend the message.");
+  } finally {
+    resending.value = false;
+  }
+}
+onUnmounted(() => clearInterval(pollTimer));
+
+const showForward = ref(false);
 const forwardTo = ref("");
 const forwarding = ref(false);
 const forwardError = ref("");
-const forwardSuccess = ref(false);
 
-// Close the forward modal on Escape while it is open.
-function handleForwardModalKeydown(e: KeyboardEvent) {
-  if (e.key === "Escape") showForwardModal.value = false;
-}
-watch(showForwardModal, (open) => {
-  if (open) {
-    document.addEventListener("keydown", handleForwardModalKeydown);
-  } else {
-    document.removeEventListener("keydown", handleForwardModalKeydown);
-  }
-});
-onUnmounted(() => {
-  document.removeEventListener("keydown", handleForwardModalKeydown);
-});
-
-async function handleForward() {
+async function forward() {
   forwardError.value = "";
-  forwardSuccess.value = false;
   forwarding.value = true;
   try {
     await api.forwardMessage(messageId, forwardTo.value);
-    forwardSuccess.value = true;
-    setTimeout(() => {
-      showForwardModal.value = false;
-      forwardSuccess.value = false;
-      forwardTo.value = "";
-    }, 1500);
+    showForward.value = false;
+    forwardTo.value = "";
+    toast.success("Message forwarded and queued");
   } catch (e: any) {
-    forwardError.value = e?.data?.error || "Failed to forward message";
+    forwardError.value = e?.data?.error || "Couldn't forward the message.";
   } finally {
     forwarding.value = false;
   }
 }
 
-// ─── Cancel Schedule ──────────────────────────────────────
-const cancelScheduleError = ref("");
-
-async function handleCancelSchedule() {
-  if (!confirm("Cancel the scheduled delivery?")) return;
-  cancelScheduleError.value = "";
+const cancelError = ref("");
+async function cancelSchedule() {
+  const ok = await confirm({
+    title: "Cancel the scheduled delivery?",
+    message: "The message won't be sent.",
+    confirmLabel: "Cancel delivery",
+    danger: true,
+  });
+  if (!ok) return;
+  cancelError.value = "";
   try {
     await api.cancelScheduledMessage(messageId);
-    if (message.value) {
-      message.value.status = "cancelled";
-    }
+    if (message.value) message.value.status = "cancelled";
   } catch (e: any) {
-    cancelScheduleError.value =
-      e?.data?.error || "Failed to cancel scheduled message";
+    cancelError.value =
+      e?.data?.error || "Couldn't cancel the scheduled message.";
   }
 }
 
-const groupLabels: Record<string, string> = {
-  routing: "Routing",
-  authentication: "Authentication",
-  identity: "Identity",
-  identification: "Identification",
-  content: "Content",
-  custom: "X-Headers",
-  other: "Other",
-};
-
-function spamVerdict(score: number): { label: string; color: string } {
-  if (score < 3)
-    return { label: "Clean", color: "text-green-600 dark:text-green-400" };
-  if (score < 6)
-    return {
-      label: "Suspicious",
-      color: "text-yellow-600 dark:text-yellow-400",
-    };
-  return { label: "Spam", color: "text-red-600 dark:text-red-400" };
+// ─── Keyboard ────────────────────────────────────────────────────────────────
+const showHelp = ref(false);
+function onKeydown(e: KeyboardEvent) {
+  if (shouldIgnoreHotkey(e)) return;
+  if (e.key === "]") go("next");
+  else if (e.key === "[") go("prev");
+  else if (e.key === "u") navigateTo(backTo.value);
+  else if (e.key === "?") showHelp.value = true;
 }
-
-const ruleSuggestionMap: Record<string, string> = {
-  SUBJ_ALL_CAPS: "Avoid using ALL CAPS in the subject line.",
-  MISSING_SUBJECT: "Always include a meaningful subject line.",
-  SUBJ_SPAM_WORDS: "Remove spammy trigger words from the subject.",
-  SUBJ_EXCESSIVE_PUNCTUATION: "Reduce excessive punctuation in the subject.",
-  BODY_PHARMA_SPAM: "Remove pharmaceutical / health-scam keywords.",
-  BODY_ADVANCE_FEE: "Avoid advance-fee / scam phrasing in the body.",
-  BODY_MONEY_OFFERS: "Remove money-related solicitation language.",
-  EXCESSIVE_LINKS: "Reduce the number of links (< 20 recommended).",
-  HTML_MANY_LINKS: "Keep HTML link count below 10.",
-  HTML_ONLY: "Include a plain-text alternative alongside HTML.",
-  IMAGE_ONLY: "Add text content in addition to images.",
-  SHORT_BODY: "Provide more meaningful body content.",
-  MISSING_MESSAGE_ID: "Include a valid Message-ID header.",
-  MISSING_DATE: "Include a Date header.",
-  MISSING_MIME_VERSION: "Include a MIME-Version header.",
-  NO_AUTH_RESULTS: "Set up email authentication (SPF, DKIM, DMARC).",
-  NO_DKIM: "Sign your emails with DKIM.",
-  NO_SPF: "Publish an SPF record for your sending domain.",
-  FORGED_SENDER: "Ensure the envelope sender matches the From header domain.",
-  SUSPICIOUS_MAILER: "Use a reputable email sending library / service.",
-  NO_RECEIVED_HEADERS: "Received headers are expected — check your mail flow.",
-  FROM_NO_REPLY: "Avoid using no-reply addresses; use a monitored sender.",
-  MISSING_UNSUBSCRIBE: "Include a List-Unsubscribe header for bulk mail.",
-  SINGLE_PART_BASE64:
-    "Prefer quoted-printable or 7bit for single-part messages.",
-};
-
-const spamSuggestions = computed(() => {
-  if (!message.value?.spamRules?.length) return [];
-  return message.value.spamRules
-    .map((r: { rule: string }) => ruleSuggestionMap[r.rule])
-    .filter(Boolean) as string[];
-});
-
-function authBadgeClass(result: string): string {
-  if (result === "pass")
-    return "bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400";
-  if (result === "fail" || result === "softfail")
-    return "bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400";
-  return "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400";
-}
-
-// ─── Compatibility Helpers ────────────────────────────────
-function scoreColor(score: number): string {
-  if (score >= 80) return "text-green-600 dark:text-green-400";
-  if (score >= 60) return "text-yellow-600 dark:text-yellow-400";
-  return "text-red-600 dark:text-red-400";
-}
-
-function scoreBarColor(score: number): string {
-  if (score >= 80) return "bg-green-500";
-  if (score >= 60) return "bg-yellow-500";
-  return "bg-red-500";
-}
-
-function supportBadgeClass(level: string): string {
-  if (level === "full")
-    return "bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-400";
-  if (level === "partial")
-    return "bg-yellow-100 dark:bg-yellow-900/40 text-yellow-600 dark:text-yellow-400";
-  return "bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400";
-}
-
-const compatibilityCategories = computed(() => {
-  if (!compatibilityData.value) return [];
-  const cats = [
-    { key: "css", label: "CSS Features" },
-    { key: "html", label: "HTML Features" },
-    { key: "other", label: "Other Features" },
-  ];
-  return cats
-    .map((c) => ({
-      ...c,
-      features: compatibilityData.value!.features.filter(
-        (f) => f.category === c.key,
-      ),
-    }))
-    .filter((c) => c.features.length > 0);
-});
+onMounted(() => document.addEventListener("keydown", onKeydown));
+onUnmounted(() => document.removeEventListener("keydown", onKeydown));
 </script>

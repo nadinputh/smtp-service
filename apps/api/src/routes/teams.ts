@@ -413,7 +413,7 @@ export function registerTeamRoutes(app: FastifyInstance) {
       }
 
       // The user directory is only exposed to people who can add members.
-      if (!(await canManageAnyTeam(request.user!.userId))) {
+      if (!(await canInviteUsers(request.user!.userId))) {
         return reply.status(403).send({ error: "Not authorized" });
       }
 
@@ -889,9 +889,16 @@ export function registerTeamRoutes(app: FastifyInstance) {
     return !!team;
   }
 
-  // Global admin, or owner/admin of at least one team
-  async function canManageAnyTeam(userId: string): Promise<boolean> {
+  // Anyone who can add people to something: global admin, owner/admin of a
+  // team, or owner of an inbox (inbox owners invite members).
+  async function canInviteUsers(userId: string): Promise<boolean> {
     if (await isGlobalAdmin(userId)) return true;
+    const [ownedInbox] = await db
+      .select({ id: inboxes.id })
+      .from(inboxes)
+      .where(eq(inboxes.userId, userId))
+      .limit(1);
+    if (ownedInbox) return true;
     const [owned] = await db
       .select({ id: teams.id })
       .from(teams)

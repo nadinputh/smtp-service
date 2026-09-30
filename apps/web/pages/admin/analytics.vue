@@ -1,7 +1,9 @@
 <template>
   <div class="h-full overflow-y-auto">
     <div class="max-w-6xl mx-auto px-6 py-8">
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
+      <div
+        class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6"
+      >
         <div>
           <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100">
             Admin Analytics
@@ -30,7 +32,10 @@
         </div>
       </div>
 
-      <div v-if="loading" class="text-center text-gray-500 dark:text-gray-400 py-20">
+      <div
+        v-if="loading"
+        class="text-center text-gray-500 dark:text-gray-400 py-20"
+      >
         Loading analytics...
       </div>
 
@@ -147,7 +152,7 @@
             >
               Received
             </p>
-            <p class="text-3xl font-bold text-indigo-600 mt-1">
+            <p class="text-3xl font-bold text-gray-800 dark:text-gray-100 mt-1">
               {{ overview?.totalReceived ?? 0 }}
             </p>
             <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -245,7 +250,11 @@
                  quirk and reliably collapses to 1x1px. -->
             <div v-if="timeseries" class="sr-only">
               <table>
-                <caption>{{ chartSummaryLabel }}</caption>
+                <caption>
+                  {{
+                    chartSummaryLabel
+                  }}
+                </caption>
                 <thead>
                   <tr>
                     <th scope="col">Date</th>
@@ -510,7 +519,8 @@ const chartSummaryLabel = computed(() => {
   const max = Math.max(...vals);
   const first = vals[0];
   const last = vals[vals.length - 1];
-  const trend = last > first ? "trending up" : last < first ? "trending down" : "flat";
+  const trend =
+    last > first ? "trending up" : last < first ? "trending down" : "flat";
   return `${selectedMetricLabel.value} email volume trend, ${trend} overall: ranges from ${min} to ${max}, starting at ${first} and ending at ${last} across ${vals.length} data points.`;
 });
 

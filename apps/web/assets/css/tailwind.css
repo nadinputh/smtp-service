@@ -3,13 +3,27 @@
 @tailwind utilities;
 
 /* Default Tailwind placeholder gray (gray-400) is ~2.5:1 on white, below WCAG
-   AA's 4.5:1 floor for text. gray-500 clears it; gray-400 already clears it
-   against the dark-mode surfaces used here. */
+   AA's 4.5:1 floor for text. gray-500 clears it on white; on the dark-mode
+   gray-700 field surface gray-400 is only ~4.1:1, so gray-300 is used. */
 @layer base {
   input::placeholder,
   textarea::placeholder {
-    @apply text-gray-500 dark:text-gray-400;
+    @apply text-gray-500 dark:text-gray-300;
     opacity: 1;
+  }
+}
+
+/* Shared control styles. In the components layer so utility classes on an
+   element (w-auto, py-1, ...) still override them. */
+@layer components {
+  .field {
+    @apply w-full px-3 py-2 min-h-10 border border-gray-500 dark:border-gray-400 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent;
+  }
+  .chip {
+    @apply flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors shrink-0 min-h-8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500;
+  }
+  .icon-btn {
+    @apply inline-flex items-center justify-center min-w-9 min-h-9 rounded-md text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500;
   }
 }
 

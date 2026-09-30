@@ -501,9 +501,16 @@ describe("API Integration Tests", () => {
         ).toBe(403);
       });
 
-      // Only team managers may search the user directory.
+      // Only people who can add members (team managers, inbox owners) may
+      // search the user directory; a user with neither gets 403, but as soon
+      // as they own an inbox they can search to invite.
       await as(outsider.token, async () => {
         expect((await api("/api/users/search?q=integration")).status).toBe(403);
+        await api("/api/inboxes", {
+          method: "POST",
+          body: JSON.stringify({ name: "Outsider Inbox" }),
+        });
+        expect((await api("/api/users/search?q=integration")).status).toBe(200);
       });
 
       const invite = await api(`/api/teams/${teamId}/invitations`, {
@@ -774,6 +781,77 @@ describe("API Integration Tests", () => {
       expect(
         (await put({ messageIds: [unknownId], isRead: true })).status,
       ).toBe(200);
+    });
+
+    it("list rows carry inspection signals and bulk delete removes only the selection", async () => {
+      const inbox = await api("/api/inboxes", {
+        method: "POST",
+        body: JSON.stringify({ name: "Bulk Delete" }),
+      });
+      const ids: string[] = [];
+      for (const n of [1, 2, 3]) {
+        const sent = await api("/v1/messages", {
+          method: "POST",
+          body: JSON.stringify({
+            inboxId: inbox.body.id,
+            from: "bulk@example.com",
+            to: [`bulk${n}@example.com`],
+            subject: `Bulk ${n}`,
+            text: "hi",
+          }),
+        });
+        ids.push(sent.body.id);
+      }
+      const base = `/api/inboxes/${inbox.body.id}/messages`;
+      const list = await api(base);
+      expect(list.body.messages[0]).toHaveProperty("attachmentCount", 0);
+      expect(list.body.messages[0]).toHaveProperty("bounceReason", null);
+      expect(list.body.messages[0]).toHaveProperty("spamScore");
+
+      const del = (body: unknown) =>
+        api(`${base}/delete`, { method: "POST", body: JSON.stringify(body) });
+      expect((await del({ messageIds: ["nope"] })).status).toBe(400);
+      expect((await del({ messageIds: [] })).status).toBe(400);
+      const removed = await del({ messageIds: ids.slice(0, 2) });
+      expect(removed.status).toBe(200);
+      expect(removed.body.deleted).toBe(2);
+      expect((await api(base)).body.total).toBe(1);
+    });
+
+    it("supports multi-status filters, ids-only selection, attention counts and guards resend", async () => {
+      const inbox = await api("/api/inboxes", {
+        method: "POST",
+        body: JSON.stringify({ name: "Attention" }),
+      });
+      const sent = await api("/v1/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          inboxId: inbox.body.id,
+          from: "a@example.com",
+          to: ["b@example.com"],
+          subject: "Resend guard",
+          text: "hi",
+        }),
+      });
+      const base = `/api/inboxes/${inbox.body.id}/messages`;
+
+      const list = await api(base);
+      expect(list.body.attentionTotal).toBe(0);
+      const multi = await api(`${base}?status=bounced,failed`);
+      expect(multi.status).toBe(200);
+      expect(multi.body.total).toBe(0);
+      expect((await api(`${base}?status=queued,bounced`)).body.total).toBe(1);
+
+      const ids = await api(`${base}?idsOnly=1`);
+      expect(ids.body.ids).toEqual([sent.body.id]);
+
+      // Only bounced/failed messages can be resent
+      const resend = (id: string) =>
+        api(`/api/messages/${id}/resend`, { method: "POST" });
+      expect((await resend(sent.body.id)).status).toBe(400);
+      expect(
+        (await resend("00000000-0000-4000-8000-000000000000")).status,
+      ).toBe(404);
     });
 
     it("list tolerates junk pagination and rejects a malformed ruleId", async () => {

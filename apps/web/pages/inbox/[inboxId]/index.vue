@@ -1,1174 +1,287 @@
 <template>
   <div class="h-full flex flex-col">
-    <!-- Header -->
-    <header
-      class="px-6 h-20 shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-center"
+    <div
+      v-if="inboxError && !inboxDetail"
+      class="flex-1 flex items-center justify-center"
     >
-      <div class="flex items-center justify-between w-full">
-        <div>
-          <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100">
+      <EmptyState icon="lucide:inbox" title="This inbox isn't available">
+        It may have been deleted, or you no longer have access.
+        <template #action>
+          <UBtn to="/" size="sm" variant="secondary">Back to dashboard</UBtn>
+        </template>
+      </EmptyState>
+    </div>
+
+    <template v-else>
+      <header
+        class="px-6 py-3 min-h-20 shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-wrap items-center justify-between gap-x-4 gap-y-3"
+      >
+        <div class="min-w-0">
+          <h1
+            class="text-lg font-semibold text-gray-800 dark:text-gray-100 truncate"
+          >
             {{ inbox?.name ?? "Inbox" }}
-          </h2>
-          <p class="text-sm text-gray-500 dark:text-gray-400">
-            {{ totalMessages }} messages
-            <span v-if="unreadCount > 0" class="text-indigo-600 dark:text-indigo-400 font-medium"
-              >&middot; {{ unreadCount }} unread</span
+          </h1>
+          <p class="text-sm text-gray-600 dark:text-gray-400">
+            {{ list.totalMessages.value }}
+            {{ list.hasActiveFilters.value ? "matching" : "" }}
+            {{ list.totalMessages.value === 1 ? "message" : "messages" }}
+            <span
+              v-if="list.totalUnread.value > 0"
+              class="text-indigo-700 dark:text-indigo-300 font-medium"
+              >· {{ list.totalUnread.value }} unread</span
             >
+            <button
+              v-if="list.attentionTotal.value > 0"
+              type="button"
+              class="ml-1 font-medium text-red-700 dark:text-red-400 hover:underline rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+              @click="list.filterStatus.value = 'bounced,failed'"
+            >
+              · {{ list.attentionTotal.value }} need attention
+            </button>
           </p>
         </div>
-        <div class="flex items-center gap-2">
-          <!-- Export dropdown -->
-          <div ref="exportMenuRef" class="relative">
-            <UBtn
-              variant="secondary"
-              size="sm"
-              @click="showExportMenu = !showExportMenu"
-            >
-              <Icon name="lucide:download" class="w-4 h-4" />
-              Export
-            </UBtn>
-            <div
-              v-if="showExportMenu"
-              role="dialog"
-              aria-label="Export options"
-              class="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-20 w-44"
-            >
-              <p
-                class="px-3 pb-1 text-[11px] font-medium text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700 mb-1"
-              >
-                {{
-                  hasActiveFilters
-                    ? "Export filtered results"
-                    : "Export entire inbox"
-                }}
-              </p>
-              <button
-                class="block w-full text-left px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                @click="
-                  authedDownload(buildExportUrl('csv'), `${inboxId}-export.csv`);
-                  showExportMenu = false;
-                "
-              >
-                Export as CSV
-              </button>
-              <button
-                class="block w-full text-left px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                @click="
-                  authedDownload(buildExportUrl('mbox'), `${inboxId}-export.mbox`);
-                  showExportMenu = false;
-                "
-              >
-                Export as MBOX
-              </button>
-              <button
-                class="block w-full text-left px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                @click="
-                  authedDownload(buildExportUrl('eml'), `${inboxId}-export.zip`);
-                  showExportMenu = false;
-                "
-              >
-                Export as EML (ZIP)
-              </button>
-            </div>
-          </div>
+        <div class="flex flex-wrap items-center gap-2">
           <UBtn
-            v-if="unreadCount > 0 && !hasActiveFilters"
+            v-if="list.pageUnreadIds.value.length > 0"
             variant="secondary"
             size="sm"
-            :disabled="markingAllRead"
-            @click="markAllRead"
+            icon="lucide:check-check"
+            :loading="list.markingAllRead.value"
+            @click="list.markPageRead"
           >
-            <Icon name="lucide:check-check" class="w-4 h-4" />
-            {{ markingAllRead ? "Marking..." : "Mark all read" }}
+            {{
+              list.hasActiveFilters.value || list.totalPages.value > 1
+                ? "Mark page read"
+                : "Mark all read"
+            }}
           </UBtn>
-          <UBtn
-            v-if="isEditorOrAbove"
-            variant="secondary"
-            size="sm"
-            data-creds-toggle
-            @click="showCreds = !showCreds"
-          >
-            <Icon name="lucide:key" class="w-4 h-4" />
-            SMTP Credentials
-          </UBtn>
-          <UBtn
-            v-if="isOwner"
-            variant="danger"
-            size="sm"
-            :disabled="deleting"
-            @click="handleDelete"
-          >
-            <Icon name="lucide:trash-2" class="w-4 h-4" />
-            {{ deleting ? "Deleting..." : "Delete" }}
-          </UBtn>
-        </div>
-      </div>
-    </header>
-
-    <!-- SMTP Credentials panel -->
-    <div
-      v-if="showCreds && inboxDetail"
-      ref="credsPanelRef"
-      role="dialog"
-      aria-label="SMTP credentials"
-      class="px-6 py-3 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 text-sm space-y-2 shrink-0"
-    >
-      <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-        SMTP Settings
-      </p>
-      <div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-        <span class="text-gray-500 dark:text-gray-400">Host:</span>
-        <code class="text-gray-800 dark:text-gray-200">{{ smtpHost }}</code>
-        <span class="text-gray-500 dark:text-gray-400">Port:</span>
-        <code class="text-gray-800 dark:text-gray-200">{{ smtpPort }}</code>
-        <span class="text-gray-500 dark:text-gray-400">Username:</span>
-        <div class="flex items-center gap-1">
-          <code class="text-gray-800 dark:text-gray-200">{{
-            inboxDetail.smtpUsername
-          }}</code>
-          <button
-            @click="copy(inboxDetail.smtpUsername, 'username')"
-            :aria-label="copiedField === 'username' ? 'Username copied' : 'Copy username'"
-            class="text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
-          >
-            <Icon
-              :name="copiedField === 'username' ? 'lucide:check' : 'lucide:copy'"
-              class="w-3.5 h-3.5"
-            />
-          </button>
-        </div>
-        <!-- Read-only viewers aren't sent the SMTP password -->
-        <template v-if="inboxDetail.smtpPassword">
-          <span class="text-gray-500 dark:text-gray-400">Password:</span>
-          <div class="flex items-center gap-1">
-            <code class="text-gray-800 dark:text-gray-200">{{
-              showPassword ? inboxDetail.smtpPassword : "••••••••••••"
-            }}</code>
-            <button
-              @click="showPassword = !showPassword"
-              :aria-label="showPassword ? 'Hide password' : 'Show password'"
-              class="text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
-            >
-              <Icon
-                :name="showPassword ? 'lucide:eye-off' : 'lucide:eye'"
-                class="w-3.5 h-3.5"
-              />
-            </button>
-            <button
-              @click="copy(inboxDetail.smtpPassword, 'password')"
-              :aria-label="copiedField === 'password' ? 'Password copied' : 'Copy password'"
-              class="text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
-            >
-              <Icon
-                :name="copiedField === 'password' ? 'lucide:check' : 'lucide:copy'"
-                class="w-3.5 h-3.5"
-              />
-            </button>
-          </div>
-        </template>
-      </div>
-    </div>
-
-    <p v-if="downloadError" role="alert" class="px-6 py-1.5 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border-b border-gray-200 dark:border-gray-700 shrink-0">
-      {{ downloadError }}
-    </p>
-
-    <!-- Tab bar: Messages / Webhooks -->
-    <div
-      class="border-b border-gray-200 dark:border-gray-700 px-6 bg-white dark:bg-gray-800"
-    >
-      <nav class="flex gap-4 -mb-px">
-        <button
-          class="py-3 text-sm border-b-2 transition-colors"
-          :class="activeTab === 'messages' ? 'border-indigo-500 text-indigo-600 font-medium' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-600'"
-          @click="activeTab = 'messages'"
-        >
-          Messages ({{ totalMessages }})
-        </button>
-        <button
-          class="py-3 text-sm border-b-2 transition-colors"
-          :class="activeTab === 'webhooks' ? 'border-indigo-500 text-indigo-600 font-medium' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-600'"
-          @click="activeTab = 'webhooks'"
-        >
-          Webhooks
-        </button>
-        <button
-          class="py-3 text-sm border-b-2 transition-colors"
-          :class="activeTab === 'members' ? 'border-indigo-500 text-indigo-600 font-medium' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-600'"
-          @click="
-            activeTab = 'members';
-            loadMembers();
-          "
-        >
-          Members
-        </button>
-      </nav>
-    </div>
-
-    <!-- Messages list -->
-    <div
-      v-if="activeTab === 'messages'"
-      class="flex-1 overflow-y-auto flex flex-col"
-    >
-      <!-- Rule filter tabs -->
-      <div
-        class="px-4 py-2 border-b border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-center gap-1.5 overflow-x-auto shrink-0"
-      >
-        <button
-          class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors shrink-0"
-          :class="
-            !activeRuleId
-              ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-transparent'
-              : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
-          "
-          @click="selectRule(null)"
-        >
-          All messages
-        </button>
-        <template v-for="rule in rules" :key="rule.id">
-          <div class="flex items-center gap-0.5 shrink-0 group">
-            <button
-              class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors"
-              :class="ruleColorClasses(rule)"
-              @click="selectRule(rule.id)"
-            >
-              <span
-                class="w-2 h-2 rounded-full shrink-0"
-                :class="
-                  RULE_COLOR_CLASSES[(rule.color as RuleColor) ?? 'indigo'].dot
-                "
-              />
-              {{ rule.name }}
-              <span
-                v-if="rule.unreadTotal > 0"
-                class="ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-black/10 dark:bg-white/20"
-              >
-                {{ rule.unreadTotal }}
-              </span>
-            </button>
-            <button
-              v-if="isEditorOrAbove"
-              class="p-1 rounded text-gray-300 hover:text-gray-500 dark:hover:text-gray-300 transition-colors opacity-0 group-hover:opacity-100"
-              title="Edit filter"
-              @click="openEditRule(rule)"
-            >
-              <Icon name="lucide:pencil" class="w-3 h-3" />
-            </button>
-          </div>
-        </template>
-        <button
-          v-if="isEditorOrAbove"
-          class="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs border border-dashed border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:border-gray-400 transition-colors shrink-0"
-          @click="openCreateRule"
-        >
-          <Icon name="lucide:plus" class="w-3 h-3" />
-          New filter
-        </button>
-      </div>
-
-      <!-- Search & Filters -->
-      <div
-        class="px-6 py-3 border-b border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-2 shrink-0"
-      >
-        <div class="flex items-center gap-2">
-          <div class="relative flex-1">
-            <Icon
-              name="lucide:search"
-              class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400"
-            />
-            <input
-              v-model="searchQuery"
-              type="text"
-              placeholder="Search by subject, from, or to..."
-              class="w-full pl-9 pr-3 py-2 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            />
-          </div>
-          <button
-            @click="showFilters = !showFilters"
-            class="flex items-center gap-1 px-3 py-2 text-sm border rounded-lg transition-colors"
-            :class="
-              hasActiveFilters
-                ? 'border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400'
-                : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
-            "
-          >
-            <Icon name="lucide:filter" class="w-4 h-4" />
-            Filters
-          </button>
-          <button
-            v-if="hasActiveFilters"
-            @click="clearFilters"
-            class="px-3 py-2 text-sm text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
-          >
-            Clear
-          </button>
-        </div>
-        <div v-if="showFilters" class="flex flex-wrap gap-2">
-          <select
-            v-model="filterStatus"
-            class="px-2 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            <option value="">All statuses</option>
-            <option value="received">Received</option>
-            <option value="delivered">Delivered</option>
-            <option value="bounced">Bounced</option>
-            <option value="queued">Queued</option>
-          </select>
-          <input
-            v-model="filterAfter"
-            type="date"
-            placeholder="After"
-            class="px-2 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          />
-          <input
-            v-model="filterBefore"
-            type="date"
-            placeholder="Before"
-            class="px-2 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          <ActionMenu
+            label="Inbox actions"
+            :items="menuItems"
+            @select="onMenu"
           />
         </div>
-      </div>
+      </header>
 
-      <div v-if="pending" class="p-6 text-gray-500 dark:text-gray-400">Loading messages...</div>
+      <InboxCredentials
+        v-if="showCreds && inboxDetail"
+        :host="smtpHost"
+        :port="smtpPort"
+        :username="inboxDetail.smtpUsername"
+        :password="inboxDetail.smtpPassword"
+        @close="showCreds = false"
+      />
 
-      <div v-else-if="!messages?.length" class="p-6 text-center text-gray-500 dark:text-gray-400">
-        <Icon name="lucide:inbox" class="w-12 h-12 mx-auto mb-3 opacity-50" />
-        <p>
-          {{
-            searchQuery || hasActiveFilters
-              ? "No messages match your search"
-              : "No messages in this inbox yet"
-          }}
+      <InlineError
+        v-if="downloadError"
+        block
+        dismissible
+        @dismiss="downloadError = ''"
+        >{{ downloadError }}</InlineError
+      >
+
+      <TabBar
+        v-model="activeTab"
+        :tabs="tabs"
+        label="Inbox sections"
+        id-prefix="inbox"
+      />
+
+      <TabPanel
+        id-prefix="inbox"
+        tab="messages"
+        :active="activeTab"
+        class="flex-1 min-h-0 flex flex-col"
+      >
+        <InboxRuleChips
+          :rules="rules"
+          :active-id="list.activeRuleId.value"
+          :can-edit="isEditorOrAbove"
+          @select="list.activeRuleId.value = $event"
+          @edit="openRule"
+          @new="openRule(null)"
+        />
+
+        <InboxBulkBar
+          v-if="list.selected.value.size > 0"
+          :count="list.selected.value.size"
+          :page-size="list.messages.value.length"
+          :can-select-all-matching="list.canSelectAllMatching.value"
+          :all-matching="list.allMatching.value"
+          :matching-total="list.totalMessages.value"
+          :matching-reachable="list.matchingReachable.value"
+          :selecting-all="list.selectingAll.value"
+          :can-delete="isEditorOrAbove"
+          @select-page="list.selectPage"
+          @select-all="list.selectAllMatching"
+          @read="list.markSelected"
+          @delete="list.deleteSelected"
+          @clear="list.clearSelection"
+        />
+        <InboxFilterBar
+          v-else
+          ref="filterBar"
+          v-model:search="list.searchQuery.value"
+          v-model:status="list.filterStatus.value"
+          v-model:after="list.filterAfter.value"
+          v-model:before="list.filterBefore.value"
+          :attention-total="list.attentionTotal.value"
+          :has-active-filters="list.hasActiveFilters.value"
+          @clear="list.clearFilters"
+        />
+
+        <p
+          v-if="list.pending.value && !list.messages.value.length"
+          role="status"
+          class="p-6 text-gray-600 dark:text-gray-400"
+        >
+          Loading messages…
         </p>
-        <p v-if="!searchQuery && !hasActiveFilters" class="text-xs mt-1">
-          Send an email to
-          <code class="bg-gray-100 dark:bg-gray-700 dark:text-gray-200 px-1 rounded">{{
-            inboxDetail?.smtpUsername
-          }}</code>
-          on {{ smtpHost }}:{{ smtpPort }}
-        </p>
-      </div>
-
-      <ul
-        v-else
-        class="divide-y divide-gray-100 dark:divide-gray-700 flex-1 overflow-y-auto"
-      >
-        <li v-for="msg in messages" :key="msg.id">
-          <NuxtLink
-            :to="`/inbox/${inboxId}/message/${msg.id}`"
-            class="block px-6 py-4 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors"
-            :class="[
-              route.params.messageId === msg.id
-                ? 'bg-indigo-50 dark:bg-indigo-900/20'
-                : '',
-              !msg.isRead ? 'bg-indigo-50/40 dark:bg-indigo-900/10' : '',
-            ]"
-            @click="handleMessageClick(msg)"
-          >
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2 min-w-0">
-                <span
-                  v-if="!msg.isRead"
-                  class="w-2 h-2 rounded-full bg-indigo-500 shrink-0"
-                ></span>
-                <span
-                  class="text-sm truncate"
-                  :class="
-                    msg.isRead
-                      ? 'text-gray-600 dark:text-gray-400'
-                      : 'font-semibold text-gray-900 dark:text-gray-100'
-                  "
-                >
-                  {{ msg.from }}
-                </span>
-              </div>
-              <span class="text-xs text-gray-500 dark:text-gray-400 shrink-0 ml-3">
-                {{ formatDate(msg.date || msg.createdAt) }}
-              </span>
-            </div>
-            <p
-              class="text-sm truncate mt-0.5"
-              :class="
-                msg.isRead
-                  ? 'text-gray-500 dark:text-gray-400'
-                  : 'font-medium text-gray-800 dark:text-gray-200'
-              "
-            >
-              {{ msg.subject || "(no subject)" }}
-            </p>
-            <p
-              v-if="msg.textPreview"
-              class="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5"
-            >
-              {{ msg.textPreview }}
-            </p>
-            <div class="flex items-center gap-2 mt-1 min-w-0">
-              <span class="text-xs text-gray-500 dark:text-gray-400 truncate min-w-0 flex-1"
-                >To: {{ formatRecipients(msg.to) }}</span
-              >
-              <span
-                class="text-xs px-1.5 py-0.5 rounded-full"
-                :class="
-                  msg.status === 'received'
-                    ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400'
-                    : msg.status === 'bounced'
-                      ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400'
-                      : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
-                "
-              >
-                {{ msg.status }}
-              </span>
-              <button
-                v-if="msg.isRead"
-                @click.prevent="toggleReadStatus(msg)"
-                :disabled="togglingReadIds.has(msg.id)"
-                class="p-1 rounded text-gray-500 dark:text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                title="Mark as unread"
-              >
-                <Icon name="lucide:mail" class="w-3.5 h-3.5" />
-              </button>
-              <button
-                v-else
-                @click.prevent="toggleReadStatus(msg)"
-                :disabled="togglingReadIds.has(msg.id)"
-                class="p-1 rounded text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                title="Mark as read"
-              >
-                <Icon name="lucide:mail-open" class="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </NuxtLink>
-        </li>
-      </ul>
-
-      <!-- Pagination -->
-      <div
-        v-if="totalPages > 1"
-        class="px-6 py-3 border-t border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-center justify-between shrink-0"
-      >
-        <p class="text-xs text-gray-500 dark:text-gray-400">
-          {{ totalMessages }} message{{ totalMessages === 1 ? "" : "s" }} · Page
-          {{ currentPage }} of {{ totalPages }}
-        </p>
-        <div class="flex gap-1">
-          <UBtn
-            variant="secondary"
-            size="sm"
-            :disabled="currentPage <= 1"
-            @click="currentPage--"
-          >
-            Prev
-          </UBtn>
-          <UBtn
-            variant="secondary"
-            size="sm"
-            :disabled="currentPage >= totalPages"
-            @click="currentPage++"
-          >
-            Next
-          </UBtn>
-        </div>
-      </div>
-    </div>
-
-    <!-- Webhooks tab -->
-    <div v-if="activeTab === 'webhooks'" class="flex-1 overflow-y-auto p-6">
-      <div class="flex items-center justify-between mb-4">
-        <p class="text-sm text-gray-500 dark:text-gray-400">Event notifications for this inbox</p>
-        <UBtn v-if="isEditorOrAbove" size="sm" @click="showWebhookModal = true">
-          <Icon name="lucide:plus" class="w-4 h-4" /> Add Webhook
-        </UBtn>
-      </div>
-      <div v-if="!webhooks?.length" class="text-center text-gray-500 dark:text-gray-400 py-8">
-        <Icon name="lucide:webhook" class="w-10 h-10 mx-auto mb-2 opacity-50" />
-        <p class="text-sm">No webhooks configured</p>
-      </div>
-      <div v-else class="space-y-3">
         <div
-          v-for="wh in webhooks"
-          :key="wh.id"
-          class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden"
+          v-else-if="list.fetchError.value && !list.messages.value.length"
+          class="p-6 flex justify-center"
         >
-          <div class="p-3 flex items-center justify-between">
-            <div>
-              <code class="text-sm text-gray-800 dark:text-gray-100">{{
-                wh.url
-              }}</code>
-              <div class="flex items-center gap-2 mt-1">
-                <span
-                  v-if="wh.onDelivered"
-                  class="text-xs px-1.5 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400"
-                  >delivered</span
-                >
-                <span
-                  v-if="wh.onBounced"
-                  class="text-xs px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400"
-                  >bounced</span
-                >
-                <span
-                  v-if="wh.onOpened"
-                  class="text-xs px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400"
-                  >opened</span
-                >
-                <span
-                  v-if="wh.onReceived"
-                  class="text-xs px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-400"
-                  >received</span
-                >
-              </div>
-            </div>
-            <div class="flex items-center gap-2">
-              <UBtn variant="secondary" size="xs" @click="toggleLogs(wh.id)">
-                {{ expandedWebhook === wh.id ? "Hide" : "Logs" }}
-              </UBtn>
-              <UBtn
-                v-if="isEditorOrAbove"
-                variant="danger"
-                size="xs"
-                @click="handleDeleteWebhook(wh.id)"
-              >
-                <Icon name="lucide:trash-2" class="w-3.5 h-3.5" />
-              </UBtn>
-            </div>
-          </div>
-          <!-- Delivery logs -->
-          <div
-            v-if="expandedWebhook === wh.id"
-            class="border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-3 py-2"
+          <EmptyState
+            icon="lucide:alert-circle"
+            title="Couldn't load messages"
+            compact
           >
-            <div v-if="webhookLogsLoading" class="text-xs text-gray-500 dark:text-gray-400 py-2">
-              Loading logs...
-            </div>
-            <div
-              v-else-if="!currentWebhookLogs.length"
-              class="text-xs text-gray-500 dark:text-gray-400 py-2"
+            Check your connection and try again.
+            <template #action
+              ><UBtn size="sm" @click="list.loadMessages()"
+                >Retry</UBtn
+              ></template
             >
-              No delivery logs yet
-            </div>
-            <div v-else class="space-y-1.5 max-h-60 overflow-y-auto">
-              <div
-                v-for="log in currentWebhookLogs"
-                :key="log.id"
-                class="flex items-center justify-between bg-white dark:bg-gray-800 rounded px-2 py-1.5 text-xs border border-gray-100 dark:border-gray-700"
-              >
-                <div class="flex items-center gap-2">
-                  <span
-                    class="px-1.5 py-0.5 rounded-full font-medium"
-                    :class="{
-                      'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400': log.status === 'success',
-                      'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400': log.status === 'failed',
-                      'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400':
-                        log.status === 'retrying',
-                      'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400': log.status === 'pending',
-                    }"
-                    >{{ log.status }}</span
-                  >
-                  <span class="text-gray-500 dark:text-gray-400">{{ log.event }}</span>
-                  <span v-if="log.statusCode" class="text-gray-500 dark:text-gray-400"
-                    >HTTP {{ log.statusCode }}</span
-                  >
-                  <span class="text-gray-500 dark:text-gray-400">Attempt {{ log.attempt }}</span>
-                </div>
-                <div class="flex items-center gap-2">
-                  <span class="text-gray-500 dark:text-gray-400">{{
-                    formatDate(log.createdAt)
-                  }}</span>
-                  <UBtn
-                    v-if="log.status === 'failed'"
-                    variant="secondary"
-                    size="xs"
-                    @click="handleRetryWebhookLog(wh.id, log.id)"
-                  >
-                    Retry
-                  </UBtn>
-                </div>
-              </div>
-            </div>
-          </div>
+          </EmptyState>
         </div>
-      </div>
-    </div>
-
-    <!-- Members Tab -->
-    <div v-if="activeTab === 'members'" class="flex-1 overflow-y-auto p-6">
-      <div class="flex items-center justify-between mb-4">
-        <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300">
-          Inbox Members
-        </h3>
-        <UBtn v-if="isOwner" size="sm" @click="showInviteModal = true">
-          Invite Member
-        </UBtn>
-      </div>
-
-      <div v-if="membersLoading" class="text-sm text-gray-500 dark:text-gray-400">Loading...</div>
-      <div v-else-if="!members.length" class="text-sm text-gray-500 dark:text-gray-400">
-        No members yet. Invite someone to share this inbox.
-      </div>
-      <div v-else class="space-y-2">
-        <div
-          v-for="member in members"
-          :key="member.id"
-          class="flex items-center gap-3 bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700"
+        <EmptyState
+          v-else-if="!list.messages.value.length"
+          icon="lucide:inbox"
+          :title="
+            list.hasActiveFilters.value
+              ? 'No messages match your search'
+              : 'No messages in this inbox yet'
+          "
         >
-          <div
-            class="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-sm font-semibold"
-          >
-            {{ (member.name || member.email).charAt(0).toUpperCase() }}
-          </div>
-          <div class="flex-1 min-w-0">
-            <p
-              class="text-sm font-medium text-gray-700 dark:text-gray-300 truncate"
+          <template v-if="!list.hasActiveFilters.value">
+            Point your app's SMTP settings at
+            <code
+              class="bg-gray-100 dark:bg-gray-700 dark:text-gray-200 px-1 rounded"
+              >{{ smtpHost }}:{{ smtpPort }}</code
             >
-              {{ member.name || member.email }}
-            </p>
-            <p class="text-xs text-gray-500 dark:text-gray-400">{{ member.email }}</p>
-          </div>
-          <span
-            class="text-xs px-2 py-0.5 rounded-full font-medium"
-            :class="{
-              'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-400': member.role === 'owner',
-              'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400': member.role === 'editor',
-              'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400': member.role === 'viewer',
-            }"
-          >
-            {{ member.role }}
-          </span>
-          <select
-            v-if="isOwner && member.role !== 'owner' && member.id !== 'owner'"
-            :value="member.role"
-            @change="
-              handleUpdateRole(
-                member.id,
-                ($event.target as HTMLSelectElement).value,
-              )
-            "
-            class="text-xs border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-1.5 py-0.5"
-          >
-            <option value="editor">Editor</option>
-            <option value="viewer">Viewer</option>
-          </select>
-          <UBtn
-            v-if="isOwner && member.role !== 'owner' && member.id !== 'owner'"
-            variant="danger"
-            size="xs"
-            @click="handleRemoveMember(member.id)"
-          >
-            Remove
-          </UBtn>
-        </div>
-      </div>
-    </div>
-
-    <!-- Invite Member Modal -->
-    <Teleport to="body">
-      <div
-        v-if="showInviteModal"
-        class="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
-        @click.self="closeInviteModal"
-      >
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="invite-modal-title"
-          class="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-sm p-6"
-        >
-          <h2
-            id="invite-modal-title"
-            class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4"
-          >
-            Invite Member
-          </h2>
-          <form @submit.prevent="handleInviteMember" class="space-y-3">
-            <div>
-              <label
-                class="block text-sm text-gray-600 dark:text-gray-400 mb-1"
-              >
-                Search User
-              </label>
-              <!-- Selected user chip -->
-              <div
-                v-if="inviteSelectedUser"
-                class="flex items-center gap-2 px-3 py-2 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-lg"
-              >
-                <div
-                  class="w-7 h-7 rounded-full bg-indigo-100 dark:bg-indigo-800 flex items-center justify-center text-xs font-bold text-indigo-600 dark:text-indigo-300 shrink-0"
-                >
-                  {{
-                    (inviteSelectedUser.name ||
-                      inviteSelectedUser.email)[0].toUpperCase()
-                  }}
-                </div>
-                <div class="flex-1 min-w-0">
-                  <p
-                    class="text-sm font-medium text-gray-800 dark:text-gray-100 truncate"
-                  >
-                    {{ inviteSelectedUser.name || inviteSelectedUser.email }}
-                  </p>
-                  <p
-                    v-if="inviteSelectedUser.name"
-                    class="text-xs text-gray-500 dark:text-gray-400 truncate"
-                  >
-                    {{ inviteSelectedUser.email }}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  @click="clearInviteSelectedUser"
-                  class="text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                >
-                  <Icon name="lucide:x" class="w-4 h-4" />
-                </button>
-              </div>
-              <!-- Search input -->
-              <div v-else class="relative">
-                <input
-                  v-model="inviteSearchQuery"
-                  type="text"
-                  placeholder="Search by name or email..."
-                  @input="debouncedInviteSearch"
-                  @focus="showInviteSearchResults = true"
-                  class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-                <!-- Search results dropdown -->
-                <div
-                  v-if="
-                    showInviteSearchResults && inviteSearchQuery.length >= 2
-                  "
-                  class="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-40 overflow-y-auto z-10"
-                >
-                  <div
-                    v-if="inviteSearching"
-                    class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400"
-                  >
-                    Searching...
-                  </div>
-                  <div
-                    v-else-if="!inviteSearchResults.length"
-                    class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400"
-                  >
-                    No users found
-                  </div>
-                  <button
-                    v-for="u in inviteSearchResults"
-                    :key="u.id"
-                    type="button"
-                    @click="selectInviteUser(u)"
-                    class="w-full text-left px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 transition-colors"
-                  >
-                    <div
-                      class="w-7 h-7 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-xs font-bold text-gray-500 dark:text-gray-400 shrink-0"
-                    >
-                      {{ (u.name || u.email)[0].toUpperCase() }}
-                    </div>
-                    <div class="min-w-0">
-                      <p
-                        class="text-sm text-gray-800 dark:text-gray-200 truncate"
-                      >
-                        {{ u.name || u.email }}
-                      </p>
-                      <p v-if="u.name" class="text-xs text-gray-500 dark:text-gray-400 truncate">
-                        {{ u.email }}
-                      </p>
-                    </div>
-                  </button>
-                </div>
-              </div>
-            </div>
-            <select
-              v-model="inviteRole"
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            and send a message; it will appear here.
+            <template v-if="isEditorOrAbove">
+              Your credentials are under Inbox actions.</template
             >
-              <option value="viewer">Viewer</option>
-              <option value="editor">Editor</option>
-            </select>
-            <p v-if="inviteError" class="text-sm text-red-600 dark:text-red-400">
-              {{ inviteError }}
-            </p>
-            <div class="flex justify-end gap-2">
-              <UBtn type="button" variant="ghost" @click="closeInviteModal">
-                Cancel
-              </UBtn>
-              <UBtn type="submit" :disabled="inviting || !inviteSelectedUser">
-                {{ inviting ? "Inviting..." : "Invite" }}
-              </UBtn>
-            </div>
-          </form>
-        </div>
-      </div>
-    </Teleport>
+          </template>
+        </EmptyState>
 
-    <!-- Add Webhook Modal -->
-    <Teleport to="body">
-      <div
-        v-if="showWebhookModal"
-        class="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
-        @click.self="showWebhookModal = false"
-      >
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="webhook-modal-title"
-          class="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-sm p-6"
-        >
-          <h2
-            id="webhook-modal-title"
-            class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4"
+        <template v-else>
+          <InlineError
+            v-if="list.fetchError.value"
+            block
+            retryable
+            @retry="list.loadMessages()"
+            >Couldn't refresh the list — showing the last loaded
+            messages.</InlineError
           >
-            Add Webhook
-          </h2>
-          <form @submit.prevent="handleAddWebhook" class="space-y-3">
-            <input
-              v-model="webhookForm.url"
-              type="url"
-              required
-              placeholder="https://your-endpoint.com/webhook"
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+          <ul
+            ref="listRef"
+            aria-label="Messages"
+            class="divide-y divide-gray-100 dark:divide-gray-700 flex-1 min-h-0 overflow-y-auto"
+            :aria-busy="list.pending.value"
+            @keydown="onRowKeydown"
+          >
+            <InboxMessageRow
+              v-for="(msg, i) in list.messages.value"
+              :key="msg.id"
+              :msg="msg"
+              :to="{
+                path: `/inbox/${inboxId}/message/${msg.id}`,
+                query: list.listQuery.value,
+              }"
+              :selected="list.selected.value.has(msg.id)"
+              :toggling="list.togglingReadIds.value.has(msg.id)"
+              :active="isActiveRow(msg.id, i)"
+              @focus="activeRowId = msg.id"
+              @check="list.toggleSelected(msg.id, i, $event.shiftKey)"
+              @open="list.markOpened(msg)"
+              @toggle-read="list.toggleRead(msg)"
             />
-            <div class="space-y-2">
-              <label
-                class="flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors"
-                :class="
-                  webhookForm.onDelivered
-                    ? 'border-indigo-300 dark:border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20'
-                    : 'border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                "
-              >
-                <input
-                  v-model="webhookForm.onDelivered"
-                  type="checkbox"
-                  class="mt-0.5 rounded border-gray-300 dark:border-gray-500 text-indigo-600 focus:ring-indigo-500"
-                />
-                <div>
-                  <p
-                    class="text-sm font-medium text-gray-800 dark:text-gray-100"
-                  >
-                    Delivered
-                  </p>
-                  <p class="text-xs text-gray-500 dark:text-gray-400">
-                    Fires when an email is successfully delivered
-                  </p>
-                </div>
-              </label>
-              <label
-                class="flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors"
-                :class="
-                  webhookForm.onBounced
-                    ? 'border-indigo-300 dark:border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20'
-                    : 'border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                "
-              >
-                <input
-                  v-model="webhookForm.onBounced"
-                  type="checkbox"
-                  class="mt-0.5 rounded border-gray-300 dark:border-gray-500 text-indigo-600 focus:ring-indigo-500"
-                />
-                <div>
-                  <p
-                    class="text-sm font-medium text-gray-800 dark:text-gray-100"
-                  >
-                    Bounced
-                  </p>
-                  <p class="text-xs text-gray-500 dark:text-gray-400">
-                    Fires when an email delivery bounces
-                  </p>
-                </div>
-              </label>
-              <label
-                class="flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors"
-                :class="
-                  webhookForm.onOpened
-                    ? 'border-indigo-300 dark:border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20'
-                    : 'border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                "
-              >
-                <input
-                  v-model="webhookForm.onOpened"
-                  type="checkbox"
-                  class="mt-0.5 rounded border-gray-300 dark:border-gray-500 text-indigo-600 focus:ring-indigo-500"
-                />
-                <div>
-                  <p
-                    class="text-sm font-medium text-gray-800 dark:text-gray-100"
-                  >
-                    Opened
-                  </p>
-                  <p class="text-xs text-gray-500 dark:text-gray-400">
-                    Fires when a recipient opens the email
-                  </p>
-                </div>
-              </label>
-            </div>
-            <p v-if="webhookError" class="text-sm text-red-600 dark:text-red-400">
-              {{ webhookError }}
+          </ul>
+
+          <nav
+            v-if="list.totalPages.value > 1"
+            aria-label="Message pages"
+            class="px-6 py-3 border-t border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-center justify-between shrink-0"
+          >
+            <p class="text-xs text-gray-600 dark:text-gray-400">
+              {{ list.totalMessages.value }} message{{
+                list.totalMessages.value === 1 ? "" : "s"
+              }}
+              · Page {{ list.currentPage.value }} of {{ list.totalPages.value }}
             </p>
-            <div class="flex justify-end gap-2">
+            <div class="flex gap-1">
               <UBtn
-                type="button"
-                variant="ghost"
-                @click="showWebhookModal = false"
-              >
-                Cancel
-              </UBtn>
-              <UBtn type="submit" :disabled="addingWebhook">
-                {{ addingWebhook ? "Adding..." : "Add" }}
-              </UBtn>
-            </div>
-          </form>
-        </div>
-      </div>
-    </Teleport>
-
-    <!-- New mail notification toast -->
-    <Teleport to="body">
-      <Transition
-        enter-active-class="transition ease-out duration-300"
-        enter-from-class="translate-y-2 opacity-0"
-        enter-to-class="translate-y-0 opacity-100"
-        leave-active-class="transition ease-in duration-200"
-        leave-from-class="translate-y-0 opacity-100"
-        leave-to-class="translate-y-2 opacity-0"
-      >
-        <div
-          v-if="newMailNotification"
-          class="fixed bottom-6 right-6 z-50 bg-white dark:bg-gray-800 border border-indigo-200 dark:border-indigo-700 rounded-xl shadow-lg px-4 py-3 flex items-start gap-3 max-w-sm"
-        >
-          <div
-            class="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900 flex items-center justify-center shrink-0"
-          >
-            <Icon
-              name="lucide:mail"
-              class="w-4 h-4 text-indigo-600 dark:text-indigo-400"
-            />
-          </div>
-          <div class="min-w-0">
-            <p class="text-sm font-medium text-gray-800 dark:text-gray-100">
-              New email received
-            </p>
-            <p class="text-xs text-gray-500 dark:text-gray-400 truncate">
-              From: {{ newMailNotification.from }}
-            </p>
-            <p
-              v-if="newMailNotification.subject"
-              class="text-xs text-gray-500 dark:text-gray-400 truncate"
-            >
-              {{ newMailNotification.subject }}
-            </p>
-          </div>
-          <button
-            @click="newMailNotification = null"
-            class="text-gray-500 dark:text-gray-400 hover:text-gray-600 shrink-0"
-          >
-            <Icon name="lucide:x" class="w-4 h-4" />
-          </button>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <!-- Rule builder modal -->
-    <Teleport to="body">
-      <div
-        v-if="showRuleModal"
-        class="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
-        @click.self="showRuleModal = false"
-      >
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="rule-modal-title"
-          class="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-lg p-6 mx-4"
-        >
-          <h2
-            id="rule-modal-title"
-            class="text-base font-semibold text-gray-800 dark:text-gray-100 mb-4"
-          >
-            {{ editingRuleId ? "Edit filter" : "New filter" }}
-          </h2>
-          <form class="space-y-4" @submit.prevent="saveRule">
-            <!-- Name -->
-            <input
-              ref="ruleNameInputRef"
-              v-model="ruleForm.name"
-              type="text"
-              placeholder="Filter name (e.g. Deploy notifications)"
-              required
-              class="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-
-            <!-- Color swatches -->
-            <div class="flex items-center gap-2">
-              <span class="text-xs text-gray-500 dark:text-gray-400 shrink-0"
-                >Color:</span
-              >
-              <div role="radiogroup" aria-label="Filter color" class="flex gap-1.5">
-                <button
-                  v-for="c in RULE_COLORS"
-                  :key="c"
-                  type="button"
-                  role="radio"
-                  :aria-checked="ruleForm.color === c"
-                  :aria-label="`${c} color`"
-                  class="w-5 h-5 rounded-full transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800 focus-visible:ring-indigo-500"
-                  :class="[
-                    RULE_COLOR_CLASSES[c].swatch,
-                    ruleForm.color === c
-                      ? 'ring-2 ring-offset-1 dark:ring-offset-gray-800 ring-gray-400 scale-110'
-                      : 'hover:scale-105',
-                  ]"
-                  @click="ruleForm.color = c"
-                />
-              </div>
-            </div>
-
-            <!-- Logic toggle -->
-            <div class="flex items-center gap-2 text-sm">
-              <span class="text-gray-500 dark:text-gray-400">Match</span>
-              <div
-                class="flex rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden"
-              >
-                <button
-                  type="button"
-                  class="px-3 py-1 text-xs font-medium transition-colors"
-                  :class="
-                    ruleForm.logic === 'AND'
-                      ? 'bg-indigo-600 text-white'
-                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
-                  "
-                  @click="ruleForm.logic = 'AND'"
-                >
-                  ALL
-                </button>
-                <button
-                  type="button"
-                  class="px-3 py-1 text-xs font-medium transition-colors"
-                  :class="
-                    ruleForm.logic === 'OR'
-                      ? 'bg-indigo-600 text-white'
-                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
-                  "
-                  @click="ruleForm.logic = 'OR'"
-                >
-                  ANY
-                </button>
-              </div>
-              <span class="text-gray-500 dark:text-gray-400"
-                >of the following conditions:</span
-              >
-            </div>
-
-            <!-- Conditions -->
-            <div class="space-y-2">
-              <div
-                v-for="(cond, idx) in ruleForm.conditions"
-                :key="idx"
-                class="flex items-center gap-2"
-              >
-                <select
-                  v-model="cond.field"
-                  class="flex-1 min-w-0 px-2 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  @change="onConditionFieldChange(idx)"
-                >
-                  <option
-                    v-for="f in FIELD_OPTIONS"
-                    :key="f.value"
-                    :value="f.value"
-                  >
-                    {{ f.label }}
-                  </option>
-                </select>
-                <select
-                  v-model="cond.op"
-                  class="flex-1 min-w-0 px-2 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option
-                    v-for="op in OP_OPTIONS[cond.field]"
-                    :key="op.value"
-                    :value="op.value"
-                  >
-                    {{ op.label }}
-                  </option>
-                </select>
-                <!-- Value input -->
-                <select
-                  v-if="getValueType(cond.field) === 'status'"
-                  v-model="cond.value"
-                  class="flex-1 min-w-0 px-2 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="received">Received</option>
-                  <option value="delivered">Delivered</option>
-                  <option value="bounced">Bounced</option>
-                  <option value="queued">Queued</option>
-                </select>
-                <select
-                  v-else-if="getValueType(cond.field) === 'boolean'"
-                  v-model="cond.value"
-                  class="flex-1 min-w-0 px-2 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="true">Yes</option>
-                  <option value="false">No</option>
-                </select>
-                <input
-                  v-else
-                  v-model="cond.value"
-                  :type="
-                    getValueType(cond.field) === 'number' ? 'number' : 'text'
-                  "
-                  placeholder="value..."
-                  class="flex-1 min-w-0 px-2 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-                <button
-                  type="button"
-                  class="shrink-0 p-1 rounded text-gray-500 dark:text-gray-400 hover:text-red-500 disabled:opacity-30 transition-colors"
-                  :disabled="ruleForm.conditions.length === 1"
-                  @click="removeConditionRow(idx)"
-                >
-                  <Icon name="lucide:x" class="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              class="flex items-center gap-1 text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors"
-              @click="addConditionRow"
-            >
-              <Icon name="lucide:plus" class="w-4 h-4" />
-              Add condition
-            </button>
-
-            <p v-if="ruleError" class="text-sm text-red-600 dark:text-red-400">
-              {{ ruleError }}
-            </p>
-
-            <div class="flex items-center justify-between pt-2">
-              <UBtn
-                v-if="editingRuleId"
-                type="button"
-                variant="danger"
+                variant="secondary"
                 size="sm"
-                @click="
-                  handleDeleteRule(editingRuleId!);
-                  showRuleModal = false;
-                "
+                :disabled="list.currentPage.value <= 1"
+                @click="list.currentPage.value--"
+                >Prev</UBtn
               >
-                Delete filter
-              </UBtn>
-              <div class="flex gap-2 ml-auto">
-                <UBtn
-                  type="button"
-                  variant="ghost"
-                  @click="showRuleModal = false"
-                >
-                  Cancel
-                </UBtn>
-                <UBtn type="submit" :disabled="savingRule">
-                  {{ savingRule ? "Saving..." : "Save filter" }}
-                </UBtn>
-              </div>
+              <UBtn
+                variant="secondary"
+                size="sm"
+                :disabled="list.currentPage.value >= list.totalPages.value"
+                @click="list.currentPage.value++"
+                >Next</UBtn
+              >
             </div>
-          </form>
-        </div>
-      </div>
-    </Teleport>
+          </nav>
+        </template>
+      </TabPanel>
+
+      <TabPanel
+        id-prefix="inbox"
+        tab="webhooks"
+        :active="activeTab"
+        class="flex-1 overflow-y-auto"
+      >
+        <InboxWebhooksPanel
+          :inbox-id="inboxId"
+          :can-edit="isEditorOrAbove"
+          @count="webhookCount = $event"
+        />
+      </TabPanel>
+
+      <TabPanel
+        id-prefix="inbox"
+        tab="members"
+        :active="activeTab"
+        class="flex-1 overflow-y-auto"
+      >
+        <InboxMembersPanel
+          :inbox-id="inboxId"
+          :is-owner="isOwner"
+          @count="memberCount = $event"
+        />
+      </TabPanel>
+    </template>
+
+    <InboxRuleModal
+      v-if="ruleModalOpen"
+      :inbox-id="inboxId"
+      :rule="editingRule"
+      @close="ruleModalOpen = false"
+      @saved="onRuleSaved"
+      @deleted="onRuleDeleted"
+    />
+    <InboxShortcutsModal
+      v-if="showHelp"
+      scope="list"
+      @close="showHelp = false"
+    />
   </div>
 </template>
 
@@ -1177,548 +290,23 @@ definePageMeta({ layout: "default" });
 
 const route = useRoute();
 const api = useApi();
+const toast = useToast();
+const { confirm } = useConfirm();
 const runtimeConfig = useRuntimeConfig();
-const apiBase = runtimeConfig.app.baseURL.replace(/\/$/, "");
 const smtpHost = runtimeConfig.public.smtpHost;
 const smtpPort = runtimeConfig.public.smtpPort;
-const { token } = useAuth();
+const { apiBase, error: downloadError, download } = useAuthedDownload();
 
-const downloadError = ref("");
-
-function authedDownload(url: string, filename: string) {
-  downloadError.value = "";
-  fetch(url, {
-    headers: token.value ? { Authorization: `Bearer ${token.value}` } : {},
-  })
-    .then((r) => r.blob())
-    .then((blob) => {
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(a.href);
-    })
-    .catch(() => {
-      downloadError.value = "Download failed. Please try again.";
-    });
-}
-
-// Export reflects whatever is currently filtered/searched on screen,
-// so what you export matches what you're looking at.
-function buildExportUrl(format: string) {
-  const params = new URLSearchParams({ format });
-  if (searchQuery.value) params.set("q", searchQuery.value);
-  if (filterStatus.value) params.set("status", filterStatus.value);
-  if (filterAfter.value) params.set("after", filterAfter.value);
-  if (filterBefore.value) params.set("before", filterBefore.value);
-  if (activeRuleId.value) params.set("ruleId", activeRuleId.value);
-  return `${apiBase}/api/inboxes/${inboxId}/export?${params.toString()}`;
-}
-
-// Tracks message IDs with an in-flight read-status toggle to prevent race conditions
-const togglingReadIds = ref(new Set<string>());
 const inboxId = route.params.inboxId as string;
 
-const showCreds = ref(false);
-const showPassword = ref(false);
-const showExportMenu = ref(false);
-const deleting = ref(false);
-const activeTab = ref<"messages" | "webhooks" | "members">("messages");
-
-const credsPanelRef = ref<HTMLElement | null>(null);
-const exportMenuRef = ref<HTMLElement | null>(null);
-
-function handleOverlayClick(e: MouseEvent) {
-  const target = e.target as HTMLElement;
-  if (
-    showCreds.value &&
-    credsPanelRef.value &&
-    !credsPanelRef.value.contains(target) &&
-    !target.closest?.("[data-creds-toggle]")
-  ) {
-    showCreds.value = false;
-  }
-  if (
-    showExportMenu.value &&
-    exportMenuRef.value &&
-    !exportMenuRef.value.contains(e.target as Node)
-  ) {
-    showExportMenu.value = false;
-  }
-}
-
-function handleOverlayKeydown(e: KeyboardEvent) {
-  if (e.key !== "Escape") return;
-  if (showExportMenu.value) showExportMenu.value = false;
-  else if (showCreds.value) showCreds.value = false;
-  else if (showRuleModal.value) showRuleModal.value = false;
-  else if (showWebhookModal.value) showWebhookModal.value = false;
-  else if (showInviteModal.value) showInviteModal.value = false;
-}
-
-onMounted(() => {
-  document.addEventListener("click", handleOverlayClick);
-  document.addEventListener("keydown", handleOverlayKeydown);
-});
-onUnmounted(() => {
-  document.removeEventListener("click", handleOverlayClick);
-  document.removeEventListener("keydown", handleOverlayKeydown);
-});
-
-// Search & filter state
-const searchQuery = ref("");
-const filterStatus = ref("");
-const filterAfter = ref("");
-const filterBefore = ref("");
-const showFilters = ref(false);
-const currentPage = ref(1);
-const totalMessages = ref(0);
-const totalUnread = ref(0);
-const messages = ref<
-  Awaited<ReturnType<typeof api.getInboxMessages>>["messages"]
->([]);
-const pending = ref(false);
-
-// ─── Rules ───────────────────────────────────────────────────────────────────
-type InboxRule = Awaited<ReturnType<typeof api.getRules>>[number];
-type RuleColor =
-  | "indigo"
-  | "blue"
-  | "green"
-  | "yellow"
-  | "orange"
-  | "red"
-  | "purple"
-  | "pink";
-type RuleConditionField =
-  | "from"
-  | "to"
-  | "subject"
-  | "status"
-  | "spam_score"
-  | "has_attachment";
-type RuleConditionOp =
-  | "contains"
-  | "not_contains"
-  | "equals"
-  | "starts_with"
-  | "ends_with"
-  | "gt"
-  | "lt";
-
-const rules = ref<InboxRule[]>([]);
-const activeRuleId = ref<string | null>(null);
-const showRuleModal = ref(false);
-const editingRuleId = ref<string | null>(null);
-const savingRule = ref(false);
-const ruleError = ref("");
-const ruleNameInputRef = ref<HTMLInputElement | null>(null);
-
-watch(showRuleModal, (open) => {
-  if (open) {
-    nextTick(() => ruleNameInputRef.value?.focus());
-  }
-});
-
-const ruleForm = reactive<{
-  name: string;
-  color: RuleColor;
-  logic: "AND" | "OR";
-  conditions: {
-    field: RuleConditionField;
-    op: RuleConditionOp;
-    value: string;
-  }[];
-}>({
-  name: "",
-  color: "indigo",
-  logic: "AND",
-  conditions: [{ field: "from", op: "contains", value: "" }],
-});
-
-const RULE_COLOR_CLASSES: Record<
-  RuleColor,
-  { active: string; inactive: string; dot: string; swatch: string }
-> = {
-  indigo: {
-    active:
-      "bg-indigo-100 dark:bg-indigo-900/30 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-400",
-    inactive:
-      "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400",
-    dot: "bg-indigo-500",
-    swatch: "bg-indigo-500",
-  },
-  blue: {
-    active:
-      "bg-blue-100 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-400",
-    inactive:
-      "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400",
-    dot: "bg-blue-500",
-    swatch: "bg-blue-500",
-  },
-  green: {
-    active:
-      "bg-green-100 dark:bg-green-900/30 border-green-300 dark:border-green-700 text-green-700 dark:text-green-400",
-    inactive:
-      "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400",
-    dot: "bg-green-500",
-    swatch: "bg-green-500",
-  },
-  yellow: {
-    active:
-      "bg-yellow-100 dark:bg-yellow-900/30 border-yellow-300 dark:border-yellow-700 text-yellow-700 dark:text-yellow-400",
-    inactive:
-      "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400",
-    dot: "bg-yellow-400",
-    swatch: "bg-yellow-400",
-  },
-  orange: {
-    active:
-      "bg-orange-100 dark:bg-orange-900/30 border-orange-300 dark:border-orange-700 text-orange-700 dark:text-orange-400",
-    inactive:
-      "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400",
-    dot: "bg-orange-500",
-    swatch: "bg-orange-500",
-  },
-  red: {
-    active:
-      "bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-700 text-red-700 dark:text-red-400",
-    inactive:
-      "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400",
-    dot: "bg-red-500",
-    swatch: "bg-red-500",
-  },
-  purple: {
-    active:
-      "bg-purple-100 dark:bg-purple-900/30 border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-400",
-    inactive:
-      "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400",
-    dot: "bg-purple-500",
-    swatch: "bg-purple-500",
-  },
-  pink: {
-    active:
-      "bg-pink-100 dark:bg-pink-900/30 border-pink-300 dark:border-pink-700 text-pink-700 dark:text-pink-400",
-    inactive:
-      "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400",
-    dot: "bg-pink-500",
-    swatch: "bg-pink-500",
-  },
-};
-const RULE_COLORS = Object.keys(RULE_COLOR_CLASSES) as RuleColor[];
-
-const FIELD_OPTIONS: { value: RuleConditionField; label: string }[] = [
-  { value: "from", label: "From" },
-  { value: "to", label: "To" },
-  { value: "subject", label: "Subject" },
-  { value: "status", label: "Status" },
-  { value: "spam_score", label: "Spam Score" },
-  { value: "has_attachment", label: "Has Attachment" },
-];
-
-const OP_OPTIONS: Record<
-  RuleConditionField,
-  { value: RuleConditionOp; label: string }[]
-> = {
-  from: [
-    { value: "contains", label: "contains" },
-    { value: "not_contains", label: "does not contain" },
-    { value: "equals", label: "is exactly" },
-    { value: "starts_with", label: "starts with" },
-    { value: "ends_with", label: "ends with" },
-  ],
-  to: [
-    { value: "contains", label: "contains" },
-    { value: "not_contains", label: "does not contain" },
-  ],
-  subject: [
-    { value: "contains", label: "contains" },
-    { value: "not_contains", label: "does not contain" },
-    { value: "equals", label: "is exactly" },
-    { value: "starts_with", label: "starts with" },
-    { value: "ends_with", label: "ends with" },
-  ],
-  status: [{ value: "equals", label: "is" }],
-  spam_score: [
-    { value: "gt", label: "is greater than" },
-    { value: "lt", label: "is less than" },
-  ],
-  has_attachment: [{ value: "equals", label: "is" }],
-};
-
-function getValueType(
-  field: RuleConditionField,
-): "text" | "status" | "boolean" | "number" {
-  if (field === "status") return "status";
-  if (field === "has_attachment") return "boolean";
-  if (field === "spam_score") return "number";
-  return "text";
-}
-
-function onConditionFieldChange(idx: number) {
-  const c = ruleForm.conditions[idx];
-  c.op = OP_OPTIONS[c.field][0].value;
-  c.value = c.field === "has_attachment" ? "true" : "";
-}
-
-function addConditionRow() {
-  ruleForm.conditions.push({ field: "from", op: "contains", value: "" });
-}
-
-function removeConditionRow(idx: number) {
-  ruleForm.conditions.splice(idx, 1);
-}
-
-function openCreateRule() {
-  editingRuleId.value = null;
-  ruleForm.name = "";
-  ruleForm.color = "indigo";
-  ruleForm.logic = "AND";
-  ruleForm.conditions = [{ field: "from", op: "contains", value: "" }];
-  ruleError.value = "";
-  showRuleModal.value = true;
-}
-
-function openEditRule(rule: InboxRule) {
-  editingRuleId.value = rule.id;
-  ruleForm.name = rule.name;
-  ruleForm.color = (rule.color as RuleColor) ?? "indigo";
-  ruleForm.logic = (rule.logic as "AND" | "OR") ?? "AND";
-  ruleForm.conditions = rule.conditions.map((c) => ({
-    ...c,
-  })) as typeof ruleForm.conditions;
-  ruleError.value = "";
-  showRuleModal.value = true;
-}
-
-async function saveRule() {
-  if (!ruleForm.name.trim()) {
-    ruleError.value = "Name is required";
-    return;
-  }
-  const incomplete = ruleForm.conditions.some(
-    (c) => !c.value.trim() && c.field !== "has_attachment",
-  );
-  if (incomplete) {
-    ruleError.value = "All conditions need a value";
-    return;
-  }
-  savingRule.value = true;
-  ruleError.value = "";
-  try {
-    if (editingRuleId.value) {
-      const updated = await api.updateRule(inboxId, editingRuleId.value, {
-        name: ruleForm.name,
-        color: ruleForm.color,
-        conditions: ruleForm.conditions,
-        logic: ruleForm.logic,
-      });
-      const idx = rules.value.findIndex((r) => r.id === updated.id);
-      if (idx !== -1)
-        rules.value[idx] = {
-          ...updated,
-          total: rules.value[idx].total,
-          unreadTotal: rules.value[idx].unreadTotal,
-        };
-    } else {
-      const created = await api.createRule(inboxId, {
-        name: ruleForm.name,
-        color: ruleForm.color,
-        conditions: ruleForm.conditions,
-        logic: ruleForm.logic,
-      });
-      rules.value.push({ ...created, total: 0, unreadTotal: 0 });
-    }
-    showRuleModal.value = false;
-    loadRules();
-  } catch {
-    ruleError.value = "Failed to save filter";
-  } finally {
-    savingRule.value = false;
-  }
-}
-
-async function handleDeleteRule(ruleId: string) {
-  if (!confirm("Delete this filter?")) return;
-  try {
-    await api.deleteRule(inboxId, ruleId);
-    rules.value = rules.value.filter((r) => r.id !== ruleId);
-    if (activeRuleId.value === ruleId) {
-      activeRuleId.value = null;
-      currentPage.value = 1;
-      fetchMessages();
-    }
-  } catch {
-    // silently ignore
-  }
-}
-
-function selectRule(id: string | null) {
-  activeRuleId.value = id;
-  currentPage.value = 1;
-  fetchMessages();
-}
-
-async function loadRules() {
-  try {
-    rules.value = await api.getRules(inboxId);
-  } catch {
-    rules.value = [];
-  }
-}
-
-function ruleColorClasses(rule: InboxRule) {
-  const color = (rule.color as RuleColor) ?? "indigo";
-  const cls = RULE_COLOR_CLASSES[color] ?? RULE_COLOR_CLASSES.indigo;
-  return activeRuleId.value === rule.id ? cls.active : cls.inactive;
-}
-
-const hasActiveFilters = computed(
-  () =>
-    !!searchQuery.value ||
-    !!filterStatus.value ||
-    !!filterAfter.value ||
-    !!filterBefore.value ||
-    !!activeRuleId.value,
+// ─── Inbox + role ────────────────────────────────────────────────────────────
+const { data: inboxDetail, error: inboxError } = useAsyncData(
+  `inbox-detail-${inboxId}`,
+  () => api.getInbox(inboxId),
 );
-
-const totalPages = computed(() =>
-  Math.max(1, Math.ceil(totalMessages.value / 50)),
-);
-
-const unreadCount = computed(() => totalUnread.value);
-
-// Debounced search
-let searchTimeout: ReturnType<typeof setTimeout>;
-watch(searchQuery, () => {
-  clearTimeout(searchTimeout);
-  searchTimeout = setTimeout(() => {
-    currentPage.value = 1;
-    fetchMessages();
-  }, 300);
-});
-
-watch([filterStatus, filterAfter, filterBefore], () => {
-  currentPage.value = 1;
-  fetchMessages();
-});
-
-watch(currentPage, () => fetchMessages());
-
-async function fetchMessages() {
-  pending.value = true;
-  try {
-    const res = await api.getInboxMessages(inboxId, {
-      q: searchQuery.value || undefined,
-      status: filterStatus.value || undefined,
-      after: filterAfter.value || undefined,
-      before: filterBefore.value || undefined,
-      ruleId: activeRuleId.value || undefined,
-      page: currentPage.value,
-      limit: 50,
-    });
-    messages.value = res.messages;
-    totalMessages.value = res.total;
-    totalUnread.value = res.unreadTotal;
-  } catch {
-    messages.value = [];
-    totalMessages.value = 0;
-  } finally {
-    pending.value = false;
-  }
-}
-
-function clearFilters() {
-  searchQuery.value = "";
-  filterStatus.value = "";
-  filterAfter.value = "";
-  filterBefore.value = "";
-  activeRuleId.value = null;
-  currentPage.value = 1;
-}
-
-function handleMessageClick(msg: (typeof messages.value)[number]) {
-  if (!msg.isRead) {
-    // Optimistic UI update only — the message detail page's watcher
-    // handles the actual markMessageRead API call, avoiding a duplicate request.
-    msg.isRead = true;
-    totalUnread.value = Math.max(0, totalUnread.value - 1);
-  }
-}
-
-async function toggleReadStatus(msg: (typeof messages.value)[number]) {
-  if (togglingReadIds.value.has(msg.id)) return;
-  const wasRead = msg.isRead;
-  msg.isRead = !wasRead;
-  totalUnread.value = wasRead
-    ? totalUnread.value + 1
-    : Math.max(0, totalUnread.value - 1);
-  togglingReadIds.value.add(msg.id);
-  try {
-    if (wasRead) {
-      await api.markMessageUnread(msg.id);
-    } else {
-      await api.markMessageRead(msg.id);
-    }
-  } catch {
-    msg.isRead = wasRead;
-    totalUnread.value = wasRead
-      ? Math.max(0, totalUnread.value - 1)
-      : totalUnread.value + 1;
-  } finally {
-    togglingReadIds.value.delete(msg.id);
-  }
-}
-
-const markingAllRead = ref(false);
-async function markAllRead() {
-  if (markingAllRead.value) return;
-  markingAllRead.value = true;
-  try {
-    await api.markAllRead(inboxId);
-    messages.value.forEach((m) => (m.isRead = true));
-    totalUnread.value = 0;
-  } catch {
-    // silently ignore; count will correct on next fetchMessages
-  } finally {
-    markingAllRead.value = false;
-  }
-}
-
-// Webhooks state
-const webhooks = ref<Awaited<ReturnType<typeof api.getWebhooks>> | null>(null);
-const showWebhookModal = ref(false);
-const addingWebhook = ref(false);
-const webhookError = ref("");
-const webhookForm = reactive({
-  url: "",
-  onDelivered: true,
-  onBounced: true,
-  onOpened: false,
-});
-
-// Webhook logs state
-const expandedWebhook = ref<string | null>(null);
-const currentWebhookLogs = ref<Awaited<ReturnType<typeof api.getWebhookLogs>>>(
-  [],
-);
-const webhookLogsLoading = ref(false);
-
-watch(activeTab, async (tab) => {
-  if (tab === "webhooks" && !webhooks.value) {
-    webhooks.value = await api.getWebhooks(inboxId);
-  }
-});
-
-const { data: inboxDetail } = useAsyncData(`inbox-detail-${inboxId}`, () =>
-  api.getInbox(inboxId),
-);
-
-// Keep backward compat for the template
 const inbox = computed(() => inboxDetail.value);
 useHead({ title: computed(() => inbox.value?.name ?? "Inbox") });
 
-// Role-based access
 const inboxRole = computed(
   () => inboxDetail.value?.currentUserRole ?? "viewer",
 );
@@ -1727,300 +315,273 @@ const isEditorOrAbove = computed(
   () => inboxRole.value === "owner" || inboxRole.value === "editor",
 );
 
-// Initial fetch
-fetchMessages();
-loadRules();
+// ─── The message list (filters, paging, selection, live updates) ─────────────
+const list = useInboxMessages(inboxId);
+const listRef = ref<HTMLElement | null>(null);
+const filterBar = ref<{ focusSearch: () => void } | null>(null);
+list.scrollToTop.value = () => listRef.value?.scrollTo({ top: 0 });
 
-// Real-time: refresh message list when a new email arrives in this inbox
-const newMailNotification = ref<{
-  from: string;
-  subject: string | null;
-} | null>(null);
-let notificationTimeout: ReturnType<typeof setTimeout>;
-
-useSSE(
-  (data) => {
-    if (data.inboxId === inboxId) {
-      silentRefreshMessages();
-      // Show notification toast
-      newMailNotification.value = { from: data.from, subject: data.subject };
-      clearTimeout(notificationTimeout);
-      notificationTimeout = setTimeout(() => {
-        newMailNotification.value = null;
-      }, 5000);
-    }
+// ─── Tabs ────────────────────────────────────────────────────────────────────
+const activeTab = ref("messages");
+const webhookCount = ref<number | null>(null);
+const memberCount = ref<number | null>(null);
+const tabs = computed(() => [
+  {
+    key: "messages",
+    label: "Messages",
+    badge: list.totalMessages.value,
+    badgeLabel: `${list.totalMessages.value} messages`,
   },
-  (data) => {
-    if (data.inboxId !== inboxId) return;
-
-    if (data.allRead) {
-      // All messages in inbox marked read
-      messages.value.forEach((m) => (m.isRead = true));
-      totalUnread.value = 0;
-    } else if (data.messageId !== undefined && data.isRead !== undefined) {
-      // Single message toggled — update in place if present on current page
-      const msg = messages.value.find((m) => m.id === data.messageId);
-      if (msg && msg.isRead !== data.isRead) {
-        msg.isRead = data.isRead;
-        totalUnread.value = data.isRead
-          ? Math.max(0, totalUnread.value - 1)
-          : totalUnread.value + 1;
-      }
-    } else if (data.messageIds && data.isRead !== undefined) {
-      // Batch update
-      const ids = new Set(data.messageIds);
-      messages.value.forEach((m) => {
-        if (ids.has(m.id) && m.isRead !== data.isRead) {
-          m.isRead = data.isRead!;
-          totalUnread.value = data.isRead
-            ? Math.max(0, totalUnread.value - 1)
-            : totalUnread.value + 1;
-        }
-      });
-    } else {
-      // Fallback: unknown shape — re-fetch to stay in sync
-      silentRefreshMessages();
-    }
+  {
+    key: "webhooks",
+    label: "Webhooks",
+    badge: webhookCount.value,
+    badgeLabel: `${webhookCount.value} webhooks`,
   },
-);
+  {
+    key: "members",
+    label: "Members",
+    badge: memberCount.value,
+    badgeLabel: `${memberCount.value} members`,
+  },
+]);
 
-function silentRefreshMessages() {
-  api
-    .getInboxMessages(inboxId, {
-      q: searchQuery.value || undefined,
-      status: filterStatus.value || undefined,
-      after: filterAfter.value || undefined,
-      before: filterBefore.value || undefined,
-      ruleId: activeRuleId.value || undefined,
-      page: currentPage.value,
-      limit: 50,
-    })
-    .then((res) => {
-      // Replace with the authoritative server state — avoids ordering
-      // issues when multiple new messages arrive at the same time.
-      messages.value = res.messages;
-      totalMessages.value = res.total;
-      totalUnread.value = res.unreadTotal;
-    })
-    .catch(() => {});
+// ─── Header actions ──────────────────────────────────────────────────────────
+const showCreds = ref(false);
+const showHelp = ref(false);
+
+const menuItems = computed(() => [
+  {
+    key: "h-export",
+    label: list.hasActiveFilters.value
+      ? "Export filtered results"
+      : "Export entire inbox",
+    heading: true,
+  },
+  { key: "export:csv", label: "CSV", icon: "lucide:file-spreadsheet" },
+  { key: "export:mbox", label: "MBOX", icon: "lucide:archive" },
+  { key: "export:eml", label: "EML (ZIP)", icon: "lucide:file-archive" },
+  ...(isEditorOrAbove.value
+    ? [
+        {
+          key: "creds",
+          label: showCreds.value ? "Hide SMTP credentials" : "SMTP credentials",
+          icon: "lucide:key",
+          separatorBefore: true,
+        },
+      ]
+    : []),
+  {
+    key: "help",
+    label: "Keyboard shortcuts",
+    icon: "lucide:keyboard",
+    separatorBefore: !isEditorOrAbove.value,
+  },
+  ...(isOwner.value
+    ? [
+        {
+          key: "delete",
+          label: "Delete inbox",
+          icon: "lucide:trash-2",
+          danger: true,
+          separatorBefore: true,
+        },
+      ]
+    : []),
+]);
+
+function onMenu(key: string) {
+  if (key.startsWith("export:")) runExport(key.slice(7));
+  else if (key === "creds") showCreds.value = !showCreds.value;
+  else if (key === "help") showHelp.value = true;
+  else if (key === "delete") deleteInbox();
 }
 
-function formatRecipients(to: string[]): string {
-  if (!to.length) return "(none)";
-  if (to.length <= 2) return to.join(", ");
-  return `${to[0]}, ${to[1]} +${to.length - 2} more`;
+const EXPORT_EXT: Record<string, string> = {
+  csv: "csv",
+  mbox: "mbox",
+  eml: "zip",
+};
+
+// Export reflects whatever is currently filtered/searched on screen.
+function buildExportUrl(format: string) {
+  const params = new URLSearchParams({ format });
+  const f = list.listQuery.value;
+  if (f.q) params.set("q", f.q);
+  if (f.status) params.set("status", f.status);
+  if (f.after) params.set("after", f.after);
+  if (f.before) params.set("before", f.before);
+  if (f.rule) params.set("ruleId", f.rule);
+  return `${apiBase}/api/inboxes/${inboxId}/export?${params.toString()}`;
 }
 
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
+async function runExport(format: string) {
+  const slug =
+    (inbox.value?.name ?? "inbox")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "inbox";
+  toast.info("Preparing your export…");
+  const result = await download(
+    buildExportUrl(format),
+    `${slug}-export.${EXPORT_EXT[format]}`,
+  );
+  if (!result) return;
+  toast.success(
+    result.truncated
+      ? "Export saved — limited to the 10,000 most recent messages."
+      : "Export saved",
+  );
+}
+
+async function deleteInbox() {
+  const ok = await confirm({
+    title: "Delete this inbox?",
+    message: `“${inbox.value?.name ?? "This inbox"}” and all ${list.totalMessages.value} of its messages will be permanently deleted.`,
+    confirmLabel: "Delete inbox",
+    danger: true,
   });
-}
-
-async function handleDelete() {
-  if (!confirm("Delete this inbox and all its messages?")) return;
-  deleting.value = true;
+  if (!ok) return;
   try {
     await api.deleteInbox(inboxId);
-    // Clear the inboxes cache so sidebar refreshes
     clearNuxtData("inboxes");
+    toast.success("Inbox deleted");
     navigateTo("/");
   } catch {
-    alert("Failed to delete inbox");
-  } finally {
-    deleting.value = false;
+    toast.error("Couldn't delete the inbox. Please try again.");
   }
 }
 
-const copiedField = ref<string | null>(null);
-let copiedTimeout: ReturnType<typeof setTimeout> | undefined;
-
-function copy(text: string, field?: string) {
-  navigator.clipboard
-    .writeText(text)
-    .then(() => {
-      if (!field) return;
-      copiedField.value = field;
-      clearTimeout(copiedTimeout);
-      copiedTimeout = setTimeout(() => {
-        copiedField.value = null;
-      }, 2000);
-    })
-    .catch(() => {
-      downloadError.value = "Couldn't copy to clipboard.";
-    });
+// ─── Row focus: one tab stop for the whole list ──────────────────────────────
+// Only the active row is in the tab order (Tab reaches its checkbox, link and
+// read toggle); Up/Down/Home/End move between rows. Arrow keys aren't
+// single-character shortcuts, so they stay on when j/k are switched off.
+const activeRowId = ref<string | null>(null);
+function isActiveRow(id: string, index: number) {
+  const known = list.messages.value.some((m) => m.id === activeRowId.value);
+  return known ? activeRowId.value === id : index === 0;
 }
 
-async function handleAddWebhook() {
-  webhookError.value = "";
-  addingWebhook.value = true;
-  try {
-    await api.createWebhook(inboxId, webhookForm);
-    showWebhookModal.value = false;
-    webhookForm.url = "";
-    webhooks.value = await api.getWebhooks(inboxId);
-  } catch (e: any) {
-    webhookError.value = e?.data?.error || "Failed to add webhook";
-  } finally {
-    addingWebhook.value = false;
-  }
+function onRowKeydown(e: KeyboardEvent) {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const links = rowLinks();
+  const i = links.findIndex((l) => l.parentElement?.contains(e.target as Node));
+  if (i < 0) return;
+  const next =
+    e.key === "ArrowDown"
+      ? Math.min(links.length - 1, i + 1)
+      : e.key === "ArrowUp"
+        ? Math.max(0, i - 1)
+        : e.key === "Home"
+          ? 0
+          : e.key === "End"
+            ? links.length - 1
+            : -1;
+  if (next < 0) return;
+  e.preventDefault();
+  links[next].focus();
 }
 
-async function handleDeleteWebhook(webhookId: string) {
-  if (!confirm("Delete this webhook?")) return;
-  try {
-    await api.deleteWebhook(inboxId, webhookId);
-    webhooks.value = await api.getWebhooks(inboxId);
-  } catch {
-    alert("Failed to delete webhook");
-  }
+// Coming back from a message: land on the row you left.
+const lastOpened = useLastOpened();
+const stopRestore = watch(list.messages, async (msgs) => {
+  if (!msgs.length) return;
+  stopRestore();
+  const { inboxId: from, messageId } = lastOpened.value;
+  lastOpened.value = { inboxId: "", messageId: "" };
+  if (from !== inboxId || !msgs.some((m) => m.id === messageId)) return;
+  activeRowId.value = messageId;
+  await nextTick();
+  const li = listRef.value?.querySelector<HTMLElement>(
+    `li[data-id="${messageId}"]`,
+  );
+  li?.scrollIntoView({ block: "center" });
+  li?.querySelector<HTMLElement>("a")?.focus({ preventScroll: true });
+});
+
+// ─── Keyboard ────────────────────────────────────────────────────────────────
+function rowLinks() {
+  return [...(listRef.value?.querySelectorAll<HTMLElement>("li > a") ?? [])];
 }
 
-async function toggleLogs(webhookId: string) {
-  if (expandedWebhook.value === webhookId) {
-    expandedWebhook.value = null;
+function onKeydown(e: KeyboardEvent) {
+  if (activeTab.value !== "messages") return;
+  if (
+    e.key === "Escape" &&
+    list.selected.value.size &&
+    !document.querySelector('[role="dialog"], [role="alertdialog"]')
+  ) {
+    list.clearSelection();
     return;
   }
-  expandedWebhook.value = webhookId;
-  webhookLogsLoading.value = true;
+  if (shouldIgnoreHotkey(e)) return;
+  const links = rowLinks();
+  const current = links.findIndex(
+    (l) =>
+      l === document.activeElement ||
+      l.parentElement?.contains(document.activeElement),
+  );
+  if (e.key === "j") {
+    e.preventDefault();
+    links[Math.min(links.length - 1, current + 1)]?.focus();
+  } else if (e.key === "k") {
+    e.preventDefault();
+    links[Math.max(0, current === -1 ? 0 : current - 1)]?.focus();
+  } else if (e.key === "x" && current >= 0) {
+    e.preventDefault();
+    const id = links[current].parentElement?.dataset.id;
+    const index = list.messages.value.findIndex((m) => m.id === id);
+    if (index >= 0) list.toggleSelected(list.messages.value[index].id, index);
+  } else if (e.key === "I" && list.selected.value.size) {
+    e.preventDefault();
+    list.markSelected(true);
+  } else if (e.key === "U" && list.selected.value.size) {
+    e.preventDefault();
+    list.markSelected(false);
+  } else if (
+    e.key === "#" &&
+    list.selected.value.size &&
+    isEditorOrAbove.value
+  ) {
+    e.preventDefault();
+    list.deleteSelected();
+  } else if (e.key === "/") {
+    e.preventDefault();
+    filterBar.value?.focusSearch();
+  } else if (e.key === "?") {
+    showHelp.value = true;
+  }
+}
+onMounted(() => document.addEventListener("keydown", onKeydown));
+onUnmounted(() => document.removeEventListener("keydown", onKeydown));
+
+// ─── Saved filters ───────────────────────────────────────────────────────────
+type InboxRule = Awaited<ReturnType<typeof api.getRules>>[number];
+const rules = ref<InboxRule[]>([]);
+const ruleModalOpen = ref(false);
+const editingRule = ref<InboxRule | null>(null);
+
+async function loadRules() {
   try {
-    currentWebhookLogs.value = await api.getWebhookLogs(inboxId, webhookId);
+    rules.value = await api.getRules(inboxId);
   } catch {
-    currentWebhookLogs.value = [];
-  } finally {
-    webhookLogsLoading.value = false;
+    rules.value = [];
   }
 }
-
-async function handleRetryWebhookLog(webhookId: string, logId: string) {
-  try {
-    await api.retryWebhookLog(inboxId, webhookId, logId);
-    // Refresh logs
-    currentWebhookLogs.value = await api.getWebhookLogs(inboxId, webhookId);
-  } catch {
-    alert("Failed to retry webhook");
-  }
+function openRule(rule: InboxRule | null) {
+  editingRule.value = rule;
+  ruleModalOpen.value = true;
+}
+async function onRuleSaved() {
+  ruleModalOpen.value = false;
+  await loadRules();
+  if (list.activeRuleId.value) list.applyFilters();
+}
+function onRuleDeleted(id: string) {
+  ruleModalOpen.value = false;
+  rules.value = rules.value.filter((r) => r.id !== id);
+  if (list.activeRuleId.value === id) list.activeRuleId.value = null;
 }
 
-// ─── Members ──────────────────────────────────────────────
-import type { InboxMember } from "~/composables/useApi";
-
-const members = ref<InboxMember[]>([]);
-const membersLoading = ref(false);
-const showInviteModal = ref(false);
-const inviteRole = ref("viewer");
-const inviting = ref(false);
-const inviteError = ref("");
-
-// User search state for invite
-const inviteSearchQuery = ref("");
-const inviteSearchResults = ref<
-  { id: string; email: string; name: string | null }[]
->([]);
-const inviteSelectedUser = ref<{
-  id: string;
-  email: string;
-  name: string | null;
-} | null>(null);
-const inviteSearching = ref(false);
-const showInviteSearchResults = ref(false);
-let inviteSearchTimeout: ReturnType<typeof setTimeout> | null = null;
-
-function debouncedInviteSearch() {
-  if (inviteSearchTimeout) clearTimeout(inviteSearchTimeout);
-  inviteSelectedUser.value = null;
-  if (inviteSearchQuery.value.length < 2) {
-    inviteSearchResults.value = [];
-    return;
-  }
-  inviteSearching.value = true;
-  inviteSearchTimeout = setTimeout(async () => {
-    try {
-      inviteSearchResults.value = await api.searchUsers(
-        inviteSearchQuery.value,
-      );
-    } catch {
-      inviteSearchResults.value = [];
-    } finally {
-      inviteSearching.value = false;
-    }
-  }, 300);
-}
-
-function selectInviteUser(user: {
-  id: string;
-  email: string;
-  name: string | null;
-}) {
-  inviteSelectedUser.value = user;
-  showInviteSearchResults.value = false;
-  inviteSearchQuery.value = "";
-  inviteSearchResults.value = [];
-}
-
-function clearInviteSelectedUser() {
-  inviteSelectedUser.value = null;
-  inviteSearchQuery.value = "";
-  inviteSearchResults.value = [];
-}
-
-function closeInviteModal() {
-  showInviteModal.value = false;
-  clearInviteSelectedUser();
-  inviteRole.value = "viewer";
-  inviteError.value = "";
-}
-
-async function loadMembers() {
-  if (members.value.length) return;
-  membersLoading.value = true;
-  try {
-    members.value = await api.getInboxMembers(inboxId);
-  } catch {
-    members.value = [];
-  } finally {
-    membersLoading.value = false;
-  }
-}
-
-async function handleInviteMember() {
-  if (!inviteSelectedUser.value) return;
-  inviteError.value = "";
-  inviting.value = true;
-  try {
-    await api.addInboxMember(
-      inboxId,
-      inviteSelectedUser.value.email,
-      inviteRole.value,
-    );
-    closeInviteModal();
-    members.value = await api.getInboxMembers(inboxId);
-  } catch (e: any) {
-    inviteError.value = e?.data?.error || "Failed to invite member";
-  } finally {
-    inviting.value = false;
-  }
-}
-
-async function handleUpdateRole(memberId: string, newRole: string) {
-  try {
-    await api.updateInboxMemberRole(inboxId, memberId, newRole);
-    members.value = await api.getInboxMembers(inboxId);
-  } catch {
-    alert("Failed to update role");
-  }
-}
-
-async function handleRemoveMember(memberId: string) {
-  if (!confirm("Remove this member?")) return;
-  try {
-    await api.removeInboxMember(inboxId, memberId);
-    members.value = await api.getInboxMembers(inboxId);
-  } catch {
-    alert("Failed to remove member");
-  }
-}
+loadRules();
 </script>

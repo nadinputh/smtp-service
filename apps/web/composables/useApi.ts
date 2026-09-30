@@ -74,6 +74,37 @@ export function useApi() {
       );
     },
 
+    /** Ids of every message matching the filters (capped at 1,000), for "select all matching". */
+    async getInboxMessageIds(
+      inboxId: string,
+      params?: {
+        q?: string;
+        status?: string;
+        after?: string;
+        before?: string;
+        ruleId?: string;
+      },
+    ) {
+      const query: Record<string, string> = { idsOnly: "1" };
+      if (params?.q) query.q = params.q;
+      if (params?.status) query.status = params.status;
+      if (params?.after) query.after = params.after;
+      if (params?.before) query.before = params.before;
+      if (params?.ruleId) query.ruleId = params.ruleId;
+      const res = await $fetch<{ ids: string[] }>(
+        `/api/inboxes/${inboxId}/messages`,
+        { headers: authHeaders(), query },
+      );
+      return res.ids;
+    },
+
+    async resendMessage(messageId: string) {
+      return await $fetch<{ id: string; status: string }>(
+        `/api/messages/${messageId}/resend`,
+        { method: "POST", headers: authHeaders() },
+      );
+    },
+
     async getMessage(messageId: string) {
       return await $fetch<MessageDetail>(`/api/messages/${messageId}`, {
         headers: authHeaders(),
@@ -106,6 +137,13 @@ export function useApi() {
         method: "DELETE",
         headers: authHeaders(),
       });
+    },
+
+    async deleteMessages(inboxId: string, messageIds: string[]) {
+      return await $fetch<{ success: boolean; deleted: number }>(
+        `/api/inboxes/${inboxId}/messages/delete`,
+        { method: "POST", headers: authHeaders(), body: { messageIds } },
+      );
     },
 
     async deleteInboxMessages(inboxId: string) {
@@ -519,11 +557,14 @@ export function useApi() {
     },
 
     async changePassword(currentPassword: string, newPassword: string) {
-      return await $fetch<{ success: boolean; token: string }>("/api/auth/change-password", {
-        method: "PUT",
-        headers: authHeaders(),
-        body: { currentPassword, newPassword },
-      });
+      return await $fetch<{ success: boolean; token: string }>(
+        "/api/auth/change-password",
+        {
+          method: "PUT",
+          headers: authHeaders(),
+          body: { currentPassword, newPassword },
+        },
+      );
     },
 
     // ─── Teams ──────────────────────────────────────────────
@@ -858,6 +899,7 @@ export interface Inbox {
   smtpUsername: string;
   createdAt: string;
   unreadCount: number;
+  failedCount: number;
   teamId: string | null;
   teamName: string | null;
   currentUserRole: string;
@@ -881,6 +923,9 @@ export interface Message {
   isRead: boolean;
   createdAt: string;
   textPreview: string | null;
+  attachmentCount: number;
+  spamScore: number | null;
+  bounceReason: string | null;
 }
 
 export interface MessageDetail extends Message {
@@ -991,6 +1036,8 @@ export interface PaginatedMessages {
   messages: Message[];
   total: number;
   unreadTotal: number;
+  /** Bounced + failed messages in the whole inbox, ignoring the active filters. */
+  attentionTotal: number;
   page: number;
   limit: number;
 }
@@ -1268,12 +1315,7 @@ export interface AdminTopInbox {
 
 // ─── Inbox Rules ──────────────────────────────────────────
 export type RuleConditionField =
-  | "from"
-  | "to"
-  | "subject"
-  | "status"
-  | "spam_score"
-  | "has_attachment";
+  "from" | "to" | "subject" | "status" | "spam_score" | "has_attachment";
 
 export type RuleConditionOp =
   | "contains"

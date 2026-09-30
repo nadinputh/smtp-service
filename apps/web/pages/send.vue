@@ -6,7 +6,7 @@
       <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100">
         Send Email
       </h2>
-      <p class="text-sm text-gray-500 dark:text-gray-400">
+      <p class="text-sm text-gray-600 dark:text-gray-400">
         Compose and send via the HTTP API
       </p>
     </header>
@@ -20,12 +20,7 @@
             class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
             >Sending Inbox</label
           >
-          <select
-            id="send-inbox"
-            v-model="form.inboxId"
-            required
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-          >
+          <select id="send-inbox" v-model="form.inboxId" required class="field">
             <option value="" disabled>Select an inbox</option>
             <option
               v-for="inbox in inboxes ?? []"
@@ -46,15 +41,11 @@
             class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
           >
             Template
-            <span class="text-gray-500 dark:text-gray-400 font-normal"
+            <span class="text-gray-600 dark:text-gray-400 font-normal"
               >(optional)</span
             >
           </label>
-          <select
-            id="send-template"
-            v-model="form.templateId"
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-          >
+          <select id="send-template" v-model="form.templateId" class="field">
             <option value="">None — compose manually</option>
             <option v-for="tpl in templatesList" :key="tpl.id" :value="tpl.id">
               {{ tpl.name }}
@@ -64,7 +55,7 @@
             v-if="templatesError"
             role="alert"
             aria-live="assertive"
-            class="text-xs text-red-600 dark:text-red-400 mt-1"
+            class="text-xs text-red-700 dark:text-red-400 mt-1"
           >
             Couldn't load templates. You can still compose manually.
           </p>
@@ -81,14 +72,14 @@
             <div v-for="varName in selectedTemplate.variables" :key="varName">
               <label
                 :for="`send-var-${varName}`"
-                class="block text-xs text-gray-500 dark:text-gray-400 mb-0.5"
+                class="block text-xs text-gray-600 dark:text-gray-400 mb-0.5"
                 v-text="`\{\{${varName}\}\}`"
               />
               <input
                 :id="`send-var-${varName}`"
                 v-model="templateVars[varName]"
                 :placeholder="varName"
-                class="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                class="field py-1.5"
               />
             </div>
           </div>
@@ -107,7 +98,7 @@
               type="email"
               required
               placeholder="sender@yourdomain.com"
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              class="field"
             />
           </div>
           <div>
@@ -122,9 +113,9 @@
               type="text"
               required
               placeholder="recipient@example.com"
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              class="field"
             />
-            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
               Comma-separated for multiple recipients
             </p>
           </div>
@@ -136,32 +127,40 @@
               for="send-cc"
               class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
               >CC
-              <span class="text-gray-500 dark:text-gray-400 font-normal">(optional)</span></label
+              <span class="text-gray-600 dark:text-gray-400 font-normal"
+                >(optional)</span
+              ></label
             >
             <input
               id="send-cc"
               v-model="form.cc"
               type="text"
               placeholder="cc@example.com"
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              class="field"
             />
-            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Comma-separated</p>
+            <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
+              Comma-separated
+            </p>
           </div>
           <div>
             <label
               for="send-bcc"
               class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
               >BCC
-              <span class="text-gray-500 dark:text-gray-400 font-normal">(optional)</span></label
+              <span class="text-gray-600 dark:text-gray-400 font-normal"
+                >(optional)</span
+              ></label
             >
             <input
               id="send-bcc"
               v-model="form.bcc"
               type="text"
               placeholder="bcc@example.com"
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              class="field"
             />
-            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Comma-separated</p>
+            <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
+              Comma-separated
+            </p>
           </div>
         </div>
 
@@ -169,7 +168,7 @@
           v-if="validationError"
           role="alert"
           aria-live="assertive"
-          class="text-sm text-red-600 dark:text-red-400"
+          class="text-sm text-red-700 dark:text-red-400"
         >
           {{ validationError }}
         </p>
@@ -186,13 +185,17 @@
             type="text"
             :required="!form.templateId"
             placeholder="Email subject"
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            class="field"
           />
         </div>
 
         <!-- Body tabs (hidden when using template) -->
         <div v-if="!form.templateId">
-          <div role="tablist" aria-label="Email body format" class="flex gap-2 mb-2">
+          <div
+            role="tablist"
+            aria-label="Email body format"
+            class="flex gap-2 mb-2"
+          >
             <button
               id="send-tab-html"
               type="button"
@@ -203,7 +206,7 @@
               :class="
                 bodyTab === 'html'
                   ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300'
-                  : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
               "
               @click="bodyTab = 'html'"
             >
@@ -219,7 +222,7 @@
               :class="
                 bodyTab === 'text'
                   ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300'
-                  : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
               "
               @click="bodyTab = 'text'"
             >
@@ -237,17 +240,20 @@
               aria-labelledby="send-tab-html"
               rows="10"
               placeholder="<h1>Hello!</h1><p>Your email content here...</p>"
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              class="field font-mono"
             />
             <div>
-              <span
-                class="block text-xs text-gray-500 dark:text-gray-400 mb-1"
+              <span class="block text-xs text-gray-600 dark:text-gray-400 mb-1"
                 >Preview</span
               >
-              <div
-                class="w-full h-[236px] border border-gray-300 dark:border-gray-600 rounded-lg overflow-auto bg-white dark:bg-gray-700 p-3 text-sm"
-                v-html="previewHtml"
-              />
+              <!-- Same sandboxed iframe as received mail, never page HTML -->
+              <MessageHtmlPreview v-if="previewHtml" :html="previewHtml" />
+              <p
+                v-else
+                class="text-sm text-gray-600 dark:text-gray-400 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4"
+              >
+                The rendered HTML appears here as you type.
+              </p>
             </div>
           </div>
           <textarea
@@ -258,7 +264,7 @@
             aria-labelledby="send-tab-text"
             rows="10"
             placeholder="Plain text content..."
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            class="field font-mono"
           />
         </div>
 
@@ -275,7 +281,7 @@
             v-model="form.sendAt"
             type="datetime-local"
             :min="minScheduleValue"
-            class="mt-2 px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            class="field mt-2 w-auto"
           />
         </div>
 
@@ -310,19 +316,19 @@
                 v-model="header.key"
                 :aria-label="`Header ${i + 1} name`"
                 placeholder="X-Custom-Tag"
-                class="flex-1 px-3 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                class="field flex-1 py-1.5"
               />
               <input
                 v-model="header.value"
                 :aria-label="`Header ${i + 1} value`"
                 placeholder="value"
-                class="flex-1 px-3 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                class="field flex-1 py-1.5"
               />
               <button
                 type="button"
                 @click="customHeaders.splice(i, 1)"
                 :aria-label="`Remove header ${i + 1}`"
-                class="relative text-red-400 hover:text-red-600 before:absolute before:content-[''] before:-top-3.5 before:-bottom-3.5 before:-left-1 before:-right-3.5"
+                class="relative text-red-700 dark:text-red-400 hover:text-red-800 before:absolute before:content-[''] before:-top-3.5 before:-bottom-3.5 before:-left-1 before:-right-3.5"
               >
                 <Icon name="lucide:x" class="w-4 h-4" />
               </button>
@@ -351,7 +357,7 @@
             v-if="sendError"
             role="alert"
             aria-live="assertive"
-            class="text-sm text-red-600 dark:text-red-400"
+            class="text-sm text-red-700 dark:text-red-400"
           >
             {{ sendError }}
           </p>
@@ -419,6 +425,7 @@ definePageMeta({ layout: "default" });
 useHead({ title: "Send Email" });
 
 const api = useApi();
+const { confirm: confirmAction } = useConfirm();
 
 const { data: inboxes } = useAsyncData("send-inboxes", () => api.getInboxes(), {
   server: false,
@@ -539,7 +546,8 @@ async function handleSend() {
   for (const h of customHeaders) {
     if (!h.key && !h.value) continue;
     if (/[\r\n]/.test(h.key) || /[\r\n]/.test(h.value)) {
-      validationError.value = "Custom header values cannot contain line breaks.";
+      validationError.value =
+        "Custom header values cannot contain line breaks.";
       toast.error(validationError.value);
       return;
     }
@@ -556,7 +564,12 @@ async function handleSend() {
   const confirmMessage = sendAt
     ? `Schedule this email from ${form.from} to ${recipientCount} recipient(s) for ${new Date(sendAt).toLocaleString()}?`
     : `Send this email now from ${form.from} to ${recipientCount} recipient(s)?`;
-  if (!confirm(confirmMessage)) return;
+  const proceed = await confirmAction({
+    title: sendAt ? "Schedule this email?" : "Send this email now?",
+    message: confirmMessage,
+    confirmLabel: sendAt ? "Schedule" : "Send",
+  });
+  if (!proceed) return;
 
   sending.value = true;
   try {

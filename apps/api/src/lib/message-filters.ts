@@ -1,5 +1,5 @@
 import { messages, inboxRules, type getDb } from "@mailpocket/db";
-import { and, eq, gte, ilike, lte, sql, type SQL } from "drizzle-orm";
+import { and, eq, gte, ilike, inArray, lte, sql, type SQL } from "drizzle-orm";
 import { buildRuleWhere } from "./rule-conditions.js";
 import { escapeLike } from "./validate.js";
 
@@ -38,7 +38,9 @@ export async function buildMessageConditions(
     conditions.push(sql`${messages.to}::text ILIKE ${`%${escapeLike(to)}%`}`);
   }
   if (status) {
-    conditions.push(eq(messages.status, status));
+    // One status, or several as a comma-separated list ("bounced,failed")
+    const statuses = status.split(",").filter(Boolean).slice(0, 20);
+    if (statuses.length) conditions.push(inArray(messages.status, statuses));
   }
   if (after) {
     const afterDate = new Date(after);

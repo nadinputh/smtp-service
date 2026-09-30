@@ -8,9 +8,16 @@
     />
 
     <!-- Sidebar -->
+    <!-- Closed on small screens the drawer is visibility:hidden, so its links
+         leave the tab order and the accessibility tree along with the slide. -->
     <aside
-      class="fixed inset-y-0 left-0 z-40 w-72 max-w-[85vw] bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col transition-transform duration-300 ease-in-out motion-reduce:transition-none lg:static lg:translate-x-0"
-      :class="sidebar.isOpen.value ? 'translate-x-0' : '-translate-x-full'"
+      class="fixed inset-y-0 left-0 z-40 w-72 max-w-[85vw] bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col transition-[transform,visibility] duration-300 ease-in-out motion-reduce:transition-none lg:static lg:translate-x-0 lg:visible"
+      :class="
+        sidebar.isOpen.value
+          ? 'translate-x-0 visible'
+          : '-translate-x-full invisible'
+      "
+      @keydown.esc="sidebar.close()"
     >
       <div
         class="px-4 h-20 flex items-center justify-between shrink-0 border-b border-gray-200 dark:border-gray-700"
@@ -18,7 +25,10 @@
         <p
           class="text-xl font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2"
         >
-          <Icon name="lucide:mail" class="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+          <Icon
+            name="lucide:mail"
+            class="w-6 h-6 text-indigo-600 dark:text-indigo-400"
+          />
           MailPocket
         </p>
         <!-- Close button (mobile only) -->
@@ -32,7 +42,10 @@
       </div>
 
       <!-- Inbox list -->
-      <nav class="flex-1 overflow-y-auto p-3">
+      <nav
+        class="flex-1 overflow-y-auto p-3"
+        aria-label="Inboxes and navigation"
+      >
         <div class="flex items-center justify-between mb-2 px-2">
           <p
             class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider"
@@ -50,30 +63,54 @@
         </div>
         <div
           v-if="!inboxes && pending"
+          role="status"
           class="text-sm text-gray-500 dark:text-gray-400 px-2"
         >
-          Loading...
+          Loading inboxes…
+        </div>
+        <div
+          v-else-if="inboxesError && !inboxes"
+          role="alert"
+          class="px-2 text-sm text-red-700 dark:text-red-400"
+        >
+          Couldn't load your inboxes.
+          <button
+            type="button"
+            class="underline hover:no-underline"
+            @click="refreshInboxes()"
+          >
+            Retry
+          </button>
         </div>
         <ul v-else-if="inboxes?.length" class="space-y-1">
           <li v-for="inbox in inboxes" :key="inbox.id">
-            <NuxtLink
+            <NavLink
               :to="`/inbox/${inbox.id}`"
-              class="flex items-center gap-2 px-3 py-3 rounded-lg text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800"
-              :class="
-                route.params.inboxId === inbox.id
-                  ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 font-medium'
-                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-              "
+              :active="route.params.inboxId === inbox.id"
             >
               <Icon name="lucide:inbox" class="w-4 h-4 shrink-0" />
               <span class="truncate flex-1">{{ inbox.name }}</span>
-              <span
+              <Badge
                 v-if="inbox.teamName"
-                class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 font-medium shrink-0"
+                tone="info"
+                class="shrink-0"
                 :title="`Team: ${inbox.teamName}`"
               >
                 {{ inbox.teamName }}
-              </span>
+              </Badge>
+              <Badge
+                v-if="inbox.failedCount > 0"
+                tone="danger"
+                class="shrink-0 tabular-nums"
+              >
+                <Icon
+                  name="lucide:alert-triangle"
+                  class="w-3 h-3"
+                  aria-hidden="true"
+                />
+                {{ inbox.failedCount > 99 ? "99+" : inbox.failedCount }}
+                <span class="sr-only">need attention</span>
+              </Badge>
               <Transition
                 enter-active-class="transition-all duration-200 ease-out"
                 leave-active-class="transition-all duration-150 ease-in"
@@ -82,15 +119,17 @@
                 leave-from-class="opacity-100 scale-100"
                 leave-to-class="opacity-0 scale-75"
               >
-                <span
+                <Badge
                   v-if="inbox.unreadCount > 0"
                   :key="inbox.unreadCount"
-                  class="ml-auto inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-semibold rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300"
+                  tone="indigo"
+                  class="ml-auto shrink-0 tabular-nums font-semibold"
                 >
                   {{ inbox.unreadCount > 99 ? "99+" : inbox.unreadCount }}
-                </span>
+                  <span class="sr-only">unread</span>
+                </Badge>
               </Transition>
-            </NuxtLink>
+            </NavLink>
           </li>
         </ul>
         <p v-else class="text-sm text-gray-500 dark:text-gray-400 px-2">
@@ -105,20 +144,15 @@
             Mail
           </p>
           <div class="space-y-1">
-            <NuxtLink
+            <NavLink
               v-for="item in mailNav"
               :key="item.to"
               :to="item.to"
-              class="flex items-center gap-2 px-3 py-3 rounded-lg text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800"
-              :class="
-                route.path === item.to
-                  ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 font-medium'
-                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-              "
+              :active="route.path === item.to"
             >
               <Icon :name="item.icon" class="w-4 h-4 shrink-0" />
               <span>{{ item.label }}</span>
-            </NuxtLink>
+            </NavLink>
           </div>
         </div>
 
@@ -129,26 +163,18 @@
             Manage
           </p>
           <div class="space-y-1">
-            <NuxtLink
+            <NavLink
               v-for="item in manageNav"
               :key="item.to"
               :to="item.to"
-              class="flex items-center gap-2 px-3 py-3 rounded-lg text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800"
-              :class="
-                route.path === item.to
-                  ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 font-medium'
-                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-              "
+              :active="route.path === item.to"
             >
               <Icon :name="item.icon" class="w-4 h-4 shrink-0" />
               <span class="flex-1">{{ item.label }}</span>
-              <span
-                v-if="item.upcoming"
-                class="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400 font-medium shrink-0"
-              >
+              <Badge v-if="item.upcoming" tone="purple" class="shrink-0">
                 Upcoming
-              </span>
-            </NuxtLink>
+              </Badge>
+            </NavLink>
           </div>
         </div>
 
@@ -163,20 +189,15 @@
             Admin
           </p>
           <div class="space-y-1">
-            <NuxtLink
+            <NavLink
               v-for="item in adminNav"
               :key="item.to"
               :to="item.to"
-              class="flex items-center gap-2 px-3 py-3 rounded-lg text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800"
-              :class="
-                route.path === item.to
-                  ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 font-medium'
-                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-              "
+              :active="route.path === item.to"
             >
               <Icon :name="item.icon" class="w-4 h-4 shrink-0" />
               <span>{{ item.label }}</span>
-            </NuxtLink>
+            </NavLink>
           </div>
         </div>
       </nav>
@@ -211,16 +232,11 @@
                     >
                       {{ user?.name || user?.email }}
                     </p>
-                    <span
-                      class="text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0"
-                      :class="
-                        user?.role === 'admin'
-                          ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                          : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
-                      "
+                    <Badge
+                      :tone="user?.role === 'admin' ? 'warning' : 'neutral'"
                     >
                       {{ user?.role }}
-                    </span>
+                    </Badge>
                   </div>
                   <p
                     v-if="user?.name"
@@ -339,7 +355,11 @@
     </main>
 
     <!-- Create Inbox Modal -->
-    <Modal v-if="showCreateModal" title="Create Inbox" @close="showCreateModal = false">
+    <Modal
+      v-if="showCreateModal"
+      title="Create Inbox"
+      @close="showCreateModal = false"
+    >
       <form @submit.prevent="handleCreateInbox">
         <label
           for="create-inbox-name"
@@ -371,15 +391,15 @@
             {{ team.name }}
           </option>
         </select>
-        <p v-if="createError" role="alert" class="text-sm text-red-600 dark:text-red-400 mt-2">
+        <p
+          v-if="createError"
+          role="alert"
+          class="text-sm text-red-600 dark:text-red-400 mt-2"
+        >
           {{ createError }}
         </p>
         <div class="flex justify-end gap-2 mt-4">
-          <UBtn
-            type="button"
-            variant="ghost"
-            @click="showCreateModal = false"
-          >
+          <UBtn type="button" variant="ghost" @click="showCreateModal = false">
             Cancel
           </UBtn>
           <UBtn type="submit" :disabled="creating">
@@ -388,6 +408,8 @@
         </div>
       </form>
     </Modal>
+
+    <ConfirmHost />
 
     <!-- Toast notifications -->
     <Teleport to="body">
@@ -407,10 +429,11 @@
           <div
             v-for="t in toasts"
             :key="t.id"
-            class="pointer-events-auto flex items-center gap-3 pl-4 pr-3 py-3 rounded-xl shadow-xl ring-1 ring-black/5 dark:ring-white/10 backdrop-blur-sm max-w-xs relative overflow-hidden"
-            :class="{
-              'bg-white/95 dark:bg-gray-800/95': true,
-            }"
+            class="pointer-events-auto flex items-center gap-3 pl-4 pr-3 py-3 rounded-xl shadow-xl ring-1 ring-black/5 dark:ring-white/10 backdrop-blur-sm max-w-xs relative overflow-hidden bg-white/95 dark:bg-gray-800/95"
+            @mouseenter="toastPause(t.id)"
+            @mouseleave="toastResume(t.id)"
+            @focusin="toastPause(t.id)"
+            @focusout="toastResume(t.id)"
           >
             <!-- Icon -->
             <div
@@ -456,6 +479,7 @@
               }"
               :style="{
                 animation: `toast-progress ${t.duration}ms linear forwards`,
+                animationPlayState: t.paused ? 'paused' : 'running',
               }"
             />
           </div>
@@ -471,7 +495,12 @@ const api = useApi();
 const { user, logout } = useAuth();
 const darkMode = useDarkMode();
 const sidebar = useSidebar();
-const { toasts, dismiss: toastDismiss } = useToast();
+const {
+  toasts,
+  dismiss: toastDismiss,
+  pause: toastPause,
+  resume: toastResume,
+} = useToast();
 // darkMode.init() is called in app.vue so it works on all pages (including layout: false)
 
 // ─── Navigation data ──────────────────────────────────────
@@ -545,6 +574,7 @@ onUnmounted(() => {
 const {
   data: inboxes,
   pending,
+  error: inboxesError,
   refresh: refreshInboxes,
 } = useAsyncData("inboxes", () => api.getInboxes());
 

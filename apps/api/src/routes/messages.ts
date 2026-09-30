@@ -2,16 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { getEnv } from "@mailpocket/env";
 import { getDb, messages, inboxes } from "@mailpocket/db";
 import { createStorage } from "@mailpocket/storage";
-import {
-  eq,
-  desc,
-  and,
-  sql,
-  count,
-  gt,
-  lt,
-  inArray,
-} from "drizzle-orm";
+import { eq, desc, and, sql, count, gt, lt, inArray } from "drizzle-orm";
 import { authGuard } from "../middleware/auth.js";
 import {
   requireInboxRole,
@@ -63,6 +54,9 @@ function formatHeaderValue(value: unknown): string {
   }
   return JSON.stringify(value);
 }
+
+/** Most message ids a bulk endpoint accepts in one request. */
+const BULK_MAX = 1000;
 
 export function registerMessageRoutes(app: FastifyInstance) {
   const env = getEnv();
@@ -126,6 +120,7 @@ export function registerMessageRoutes(app: FastifyInstance) {
       page?: string;
       limit?: string;
       ruleId?: string;
+      idsOnly?: string;
     };
   }>(
     "/api/inboxes/:id/messages",
@@ -142,6 +137,7 @@ export function registerMessageRoutes(app: FastifyInstance) {
         page: pageStr = "1",
         limit: limitStr = "50",
         ruleId,
+        idsOnly,
       } = request.query;
 
       const page = clampInt(pageStr, 1, 1_000_000);
@@ -164,6 +160,17 @@ export function registerMessageRoutes(app: FastifyInstance) {
 
       const where = and(...conditions);
 
+      // "Select all N matching": ids only, capped at what the bulk endpoints accept
+      if (idsOnly === "1") {
+        const rows = await db
+          .select({ id: messages.id })
+          .from(messages)
+          .where(where)
+          .orderBy(desc(messages.createdAt))
+          .limit(BULK_MAX);
+        return { ids: rows.map((r) => r.id) };
+      }
+
       // Single query: total + unread count via conditional aggregate
       const [totals] = await db
         .select({
@@ -185,6 +192,12 @@ export function registerMessageRoutes(app: FastifyInstance) {
           isRead: messages.isRead,
           createdAt: messages.createdAt,
           textPreview: sql<string | null>`LEFT(${messages.text}, 150)`,
+          // Inspection signals, so the list can show them without opening rows
+          attachmentCount: sql<number>`COALESCE(jsonb_array_length(${messages.attachments}), 0)::int`,
+          spamScore: messages.spamScore,
+          bounceReason: sql<
+            string | null
+          >`(SELECT COALESCE(dl.smtp_response, dl.status) FROM delivery_logs dl WHERE dl.message_id = "messages"."id" AND dl.status IN ('bounced','failed','deferred') ORDER BY dl.created_at DESC LIMIT 1)`,
         })
         .from(messages)
         .where(where)
@@ -192,10 +205,22 @@ export function registerMessageRoutes(app: FastifyInstance) {
         .limit(limit)
         .offset(offset);
 
+      // Inbox-wide (ignores the active filters) so failures stay visible from any view
+      const [attention] = await db
+        .select({ n: count() })
+        .from(messages)
+        .where(
+          and(
+            eq(messages.inboxId, id),
+            inArray(messages.status, ["bounced", "failed"]),
+          ),
+        );
+
       return {
         messages: result,
         total: totals.total,
         unreadTotal: Number(totals.unreadTotal),
+        attentionTotal: attention.n,
         page,
         limit,
       };
@@ -483,6 +508,44 @@ export function registerMessageRoutes(app: FastifyInstance) {
     },
   );
 
+  // Delete a selection of messages in an inbox
+  app.post<{
+    Params: { id: string };
+    Body: { messageIds: string[] };
+  }>(
+    "/api/inboxes/:id/messages/delete",
+    { preHandler: [authGuard, requireUuidParams, requireInboxRole("editor")] },
+    async (request, reply) => {
+      const { id } = request.params;
+      const messageIds = request.body?.messageIds;
+
+      if (
+        !Array.isArray(messageIds) ||
+        messageIds.length === 0 ||
+        messageIds.length > BULK_MAX ||
+        !messageIds.every(isUuid)
+      ) {
+        return reply.status(400).send({
+          error: "messageIds must be 1-1000 message UUIDs",
+        });
+      }
+
+      const removed = await db
+        .delete(messages)
+        .where(and(eq(messages.inboxId, id), inArray(messages.id, messageIds)))
+        .returning({
+          rawKey: messages.rawKey,
+          attachments: messages.attachments,
+        });
+
+      for (const msg of removed) {
+        await removeStored(msg.rawKey, msg.attachments);
+      }
+
+      return { success: true, deleted: removed.length };
+    },
+  );
+
   // Delete all messages in an inbox
   app.delete<{ Params: { id: string } }>(
     "/api/inboxes/:id/messages",
@@ -613,6 +676,94 @@ export function registerMessageRoutes(app: FastifyInstance) {
         id: fwdMessageId,
         status: "queued",
         message: "Message forwarded and queued for delivery",
+      });
+    },
+  );
+
+  // ─── Resend a bounced / failed message ──────────────────
+  // Re-queues the original outbound message. The worker re-checks the
+  // suppression list and skips recipients it already delivered to.
+  app.post<{ Params: { id: string } }>(
+    "/api/messages/:id/resend",
+    {
+      preHandler: [authGuard, requireUuidParams, requireMessageRole("editor")],
+    },
+    async (request, reply) => {
+      const { id } = request.params;
+
+      const [message] = await db
+        .select()
+        .from(messages)
+        .where(eq(messages.id, id))
+        .limit(1);
+      if (!message) {
+        return reply.status(404).send({ error: "Message not found" });
+      }
+      if (
+        !message.rawKey.startsWith("outbound/") ||
+        !["bounced", "failed"].includes(message.status)
+      ) {
+        return reply
+          .status(400)
+          .send({ error: "Only bounced or failed messages can be resent" });
+      }
+
+      const recipients = [
+        ...new Set(
+          [
+            ...(message.to ?? []),
+            ...(message.cc ?? []),
+            ...(message.bcc ?? []),
+          ].map((r) => r.toLowerCase()),
+        ),
+      ];
+      const suppressed = await findSuppressed(
+        db,
+        request.user!.userId,
+        recipients,
+      );
+      const envelopeTo = recipients.filter((r) => !suppressed.has(r));
+      if (envelopeTo.length === 0) {
+        return reply.status(422).send({
+          error: "Every recipient is on your suppression list",
+          suppressedEmails: [...suppressed],
+        });
+      }
+
+      // Claim atomically so a double-click can't queue it twice
+      const claimed = await db
+        .update(messages)
+        .set({ status: "queued" })
+        .where(
+          and(
+            eq(messages.id, id),
+            inArray(messages.status, ["bounced", "failed"]),
+          ),
+        )
+        .returning({ id: messages.id });
+      if (claimed.length === 0) {
+        return reply
+          .status(409)
+          .send({ error: "Message is already being resent" });
+      }
+
+      const payload: OutboundEmailPayload = {
+        messageId: id,
+        userId: request.user!.userId,
+        from: message.from,
+        to: envelopeTo,
+        rawKey: message.rawKey,
+      };
+      // Fresh job id: the original job's id may still be held by BullMQ
+      await outboundQueue.add("send", payload, {
+        jobId: `${id}-resend-${Date.now()}`,
+      });
+
+      return reply.status(202).send({
+        id,
+        status: "queued",
+        message: "Message queued for redelivery",
+        ...(suppressed.size > 0 ? { suppressed: [...suppressed] } : {}),
       });
     },
   );
@@ -813,7 +964,7 @@ export function registerMessageRoutes(app: FastifyInstance) {
       if (
         !Array.isArray(messageIds) ||
         messageIds.length === 0 ||
-        messageIds.length > 1000 ||
+        messageIds.length > BULK_MAX ||
         !messageIds.every(isUuid)
       ) {
         return reply.status(400).send({

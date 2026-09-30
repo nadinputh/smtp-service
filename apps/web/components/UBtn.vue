@@ -9,10 +9,19 @@ const props = withDefaults(
       | "ghost"
       | "warning";
     size?: "xs" | "sm" | "md";
+    /** Render as a link instead of a button. */
+    to?: string | Record<string, unknown>;
+    /** Leading icon name (lucide:…). */
+    icon?: string;
+    /** Busy: disables the button and shows a spinner. */
+    loading?: boolean;
+    disabled?: boolean;
   }>(),
   {
     variant: "primary",
     size: "md",
+    loading: false,
+    disabled: false,
   },
 );
 
@@ -51,7 +60,22 @@ const classes = computed(() => {
 </script>
 
 <template>
-  <button :class="classes">
+  <NuxtLink v-if="to" :to="to" :class="classes">
+    <Icon v-if="icon" :name="icon" class="w-4 h-4" />
+    <slot />
+  </NuxtLink>
+  <button
+    v-else
+    :class="classes"
+    :disabled="disabled || loading"
+    :aria-busy="loading || undefined"
+  >
+    <Icon
+      v-if="loading"
+      name="lucide:loader-2"
+      class="w-4 h-4 animate-spin motion-reduce:animate-none"
+    />
+    <Icon v-else-if="icon" :name="icon" class="w-4 h-4" />
     <slot />
   </button>
 </template>

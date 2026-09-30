@@ -25,7 +25,10 @@
       </div>
 
       <!-- Initial loading -->
-      <div v-if="loading" class="text-center text-gray-500 dark:text-gray-400 py-20">
+      <div
+        v-if="loading"
+        class="text-center text-gray-500 dark:text-gray-400 py-20"
+      >
         Loading analytics...
       </div>
 
@@ -92,7 +95,11 @@
         <UBtn v-else @click="showInlineCreate = true">
           Create your first inbox
         </UBtn>
-        <p v-if="firstCreateError" role="alert" class="text-sm text-red-600 dark:text-red-400 mt-3">
+        <p
+          v-if="firstCreateError"
+          role="alert"
+          class="text-sm text-red-600 dark:text-red-400 mt-3"
+        >
           {{ firstCreateError }}
         </p>
       </div>
@@ -124,7 +131,9 @@
             >
               Delivered
             </p>
-            <p class="text-3xl font-bold text-green-600 dark:text-green-400 mt-1">
+            <p
+              class="text-3xl font-bold text-green-600 dark:text-green-400 mt-1"
+            >
               {{ animatedDelivered }}
             </p>
             <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -154,7 +163,7 @@
             >
               Received
             </p>
-            <p class="text-3xl font-bold text-indigo-600 dark:text-indigo-400 mt-1">
+            <p class="text-3xl font-bold text-gray-800 dark:text-gray-100 mt-1">
               {{ animatedReceived }}
             </p>
             <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -403,18 +412,20 @@
               :key="d.domain"
               class="flex items-center gap-3"
             >
-              <span class="text-xs text-gray-500 dark:text-gray-400 w-5 text-right">{{
-                idx + 1
-              }}</span>
+              <span
+                class="text-xs text-gray-500 dark:text-gray-400 w-5 text-right"
+                >{{ idx + 1 }}</span
+              >
               <div class="flex-1 min-w-0">
                 <div class="flex items-center justify-between mb-0.5">
                   <span
                     class="text-sm font-medium text-gray-700 dark:text-gray-300 truncate"
                     >{{ d.domain }}</span
                   >
-                  <span class="text-xs text-gray-500 dark:text-gray-400 shrink-0 ml-2">{{
-                    d.count
-                  }}</span>
+                  <span
+                    class="text-xs text-gray-500 dark:text-gray-400 shrink-0 ml-2"
+                    >{{ d.count }}</span
+                  >
                 </div>
                 <div
                   class="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-1.5"

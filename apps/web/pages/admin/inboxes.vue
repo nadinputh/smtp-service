@@ -7,7 +7,7 @@
         <h1 class="text-lg font-semibold text-gray-800 dark:text-gray-100">
           Inbox Management
         </h1>
-        <p class="text-sm text-gray-500 dark:text-gray-400">
+        <p class="text-sm text-gray-600 dark:text-gray-400">
           View and manage all inboxes across users
         </p>
       </div>
@@ -20,36 +20,32 @@
           v-model="search"
           type="text"
           placeholder="Search by name, email, or SMTP username..."
-          class="w-full max-w-sm px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+          aria-label="Search inboxes"
+          class="field max-w-sm"
           @input="debouncedFetch"
         />
       </div>
 
-      <div v-if="loading" class="text-gray-500 dark:text-gray-400">
-        Loading...
-      </div>
+      <p v-if="loading" role="status" class="text-gray-600 dark:text-gray-400">
+        Loading inboxes…
+      </p>
 
-      <div v-else-if="loadError" class="text-center py-12">
-        <Icon
-          name="lucide:alert-circle"
-          class="w-10 h-10 mx-auto mb-3 text-red-500"
-        />
-        <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-          Couldn't load inboxes
-        </p>
-        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-          Something went wrong fetching the inbox list.
-        </p>
-        <UBtn size="sm" @click="fetchInboxes">Retry</UBtn>
-      </div>
-
-      <div
-        v-else-if="!inboxesData?.data.length"
-        class="text-center text-gray-500 dark:text-gray-400 py-12"
+      <EmptyState
+        v-else-if="loadError"
+        icon="lucide:alert-circle"
+        title="Couldn't load inboxes"
       >
-        <Icon name="lucide:inbox" class="w-12 h-12 mx-auto mb-3 opacity-50" />
-        <p>No inboxes found</p>
-      </div>
+        Something went wrong fetching the inbox list.
+        <template #action>
+          <UBtn size="sm" @click="fetchInboxes">Retry</UBtn>
+        </template>
+      </EmptyState>
+
+      <EmptyState
+        v-else-if="!inboxesData?.data.length"
+        icon="lucide:inbox"
+        title="No inboxes found"
+      />
 
       <div v-else>
         <div
@@ -57,7 +53,7 @@
         >
           <table class="w-full text-sm text-left">
             <thead
-              class="bg-gray-50 dark:bg-gray-800 text-xs uppercase text-gray-500 dark:text-gray-400"
+              class="bg-gray-50 dark:bg-gray-800 text-xs uppercase text-gray-600 dark:text-gray-400"
             >
               <tr>
                 <th class="px-4 py-3">Inbox</th>
@@ -81,41 +77,34 @@
                   {{ inbox.name }}
                 </td>
                 <td
-                  class="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap"
+                  class="px-4 py-3 text-gray-600 dark:text-gray-400 whitespace-nowrap"
                 >
                   {{ inbox.ownerName || inbox.ownerEmail }}
                   <span
                     v-if="inbox.ownerName"
-                    class="block text-xs text-gray-500 dark:text-gray-400"
+                    class="block text-xs text-gray-600 dark:text-gray-400"
                   >
                     {{ inbox.ownerEmail }}
                   </span>
                 </td>
                 <td class="px-4 py-3 whitespace-nowrap">
-                  <span
-                    v-if="inbox.teamName"
-                    class="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                  >
-                    {{ inbox.teamName }}
-                  </span>
-                  <span v-else class="text-xs text-gray-500 dark:text-gray-400">
+                  <Badge v-if="inbox.teamName" tone="info">{{
+                    inbox.teamName
+                  }}</Badge>
+                  <span v-else class="text-xs text-gray-600 dark:text-gray-400">
                     —
                   </span>
                 </td>
                 <td
-                  class="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap font-mono text-xs"
+                  class="px-4 py-3 text-gray-600 dark:text-gray-400 whitespace-nowrap font-mono text-xs"
                 >
                   {{ inbox.smtpUsername }}
                 </td>
                 <td class="px-4 py-3 whitespace-nowrap">
-                  <span
-                    class="text-xs px-2 py-0.5 rounded-full font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
-                  >
-                    {{ inbox.messageCount }}
-                  </span>
+                  <Badge class="tabular-nums">{{ inbox.messageCount }}</Badge>
                 </td>
                 <td
-                  class="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap"
+                  class="px-4 py-3 text-gray-600 dark:text-gray-400 whitespace-nowrap"
                 >
                   {{ formatDate(inbox.createdAt) }}
                 </td>
@@ -123,7 +112,6 @@
                   <UBtn
                     variant="secondary"
                     size="xs"
-                    class="min-h-11"
                     @click="openEditModal(inbox)"
                   >
                     Edit
@@ -131,7 +119,7 @@
                   <UBtn
                     variant="danger"
                     size="xs"
-                    class="ml-2 min-h-11"
+                    class="ml-2"
                     @click="confirmDelete(inbox)"
                   >
                     Delete
@@ -147,7 +135,7 @@
           v-if="inboxesData.pagination.pages > 1"
           class="flex items-center justify-between pt-4"
         >
-          <p class="text-xs text-gray-500 dark:text-gray-400">
+          <p class="text-xs text-gray-600 dark:text-gray-400">
             Page {{ inboxesData.pagination.page }} of
             {{ inboxesData.pagination.pages }} ({{
               inboxesData.pagination.total
@@ -196,7 +184,7 @@
           v-model="editForm.name"
           type="text"
           placeholder="Inbox name"
-          class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-3"
+          class="field mb-3"
         />
         <label
           for="edit-inbox-owner-search"
@@ -205,184 +193,146 @@
           Owner
         </label>
         <div class="relative mb-3">
-              <!-- Selected owner chip -->
-              <div
-                v-if="selectedOwner"
-                class="flex items-center gap-2 px-3 py-2 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg"
-              >
-                <div
-                  class="w-7 h-7 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xs font-semibold shrink-0"
-                >
-                  {{
-                    (selectedOwner.name || selectedOwner.email)
-                      .charAt(0)
-                      .toUpperCase()
-                  }}
-                </div>
-                <div class="min-w-0 flex-1">
-                  <p
-                    class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate"
-                  >
-                    {{ selectedOwner.name || selectedOwner.email }}
-                  </p>
-                  <p
-                    v-if="selectedOwner.name"
-                    class="text-xs font-medium text-indigo-700 dark:text-indigo-300 truncate"
-                  >
-                    {{ selectedOwner.email }}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  aria-label="Clear selected owner"
-                  class="text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-                  @click="clearSelectedOwner"
-                >
-                  <Icon name="lucide:x" class="w-4 h-4" />
-                </button>
-              </div>
-
-              <!-- Search input -->
-              <div v-else class="relative">
-                <Icon
-                  name="lucide:search"
-                  class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400"
-                />
-                <input
-                  id="edit-inbox-owner-search"
-                  v-model="ownerSearchQuery"
-                  type="text"
-                  placeholder="Search by name or email..."
-                  class="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  @input="debouncedOwnerSearch"
-                  @focus="showOwnerResults = true"
-                  @blur="handleOwnerBlur"
-                />
-              </div>
-
-              <!-- Search results dropdown -->
-              <div
-                v-if="
-                  showOwnerResults &&
-                  !selectedOwner &&
-                  ownerSearchQuery.length >= 2
-                "
-                class="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto"
-              >
-                <div
-                  v-if="ownerSearching"
-                  class="px-3 py-3 text-sm text-gray-500 dark:text-gray-400 text-center"
-                >
-                  Searching...
-                </div>
-                <div
-                  v-else-if="!ownerSearchResults.length"
-                  class="px-3 py-3 text-sm text-gray-500 dark:text-gray-400 text-center"
-                >
-                  No users found
-                </div>
-                <div
-                  v-if="ownerNameCollision"
-                  class="px-3 py-2 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-100 dark:border-amber-800"
-                >
-                  Multiple people share this name — check the email before
-                  choosing.
-                </div>
-                <button
-                  v-for="user in ownerSearchResults"
-                  :key="user.id"
-                  type="button"
-                  class="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors text-left"
-                  @click="selectOwner(user)"
-                >
-                  <div
-                    class="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-sm font-semibold shrink-0"
-                  >
-                    {{ (user.name || user.email).charAt(0).toUpperCase() }}
-                  </div>
-                  <div class="min-w-0 flex-1">
-                    <p
-                      class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate"
-                    >
-                      {{ user.name || user.email }}
-                    </p>
-                    <p
-                      v-if="user.name"
-                      class="text-xs font-medium text-gray-600 dark:text-gray-300 truncate"
-                    >
-                      {{ user.email }}
-                    </p>
-                  </div>
-                </button>
-              </div>
+          <!-- Selected owner chip -->
+          <div
+            v-if="selectedOwner"
+            class="flex items-center gap-2 px-3 py-2 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg"
+          >
+            <div
+              class="w-7 h-7 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xs font-semibold shrink-0"
+            >
+              {{
+                (selectedOwner.name || selectedOwner.email)
+                  .charAt(0)
+                  .toUpperCase()
+              }}
             </div>
-            <label
-              for="edit-inbox-team"
-              class="block text-sm text-gray-600 dark:text-gray-400 mb-1"
-            >
-              Team (optional)
-            </label>
-            <select
-              id="edit-inbox-team"
-              v-model="editForm.teamId"
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-3"
-            >
-              <option value="">No team</option>
-              <option v-for="team in allTeams" :key="team.id" :value="team.id">
-                {{ team.name }}
-              </option>
-            </select>
-            <p
-              v-if="editError"
-              role="alert"
-              class="text-sm text-red-600 dark:text-red-400 mb-2"
-            >
-              {{ editError }}
-            </p>
-            <div class="flex justify-end gap-2 mt-4">
-              <UBtn type="button" variant="ghost" @click="editInbox = null">
-                Cancel
-              </UBtn>
-              <UBtn type="submit" :disabled="saving">
-                {{ saving ? "Saving..." : "Save" }}
-              </UBtn>
+            <div class="min-w-0 flex-1">
+              <p
+                class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate"
+              >
+                {{ selectedOwner.name || selectedOwner.email }}
+              </p>
+              <p
+                v-if="selectedOwner.name"
+                class="text-xs font-medium text-indigo-700 dark:text-indigo-300 truncate"
+              >
+                {{ selectedOwner.email }}
+              </p>
             </div>
-      </form>
-    </Modal>
+            <button
+              type="button"
+              aria-label="Clear selected owner"
+              class="text-gray-600 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              @click="clearSelectedOwner"
+            >
+              <Icon name="lucide:x" class="w-4 h-4" />
+            </button>
+          </div>
 
-    <!-- Delete Confirmation -->
-    <Modal
-      v-if="deleteTarget"
-      title="Delete Inbox"
-      title-class="mb-2"
-      @close="deleteTarget = null"
-    >
-      <p class="text-sm text-gray-600 dark:text-gray-400 mb-1">
-        Are you sure you want to delete
-        <strong>{{ deleteTarget.name }}</strong
-        >?
-      </p>
-      <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">
-        This will permanently delete all {{ deleteTarget.messageCount }}
-        messages in this inbox. This cannot be undone.
-      </p>
-      <p
-        v-if="deleteError"
-        role="alert"
-        class="text-sm text-red-600 dark:text-red-400 mb-2"
-      >
-        {{ deleteError }}
-      </p>
-      <div class="flex justify-end gap-2">
-        <UBtn variant="ghost" @click="deleteTarget = null"> Cancel </UBtn>
-        <UBtn
-          variant="danger-filled"
-          :disabled="deleting"
-          @click="handleDelete"
+          <!-- Search input -->
+          <div v-else class="relative">
+            <Icon
+              name="lucide:search"
+              class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600 dark:text-gray-400"
+            />
+            <input
+              id="edit-inbox-owner-search"
+              v-model="ownerSearchQuery"
+              type="text"
+              placeholder="Search by name or email..."
+              class="field pl-9"
+              @input="debouncedOwnerSearch"
+              @focus="showOwnerResults = true"
+              @blur="handleOwnerBlur"
+            />
+          </div>
+
+          <!-- Search results dropdown -->
+          <div
+            v-if="
+              showOwnerResults && !selectedOwner && ownerSearchQuery.length >= 2
+            "
+            class="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto"
+          >
+            <div
+              v-if="ownerSearching"
+              class="px-3 py-3 text-sm text-gray-600 dark:text-gray-400 text-center"
+            >
+              Searching...
+            </div>
+            <div
+              v-else-if="!ownerSearchResults.length"
+              class="px-3 py-3 text-sm text-gray-600 dark:text-gray-400 text-center"
+            >
+              No users found
+            </div>
+            <div
+              v-if="ownerNameCollision"
+              class="px-3 py-2 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-100 dark:border-amber-800"
+            >
+              Multiple people share this name — check the email before choosing.
+            </div>
+            <button
+              v-for="user in ownerSearchResults"
+              :key="user.id"
+              type="button"
+              class="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors text-left"
+              @click="selectOwner(user)"
+            >
+              <div
+                class="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-sm font-semibold shrink-0"
+              >
+                {{ (user.name || user.email).charAt(0).toUpperCase() }}
+              </div>
+              <div class="min-w-0 flex-1">
+                <p
+                  class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate"
+                >
+                  {{ user.name || user.email }}
+                </p>
+                <p
+                  v-if="user.name"
+                  class="text-xs font-medium text-gray-600 dark:text-gray-300 truncate"
+                >
+                  {{ user.email }}
+                </p>
+              </div>
+            </button>
+          </div>
+        </div>
+        <label
+          for="edit-inbox-team"
+          class="block text-sm text-gray-600 dark:text-gray-400 mb-1"
         >
-          {{ deleting ? "Deleting..." : "Delete" }}
-        </UBtn>
-      </div>
+          Team (optional)
+        </label>
+        <select
+          id="edit-inbox-team"
+          v-model="editForm.teamId"
+          class="field mb-3"
+        >
+          <option value="">No team</option>
+          <option v-for="team in allTeams" :key="team.id" :value="team.id">
+            {{ team.name }}
+          </option>
+        </select>
+        <p
+          v-if="editError"
+          role="alert"
+          class="text-sm text-red-600 dark:text-red-400 mb-2"
+        >
+          {{ editError }}
+        </p>
+        <div class="flex justify-end gap-2 mt-4">
+          <UBtn type="button" variant="ghost" @click="editInbox = null">
+            Cancel
+          </UBtn>
+          <UBtn type="submit" :disabled="saving">
+            {{ saving ? "Saving..." : "Save" }}
+          </UBtn>
+        </div>
+      </form>
     </Modal>
   </div>
 </template>
@@ -562,36 +512,24 @@ async function handleEdit() {
 }
 
 // ─── Delete ────────────────────────────────────────────────
-const deleteTarget = ref<AdminInbox | null>(null);
-const deleteError = ref("");
-const deleting = ref(false);
+const { confirm } = useConfirm();
 
-function confirmDelete(inbox: AdminInbox) {
-  deleteTarget.value = inbox;
-  deleteError.value = "";
-}
-
-async function handleDelete() {
-  if (!deleteTarget.value) return;
-  deleting.value = true;
-  deleteError.value = "";
+async function confirmDelete(inbox: AdminInbox) {
+  const ok = await confirm({
+    title: "Delete this inbox?",
+    message: `“${inbox.name}” and all ${inbox.messageCount} of its messages will be permanently deleted. This can't be undone.`,
+    confirmLabel: "Delete inbox",
+    danger: true,
+  });
+  if (!ok) return;
   try {
-    await api.deleteAdminInbox(deleteTarget.value.id);
-    toast.success(`Inbox "${deleteTarget.value.name}" deleted`);
-    deleteTarget.value = null;
+    await api.deleteAdminInbox(inbox.id);
+    toast.success(`Inbox "${inbox.name}" deleted`);
     await fetchInboxes();
   } catch (e: any) {
-    deleteError.value = e?.data?.error || "Failed to delete inbox";
-  } finally {
-    deleting.value = false;
+    toast.error(e?.data?.error || "Couldn't delete the inbox.");
   }
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
+const formatDate = formatDateTime;
 </script>

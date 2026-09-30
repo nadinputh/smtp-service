@@ -14,6 +14,7 @@ export default defineNuxtConfig({
   app: {
     baseURL: process.env.NUXT_APP_BASE_URL || "/admin/smtp",
     head: {
+      htmlAttrs: { lang: "en" },
       title: "MailPocket",
       titleTemplate: "%s — MailPocket",
       link: [
