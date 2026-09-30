@@ -25,4 +25,6 @@ export async function closeDb() {
 }
 
 export * from "./schema/index.js";
+export * from "./secret-box.js";
+export * from "./sender-domain.js";
 export { schema };

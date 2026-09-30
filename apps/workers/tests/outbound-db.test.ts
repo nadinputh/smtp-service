@@ -14,6 +14,7 @@ import {
   domains,
   suppressions,
   deliveryLogs,
+  encryptSecret,
 } from "@mailpocket/db";
 import { createStorage } from "@mailpocket/storage";
 import { eq } from "drizzle-orm";
@@ -163,6 +164,97 @@ describe.skipIf(!url)("outbound worker (database)", () => {
     expect(logs.filter((l) => l.recipient === to[1])).toHaveLength(1);
   });
 
+  describe("production sender-domain enforcement", () => {
+    const verifiedDomain = `prod-${suffix}.example.com`;
+    const prodProcessor = createOutboundProcessor(
+      { APP_MODE: "production", TRACKING_BASE_URL: "http://localhost" } as any,
+      db,
+      storage,
+      { publish: async () => 0 } as any,
+    );
+
+    beforeAll(async () => {
+      await db.insert(domains).values({
+        userId: owner,
+        domain: verifiedDomain,
+        dkimPrivateKey: "KEY",
+        verified: true,
+      });
+    });
+
+    it("bounces (no retry) when the sender domain is not verified", async () => {
+      const { messageId, rawKey } = await queueMessage(["r@example.com"]);
+      // Permanent failure: resolves instead of throwing, so BullMQ won't retry.
+      await prodProcessor({
+        data: {
+          messageId,
+          userId: owner,
+          from: "a@unverified.example.net",
+          to: ["r@example.com"],
+          rawKey,
+          requireVerifiedSender: true,
+        },
+        attemptsMade: 0,
+      } as any);
+      const [msg] = await db
+        .select({ status: messages.status })
+        .from(messages)
+        .where(eq(messages.id, messageId));
+      const [log] = await db
+        .select({
+          status: deliveryLogs.status,
+          smtpCode: deliveryLogs.smtpCode,
+          response: deliveryLogs.smtpResponse,
+        })
+        .from(deliveryLogs)
+        .where(eq(deliveryLogs.messageId, messageId));
+      expect(msg.status).toBe("bounced");
+      expect(log).toMatchObject({ status: "bounced", smtpCode: 550 });
+      expect(log.response).toContain("not verified");
+    });
+
+    it("leaves server-originated mail (no flag) alone", async () => {
+      const { messageId, rawKey } = await queueMessage([
+        "r@nonexistent.invalid",
+      ]);
+      // Reaches the real delivery attempt instead of the 550 sender bounce.
+      await prodProcessor({
+        data: {
+          messageId,
+          from: "noreply@mailpocket.local",
+          to: ["r@nonexistent.invalid"],
+          rawKey,
+        },
+        attemptsMade: 0,
+      } as any).catch(() => {});
+      const [log] = await db
+        .select({ smtpCode: deliveryLogs.smtpCode })
+        .from(deliveryLogs)
+        .where(eq(deliveryLogs.messageId, messageId));
+      expect(log.smtpCode).not.toBe(550);
+    });
+
+    it("bounces when only another account has verified the domain", async () => {
+      const { messageId, rawKey } = await queueMessage(["r@example.com"]);
+      await prodProcessor({
+        data: {
+          messageId,
+          userId: other,
+          from: `a@${verifiedDomain}`,
+          to: ["r@example.com"],
+          rawKey,
+          requireVerifiedSender: true,
+        },
+        attemptsMade: 0,
+      } as any);
+      const [msg] = await db
+        .select({ status: messages.status })
+        .from(messages)
+        .where(eq(messages.id, messageId));
+      expect(msg.status).toBe("bounced");
+    });
+  });
+
   describe("getDkimConfig", () => {
     const domain = `dkim-${suffix}.example.com`;
 
@@ -180,14 +272,62 @@ describe.skipIf(!url)("outbound worker (database)", () => {
     });
 
     it("returns the owner's verified domain", async () => {
-      expect(await getDkimConfig(db, owner, domain)).toMatchObject({
-        domainName: domain,
-        privateKey: "KEY",
-      });
+      expect(await getDkimConfig(db, domain, { ownerId: owner })).toMatchObject(
+        { domainName: domain, privateKey: "KEY" },
+      );
     });
 
     it("ignores another account's or unverified claim", async () => {
-      expect(await getDkimConfig(db, other, domain)).toBeNull();
+      expect(await getDkimConfig(db, domain, { ownerId: other })).toBeNull();
+    });
+
+    it("without an owner uses whichever account verified the domain", async () => {
+      expect((await getDkimConfig(db, domain))?.privateKey).toBe("KEY");
+    });
+
+    it("covers a subdomain via the nearest verified parent", async () => {
+      const cfg = await getDkimConfig(db, `mail.eu.${domain}`, {
+        ownerId: owner,
+      });
+      expect(cfg?.domainName).toBe(domain);
+      expect(
+        await getDkimConfig(db, `mail.eu.${domain}`, { ownerId: other }),
+      ).toBeNull();
+    });
+
+    it("prefers a more specific verified subdomain over the parent", async () => {
+      const sub = `special.${domain}`;
+      await db.insert(domains).values({
+        userId: other,
+        domain: sub,
+        dkimPrivateKey: "SUBKEY",
+        verified: true,
+      });
+      // The parent's owner is not covered once another account verified the subdomain.
+      expect(await getDkimConfig(db, sub, { ownerId: owner })).toBeNull();
+      expect(
+        (await getDkimConfig(db, sub, { ownerId: other }))?.privateKey,
+      ).toBe("SUBKEY");
+    });
+
+    it("decrypts with the current or previous secret, and refuses without", async () => {
+      const current = "c".repeat(32);
+      const previous = "p".repeat(32);
+      const encDomain = `enc-${suffix}.example.com`;
+      await db.insert(domains).values({
+        userId: owner,
+        domain: encDomain,
+        dkimPrivateKey: encryptSecret("PEM-BODY", previous),
+        verified: true,
+      });
+      const cfg = await getDkimConfig(db, encDomain, {
+        ownerId: owner,
+        secrets: [current, previous],
+      });
+      expect(cfg?.privateKey).toBe("PEM-BODY");
+      await expect(
+        getDkimConfig(db, encDomain, { ownerId: owner }),
+      ).rejects.toThrow(/DKIM_ENCRYPTION_KEY/);
     });
   });
 });

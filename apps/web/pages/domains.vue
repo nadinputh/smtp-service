@@ -130,8 +130,8 @@
                     <div class="max-w-2xl space-y-4">
                       <p class="text-xs text-gray-500 dark:text-gray-400">
                         Publish these two TXT records with your DNS provider,
-                        then re-check. DNS changes can take anywhere from a
-                        few minutes to 24&ndash;48 hours to propagate.
+                        then re-check. DNS changes can take anywhere from a few
+                        minutes to 24&ndash;48 hours to propagate.
                       </p>
 
                       <div
@@ -144,11 +144,15 @@
                         >
                           {{ rec.label }}
                         </p>
-                        <div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
+                        <div
+                          class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs"
+                        >
                           <span class="text-gray-500 dark:text-gray-400 pt-0.5">
                             Type
                           </span>
-                          <code class="text-gray-800 dark:text-gray-200">TXT</code>
+                          <code class="text-gray-800 dark:text-gray-200"
+                            >TXT</code
+                          >
 
                           <span class="text-gray-500 dark:text-gray-400 pt-0.5">
                             Host
@@ -166,7 +170,9 @@
                                   ? `${rec.label} host copied`
                                   : `Copy ${rec.label} host`
                               "
-                              @click="copy(rec.name, `${d.id}:${rec.label}:name`)"
+                              @click="
+                                copy(rec.name, `${d.id}:${rec.label}:name`)
+                              "
                             >
                               <Icon
                                 :name="
@@ -195,7 +201,9 @@
                                   ? `${rec.label} value copied`
                                   : `Copy ${rec.label} value`
                               "
-                              @click="copy(rec.value, `${d.id}:${rec.label}:value`)"
+                              @click="
+                                copy(rec.value, `${d.id}:${rec.label}:value`)
+                              "
                             >
                               <Icon
                                 :name="
@@ -246,6 +254,11 @@
                             Verified at
                             {{ formatTime(lastCheck[d.id]!.checkedAt) }}.
                           </p>
+                          <p v-if="!lastCheck[d.id]!.spf.ok" class="mt-1">
+                            SPF: {{ lastCheck[d.id]!.spf.message }}. Mail can
+                            still be signed, but delivery is more reliable once
+                            SPF is published.
+                          </p>
                         </div>
                       </div>
 
@@ -256,7 +269,11 @@
                         @click="handleVerify(d)"
                       >
                         <Icon name="lucide:refresh-cw" class="w-3.5 h-3.5" />
-                        {{ verifying[d.id] ? "Checking..." : "Re-check verification" }}
+                        {{
+                          verifying[d.id]
+                            ? "Checking..."
+                            : "Re-check verification"
+                        }}
                       </UBtn>
                     </div>
                   </td>
@@ -368,21 +385,11 @@ async function fetchDomains() {
 
 onMounted(fetchDomains);
 
-// ─── DNS records (derived, same formula the API uses to build them) ───
+// ─── DNS records (built by the API, the single source of truth) ───
 function dnsRecordsFor(d: Domain) {
   return [
-    {
-      label: "DKIM",
-      name: `${d.dkimSelector}._domainkey.${d.domain}`,
-      value: `v=DKIM1; k=rsa; p=${d.dkimPublicKey}`,
-      note: "",
-    },
-    {
-      label: "SPF",
-      name: d.domain,
-      value: "v=spf1 ip4:<YOUR_SERVER_IP> -all",
-      note: "Replace <YOUR_SERVER_IP> with your server's public IP address before publishing.",
-    },
+    { label: "DKIM", ...d.dnsRecords.dkim, note: "" },
+    { label: "SPF", ...d.dnsRecords.spf, note: d.dnsRecords.spf.note ?? "" },
   ];
 }
 
@@ -433,7 +440,10 @@ function copy(text: string, field: string) {
 // ─── Verify ─────────────────────────────────────────────────
 const verifying = reactive<Record<string, boolean>>({});
 const lastCheck = ref<
-  Record<string, { errors: string[]; checkedAt: Date }>
+  Record<
+    string,
+    { errors: string[]; spf: { ok: boolean; message: string }; checkedAt: Date }
+  >
 >({});
 
 async function handleVerify(d: Domain) {
@@ -442,7 +452,11 @@ async function handleVerify(d: Domain) {
     const result = await api.verifyDomain(d.id);
     lastCheck.value = {
       ...lastCheck.value,
-      [d.id]: { errors: result.errors, checkedAt: new Date() },
+      [d.id]: {
+        errors: result.errors,
+        spf: result.spf,
+        checkedAt: new Date(),
+      },
     };
     if (result.verified) {
       d.verified = true;
@@ -502,7 +516,9 @@ async function handleDelete() {
   deleteError.value = "";
   try {
     await api.deleteDomain(deleteTarget.value.id);
-    domains.value = domains.value.filter((x) => x.id !== deleteTarget.value!.id);
+    domains.value = domains.value.filter(
+      (x) => x.id !== deleteTarget.value!.id,
+    );
     toast.success(`${deleteTarget.value.domain} deleted`);
     deleteTarget.value = null;
   } catch (e: any) {

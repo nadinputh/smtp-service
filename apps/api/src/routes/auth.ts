@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
-import { getEnv } from "@mailpocket/env";
-import { getDb, users, passwordResets } from "@mailpocket/db";
+import { getEnv, systemEmailFrom } from "@mailpocket/env";
+import { getDb, users, passwordResets, apiKeys } from "@mailpocket/db";
 import { eq, and, isNull, gt } from "drizzle-orm";
 import { createStorage } from "@mailpocket/storage";
 import { createOutboundQueue, createRedisConnection } from "@mailpocket/queue";
@@ -634,6 +634,8 @@ export function registerAuthRoutes(app: FastifyInstance) {
           updatedAt: new Date(),
         })
         .where(eq(users.id, user.id));
+      // A key may be what leaked: like sessions, they end with the password.
+      await db.delete(apiKeys).where(eq(apiKeys.userId, user.id));
 
       // Other sessions are now invalid; hand this one a fresh token so the
       // user isn't logged out of the device they just changed it on.
@@ -687,7 +689,7 @@ export function registerAuthRoutes(app: FastifyInstance) {
         storage,
         outboundQueue,
         systemInboxId: systemInbox.id,
-        from: "noreply@mailpocket.local",
+        from: systemEmailFrom(env),
         to: user.email,
         subject: "Reset your MailPocket password",
         text: `We got a request to reset your MailPocket password. This link expires in 1 hour:\n\n${resetUrl}\n\nIf you didn't request this, you can ignore this email.`,
@@ -755,6 +757,7 @@ export function registerAuthRoutes(app: FastifyInstance) {
         updatedAt: new Date(),
       })
       .where(eq(users.id, reset.userId));
+    await db.delete(apiKeys).where(eq(apiKeys.userId, reset.userId));
 
     // Any other outstanding reset links for this account are now void.
     await db

@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { z } from "zod";
 
 const envSchema = z
@@ -41,6 +42,25 @@ const envSchema = z
     // Auth
     JWT_SECRET: z.string().min(16),
 
+    // Encrypts DKIM private keys at rest (AES-256-GCM). Required in
+    // production; generate with `openssl rand -base64 32`.
+    DKIM_ENCRYPTION_KEY: z.string().min(32).optional(),
+    // Set while rotating DKIM_ENCRYPTION_KEY: the old value, so keys
+    // encrypted with it stay readable and are re-encrypted on API start.
+    DKIM_ENCRYPTION_KEY_PREVIOUS: z.string().min(32).optional(),
+
+    // From address for server-originated mail (password reset, forwards).
+    // In production it must be on a domain verified under Domains, so the
+    // mail is DKIM-signed and can be delivered.
+    SYSTEM_EMAIL_FROM: z.email().optional(),
+
+    // Public IP of this relay, published in the SPF record and checked by
+    // domain verification.
+    SENDING_IP: z
+      .string()
+      .refine((v) => isIP(v) !== 0, "must be an IPv4 or IPv6 address")
+      .optional(),
+
     // OAuth2 PKCE
     OAUTH2_ENABLED: z
       .string()
@@ -79,6 +99,20 @@ const envSchema = z
     RATE_LIMIT_MAX: z.coerce.number().int().positive().default(100),
   })
   .superRefine((data, ctx) => {
+    if (data.APP_MODE === "production" && !data.SYSTEM_EMAIL_FROM) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["SYSTEM_EMAIL_FROM"],
+        message: "SYSTEM_EMAIL_FROM is required when APP_MODE=production",
+      });
+    }
+    if (data.APP_MODE === "production" && !data.DKIM_ENCRYPTION_KEY) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["DKIM_ENCRYPTION_KEY"],
+        message: "DKIM_ENCRYPTION_KEY is required when APP_MODE=production",
+      });
+    }
     if (data.STORAGE_DRIVER === "s3") {
       if (!data.MINIO_ACCESS_KEY) {
         ctx.addIssue({
@@ -117,3 +151,8 @@ export function getEnv(): Env {
 }
 
 export { envSchema };
+
+/** From address for server-originated mail. */
+export function systemEmailFrom(env: Pick<Env, "SYSTEM_EMAIL_FROM">): string {
+  return env.SYSTEM_EMAIL_FROM ?? "noreply@mailpocket.local";
+}

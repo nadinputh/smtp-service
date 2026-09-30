@@ -27,6 +27,7 @@ import {
   type ParsedRecipient,
 } from "../lib/address.js";
 import { findSuppressed } from "../lib/suppression.js";
+import { senderDomainError } from "../lib/sender-domain.js";
 
 interface SendBody {
   from: string;
@@ -194,6 +195,16 @@ export function registerSendRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Inbox not found" });
       }
 
+      const senderError = await senderDomainError(
+        db,
+        env.APP_MODE,
+        request.user!.userId,
+        from,
+      );
+      if (senderError) {
+        return reply.status(422).send({ error: senderError });
+      }
+
       // Resolve template if provided
       let subject = rawSubject;
       let text = rawText;
@@ -354,6 +365,7 @@ export function registerSendRoutes(app: FastifyInstance) {
         from,
         to: envelopeTo,
         rawKey,
+        requireVerifiedSender: true,
       };
 
       await outboundQueue.add("send", payload, {
@@ -422,6 +434,16 @@ export function registerSendRoutes(app: FastifyInstance) {
       );
       if (!hasMinRole(mimeInboxRole, "editor")) {
         return reply.status(404).send({ error: "Inbox not found" });
+      }
+
+      const senderError = await senderDomainError(
+        db,
+        env.APP_MODE,
+        request.user!.userId,
+        from,
+      );
+      if (senderError) {
+        return reply.status(422).send({ error: senderError });
       }
 
       const toEntries = parseRecipients(splitAddressList(to));
@@ -535,6 +557,7 @@ export function registerSendRoutes(app: FastifyInstance) {
         from,
         to: envelopeTo,
         rawKey,
+        requireVerifiedSender: true,
       };
 
       await outboundQueue.add("send", payload, {
@@ -615,6 +638,16 @@ export function registerSendRoutes(app: FastifyInstance) {
       );
       if (!hasMinRole(batchInboxRole, "editor")) {
         return reply.status(404).send({ error: "Inbox not found" });
+      }
+
+      const senderError = await senderDomainError(
+        db,
+        env.APP_MODE,
+        request.user!.userId,
+        from,
+      );
+      if (senderError) {
+        return reply.status(422).send({ error: senderError });
       }
 
       // Resolve template if provided
@@ -744,6 +777,7 @@ export function registerSendRoutes(app: FastifyInstance) {
             from,
             to: [recipient.email],
             rawKey,
+            requireVerifiedSender: true,
           } satisfies OutboundEmailPayload,
           {
             jobId: messageId,

@@ -26,6 +26,12 @@ export interface OutboundEmailPayload {
   from: string;
   to: string[];
   rawKey: string;
+  /**
+   * The sender is a user-chosen From address: in production the worker only
+   * relays it if that domain is verified by `userId`. Unset for
+   * server-originated mail (password reset, forward), which uses a fixed From.
+   */
+  requireVerifiedSender?: boolean;
 }
 
 export interface CleanupPayload {

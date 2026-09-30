@@ -10,6 +10,7 @@ import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { FastifyAdapter } from "@bull-board/fastify";
 import { getEnv } from "@mailpocket/env";
 import { getDb } from "@mailpocket/db";
+import { encryptPlaintextDkimKeys } from "./lib/dkim-encryption.js";
 import {
   createIncomingQueue,
   createOutboundQueue,
@@ -97,6 +98,23 @@ app.get("/health", { config: { rateLimit: false } }, async () => {
     return { status: "degraded", error: err.message };
   }
 });
+
+// ─── DKIM key encryption ──────────────────────────────────
+// Encrypts keys stored before DKIM_ENCRYPTION_KEY was set, and re-encrypts
+// keys still under DKIM_ENCRYPTION_KEY_PREVIOUS after a rotation. Idempotent, so
+// a failure here is retried on the next boot.
+if (env.DKIM_ENCRYPTION_KEY) {
+  try {
+    const n = await encryptPlaintextDkimKeys(getDb(env.DATABASE_URL), {
+      current: env.DKIM_ENCRYPTION_KEY,
+      previous: env.DKIM_ENCRYPTION_KEY_PREVIOUS,
+    });
+    if (n)
+      app.log.info(`Encrypted ${n} DKIM private key(s) with the current key`);
+  } catch (err) {
+    app.log.warn({ err }, "Could not encrypt existing DKIM private keys");
+  }
+}
 
 // ─── Bull Board (queue dashboard) ─────────────────────────
 const bullBoardAdapter = new FastifyAdapter();

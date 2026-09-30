@@ -3,10 +3,7 @@ import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { getDb, messages } from "@mailpocket/db";
 import type { StorageClient } from "@mailpocket/storage";
-import {
-  type OutboundEmailPayload,
-  type Queue,
-} from "@mailpocket/queue";
+import { type OutboundEmailPayload, type Queue } from "@mailpocket/queue";
 
 /**
  * Sends a one-off transactional email (password reset, etc.) through the
@@ -24,7 +21,17 @@ export async function sendSystemEmail(opts: {
   text: string;
   html: string;
 }) {
-  const { db, storage, outboundQueue, systemInboxId, from, to, subject, text, html } = opts;
+  const {
+    db,
+    storage,
+    outboundQueue,
+    systemInboxId,
+    from,
+    to,
+    subject,
+    text,
+    html,
+  } = opts;
 
   const mail = new MailComposer({ from, to, subject, text, html });
   const rawBuffer = await new Promise<Buffer>((resolve, reject) => {

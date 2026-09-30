@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { getEnv } from "@mailpocket/env";
+import { getEnv, systemEmailFrom } from "@mailpocket/env";
 import { getDb, messages, inboxes } from "@mailpocket/db";
 import { createStorage } from "@mailpocket/storage";
 import { eq, desc, and, sql, count, gt, lt, inArray } from "drizzle-orm";
@@ -15,6 +15,7 @@ import { clampInt } from "../lib/validate.js";
 import { buildMessageConditions } from "../lib/message-filters.js";
 import { attachmentHeaders } from "../lib/attachment.js";
 import { findSuppressed } from "../lib/suppression.js";
+import { senderDomainError } from "../lib/sender-domain.js";
 import { simpleParser } from "mailparser";
 import MailComposer from "nodemailer/lib/mail-composer/index.js";
 import { randomUUID } from "node:crypto";
@@ -612,7 +613,7 @@ export function registerMessageRoutes(app: FastifyInstance) {
       const rawBuffer = await storage.getObjectAsBuffer(message.rawKey);
 
       // Build a forwarding MIME envelope
-      const fromAddr = `forwarded@${env.API_HOST !== "0.0.0.0" ? env.API_HOST : "mailpocket.local"}`;
+      const fromAddr = systemEmailFrom(env);
       const fwdSubject = `[Fwd] ${message.subject ?? "(no subject)"}`;
 
       const mail = new MailComposer({
@@ -730,6 +731,16 @@ export function registerMessageRoutes(app: FastifyInstance) {
         });
       }
 
+      const senderError = await senderDomainError(
+        db,
+        env.APP_MODE,
+        request.user!.userId,
+        message.from,
+      );
+      if (senderError) {
+        return reply.status(422).send({ error: senderError });
+      }
+
       // Claim atomically so a double-click can't queue it twice
       const claimed = await db
         .update(messages)
@@ -753,6 +764,7 @@ export function registerMessageRoutes(app: FastifyInstance) {
         from: message.from,
         to: envelopeTo,
         rawKey: message.rawKey,
+        requireVerifiedSender: true,
       };
       // Fresh job id: the original job's id may still be held by BullMQ
       await outboundQueue.add("send", payload, {

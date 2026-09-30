@@ -7,6 +7,7 @@ import {
   messages,
   teams,
   deliveryLogs,
+  apiKeys,
 } from "@mailpocket/db";
 import { eq, ilike, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
@@ -269,6 +270,7 @@ export function registerAdminRoutes(app: FastifyInstance) {
       if (!updated) {
         return reply.status(404).send({ error: "User not found" });
       }
+      await db.delete(apiKeys).where(eq(apiKeys.userId, updated.id));
 
       return { success: true };
     },

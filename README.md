@@ -124,6 +124,10 @@ Services:
 | ----------------------- | -------- | ----------------------- | -------------------------------------------- |
 | `DATABASE_URL`          | Yes      | —                       | PostgreSQL connection string                 |
 | `JWT_SECRET`            | Yes      | —                       | Secret for JWT signing (min 16 chars)        |
+| `DKIM_ENCRYPTION_KEY`   | Prod     | —                       | Encrypts DKIM private keys at rest (min 32 chars, `openssl rand -base64 32`); existing plaintext keys are encrypted on API start |
+| `DKIM_ENCRYPTION_KEY_PREVIOUS` | No | —                     | Old value while rotating `DKIM_ENCRYPTION_KEY`; keys under it are re-encrypted on API start |
+| `SYSTEM_EMAIL_FROM`     | Prod     | `noreply@mailpocket.local` | From address for password-reset emails and forwards; use a verified domain in production |
+| `SENDING_IP`            | No       | —                       | Public IP published in the SPF record and checked on verification |
 | `MINIO_ACCESS_KEY`      | Yes      | —                       | MinIO access key                             |
 | `MINIO_SECRET_KEY`      | Yes      | —                       | MinIO secret key                             |
 | `REDIS_HOST`            | No       | `localhost`             | Redis hostname                               |
@@ -227,6 +231,8 @@ Supports `templateId` + `variables`, `sendAt` for scheduling, and custom `X-*` h
 | POST   | `/api/domains/:id/verify` | Verify DNS records               |
 | DELETE | `/api/domains/:id`        | Delete domain                    |
 
+In `production` mode the `from` domain of every send (`/v1/messages`, `/v1/messages/mime`, `/v1/messages/batch`, and resend) must be a domain your account has verified, or a subdomain of one (`mail.example.com` under a verified `example.com`; another account's verified subdomain is never covered by your parent); otherwise the API returns `422`, and a queued message whose domain is no longer verified bounces with SMTP code `550`. Testing mode is unrestricted.
+
 #### Webhooks
 
 | Method | Endpoint                              | Description    |
@@ -243,19 +249,19 @@ Supports `templateId` + `variables`, `sendAt` for scheduling, and custom `X-*` h
 | ------ | --------------- | --------------------------------- |
 | POST   | `/api/keys`     | Create key (returns raw key once) |
 | GET    | `/api/keys`     | List keys                         |
+| PATCH  | `/api/keys/:id` | Edit name, scopes or expiry       |
+| POST   | `/api/keys/:id/rotate` | New secret for the same key (returns raw key once) |
 | DELETE | `/api/keys/:id` | Revoke key                        |
+
+The dashboard has a usage guide at `/docs` (API Docs) listing every endpoint a key can call. Key management needs a user session, not an API key. Changing or resetting a password revokes all of that user's API keys.
 
 #### Suppressions
 
 | Method | Endpoint                | Description                  |
 | ------ | ----------------------- | ---------------------------- |
-| PATCH  | `/api/keys/:id` | Edit name, scopes or expiry       |
-| POST   | `/api/keys/:id/rotate` | New secret for the same key (returns raw key once) |
 | POST   | `/api/suppressions`     | Add suppressed email         |
 | GET    | `/api/suppressions`     | List (paginated, searchable) |
 | DELETE | `/api/suppressions/:id` | Remove suppression           |
-
-The dashboard has a usage guide at `/docs` (API Docs) listing every endpoint a key can call. Key management needs a user session, not an API key. Changing or resetting a password revokes all of that user's API keys.
 
 #### Teams
 

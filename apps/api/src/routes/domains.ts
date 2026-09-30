@@ -3,11 +3,16 @@ import { generateKeyPair } from "node:crypto";
 import { promisify } from "node:util";
 import { promises as dns } from "node:dns";
 import { getEnv } from "@mailpocket/env";
-import { getDb, domains } from "@mailpocket/db";
+import { getDb, domains, encryptSecret } from "@mailpocket/db";
 import { eq, and, or } from "drizzle-orm";
 import { authGuard } from "../middleware/auth.js";
 import { isOwnerOrAdmin, isGlobalAdmin, isUuid } from "../middleware/access.js";
 import { normalizeDomain } from "../lib/address.js";
+import {
+  dnsRecordsFor,
+  hasSpfRecord,
+  spfAuthorizes,
+} from "../lib/dns-records.js";
 
 const generateKeyPairAsync = promisify(generateKeyPair);
 
@@ -29,6 +34,32 @@ export function registerDomainRoutes(app: FastifyInstance) {
   const env = getEnv();
   const db = getDb(env.DATABASE_URL);
 
+  async function checkSpf(
+    domain: string,
+  ): Promise<{ ok: boolean; message: string }> {
+    try {
+      const records = await dns.resolveTxt(domain);
+      if (!hasSpfRecord(records)) {
+        return { ok: false, message: `No SPF record found at ${domain}` };
+      }
+      if (env.SENDING_IP && !spfAuthorizes(records, env.SENDING_IP)) {
+        return {
+          ok: false,
+          message: `SPF record at ${domain} does not list ${env.SENDING_IP}`,
+        };
+      }
+      return { ok: true, message: "SPF record found" };
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      return code === "ENOTFOUND" || code === "ENODATA"
+        ? { ok: false, message: `No SPF record found at ${domain}` }
+        : {
+            ok: false,
+            message: `SPF lookup failed (${code ?? "unknown error"})`,
+          };
+    }
+  }
+
   // List domains (admins see all, users see their own)
   app.get("/api/domains", { preHandler: authGuard }, async (request) => {
     const userId = request.user!.userId;
@@ -45,11 +76,50 @@ export function registerDomainRoutes(app: FastifyInstance) {
       })
       .from(domains);
 
-    if (!admin) {
-      return query.where(eq(domains.userId, userId));
-    }
-    return query;
+    const rows = admin
+      ? await query
+      : await query.where(eq(domains.userId, userId));
+    return rows.map((d) => ({
+      ...d,
+      dnsRecords: dnsRecordsFor(d, env.SENDING_IP),
+    }));
   });
+
+  // One domain plus the DNS records it must publish
+  app.get<{ Params: { id: string } }>(
+    "/api/domains/:id",
+    { preHandler: authGuard },
+    async (request, reply) => {
+      const { id } = request.params;
+      if (!isUuid(id)) {
+        return reply.status(404).send({ error: "Domain not found" });
+      }
+
+      const [domain] = await db
+        .select({
+          id: domains.id,
+          userId: domains.userId,
+          domain: domains.domain,
+          dkimSelector: domains.dkimSelector,
+          dkimPublicKey: domains.dkimPublicKey,
+          verified: domains.verified,
+          createdAt: domains.createdAt,
+        })
+        .from(domains)
+        .where(eq(domains.id, id))
+        .limit(1);
+
+      if (
+        !domain ||
+        !(await isOwnerOrAdmin(request.user!.userId, domain.userId))
+      ) {
+        return reply.status(404).send({ error: "Domain not found" });
+      }
+
+      const { userId: _owner, ...rest } = domain;
+      return { ...rest, dnsRecords: dnsRecordsFor(domain, env.SENDING_IP) };
+    },
+  );
 
   // Add a domain with auto-generated DKIM keys
   app.post<{ Body: { domain: string } }>(
@@ -107,7 +177,7 @@ export function registerDomainRoutes(app: FastifyInstance) {
           userId: request.user!.userId,
           domain: domainName,
           dkimSelector: "smtp1",
-          dkimPrivateKey: privateKey,
+          dkimPrivateKey: encryptSecret(privateKey, env.DKIM_ENCRYPTION_KEY),
           dkimPublicKey: pubKeyBase64,
         })
         .onConflictDoNothing()
@@ -121,19 +191,7 @@ export function registerDomainRoutes(app: FastifyInstance) {
       return reply.status(201).send({
         ...domain,
         dkimPrivateKey: undefined, // Don't expose private key
-        dnsRecords: {
-          dkim: {
-            type: "TXT",
-            name: `smtp1._domainkey.${domainName}`,
-            value: `v=DKIM1; k=rsa; p=${pubKeyBase64}`,
-          },
-          spf: {
-            type: "TXT",
-            name: domainName,
-            value: `v=spf1 ip4:<YOUR_SERVER_IP> -all`,
-            note: "Replace <YOUR_SERVER_IP> with your server's public IP address",
-          },
-        },
+        dnsRecords: dnsRecordsFor(domain, env.SENDING_IP),
       });
     },
   );
@@ -214,7 +272,10 @@ export function registerDomainRoutes(app: FastifyInstance) {
         }
       }
 
-      return { verified, errors };
+      // SPF is advisory: it doesn't change `verified` (that stays DKIM-based
+      // so existing verified domains aren't revoked), but is reported so the
+      // user can fix it.
+      return { verified, errors, spf: await checkSpf(domain.domain) };
     },
   );
 

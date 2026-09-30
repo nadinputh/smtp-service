@@ -169,7 +169,7 @@ export function useApi() {
     },
 
     async verifyDomain(domainId: string) {
-      return await $fetch<{ verified: boolean; errors: string[] }>(
+      return await $fetch<DomainVerifyResult>(
         `/api/domains/${domainId}/verify`,
         { method: "POST", headers: authHeaders() },
       );
@@ -965,6 +965,11 @@ export interface Attachment {
   storageKey: string;
 }
 
+export interface DomainDnsRecords {
+  dkim: { type: string; name: string; value: string };
+  spf: { type: string; name: string; value: string; note?: string };
+}
+
 export interface Domain {
   id: string;
   domain: string;
@@ -972,13 +977,15 @@ export interface Domain {
   dkimPublicKey: string;
   verified: boolean;
   createdAt: string;
+  dnsRecords: DomainDnsRecords;
 }
 
-export interface DomainDetail extends Domain {
-  dnsRecords: {
-    dkim: { type: string; name: string; value: string };
-    spf: { type: string; name: string; value: string; note: string };
-  };
+export type DomainDetail = Domain;
+
+export interface DomainVerifyResult {
+  verified: boolean;
+  errors: string[];
+  spf: { ok: boolean; message: string };
 }
 
 export interface Webhook {

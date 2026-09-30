@@ -7,14 +7,15 @@ import {
   getDb,
   deliveryLogs,
   messages,
-  domains,
+  decryptSecret,
+  findVerifiedSenderDomain,
   suppressions,
   inboxes,
 } from "@mailpocket/db";
 import type { StorageClient } from "@mailpocket/storage";
 import { type OutboundEmailPayload } from "@mailpocket/queue";
 import { eq, and, inArray } from "drizzle-orm";
-import type { Env } from "@mailpocket/env";
+import { systemEmailFrom, type Env } from "@mailpocket/env";
 import type Redis from "ioredis";
 import { injectTracking } from "./tracking.js";
 
@@ -103,38 +104,27 @@ async function resolveOwnerId(
 }
 
 // ─── DKIM Lookup ──────────────────────────────────────────
-// Sign only with a verified domain owned by the sending account.
+// Signs with the verified domain covering the sender (its own, or the nearest
+// verified parent). With `ownerId` that domain must belong to the account;
+// without it any owner's verified domain may be used, which is only for mail
+// whose From the server itself chose (see `isSystemSender`).
 export async function getDkimConfig(
   db: ReturnType<typeof getDb>,
-  ownerId: string,
   senderDomain: string,
+  opts: { ownerId?: string; secrets?: (string | undefined)[] } = {},
 ): Promise<{
   domainName: string;
   keySelector: string;
   privateKey: string;
 } | null> {
-  const [domain] = await db
-    .select({
-      domain: domains.domain,
-      selector: domains.dkimSelector,
-      privateKey: domains.dkimPrivateKey,
-    })
-    .from(domains)
-    .where(
-      and(
-        eq(domains.domain, senderDomain),
-        eq(domains.userId, ownerId),
-        eq(domains.verified, true),
-      ),
-    )
-    .limit(1);
-
+  const domain = await findVerifiedSenderDomain(db, senderDomain);
   if (!domain?.privateKey) return null;
+  if (opts.ownerId !== undefined && domain.userId !== opts.ownerId) return null;
 
   return {
     domainName: domain.domain,
     keySelector: domain.selector,
-    privateKey: domain.privateKey,
+    privateKey: decryptSecret(domain.privateKey, ...(opts.secrets ?? [])),
   };
 }
 
@@ -203,7 +193,8 @@ export function createOutboundProcessor(
   redisPub: InstanceType<typeof Redis.default>,
 ) {
   return async function processOutboundEmail(job: Job<OutboundEmailPayload>) {
-    const { messageId, userId, from, to, rawKey } = job.data;
+    const { messageId, userId, from, to, rawKey, requireVerifiedSender } =
+      job.data;
 
     console.log(`📤 Outbound delivery: ${messageId} → ${to.join(", ")}`);
 
@@ -259,9 +250,22 @@ export function createOutboundProcessor(
     // 3. Look up DKIM config for sender domain
     const ownerId = await resolveOwnerId(db, messageId, userId);
     const senderDomain = extractSenderDomain(from);
+    // Mail from the configured system sender has a server-chosen From, so any
+    // account's verified domain may sign it; everything else must be signed by
+    // (and, if flagged, sent from) a domain the sending account owns.
+    const isSystemSender =
+      !requireVerifiedSender &&
+      senderDomain !== null &&
+      senderDomain === extractSenderDomain(systemEmailFrom(env));
     const dkim =
-      ownerId && senderDomain
-        ? await getDkimConfig(db, ownerId, senderDomain)
+      senderDomain && (isSystemSender || ownerId)
+        ? await getDkimConfig(db, senderDomain, {
+            ownerId: isSystemSender ? undefined : (ownerId ?? undefined),
+            secrets: [
+              env.DKIM_ENCRYPTION_KEY,
+              env.DKIM_ENCRYPTION_KEY_PREVIOUS,
+            ],
+          })
         : null;
 
     // Re-check suppressions now: the address may have been suppressed (or
@@ -369,6 +373,18 @@ export function createOutboundProcessor(
           });
           deliveredCount++;
           continue;
+        }
+
+        // User-chosen senders only relay as a verified domain of the sending
+        // account (the API enforces this too; this catches scheduled sends
+        // whose domain was removed or unverified while queued). 550 = permanent.
+        if (requireVerifiedSender && !dkim) {
+          throw Object.assign(
+            new Error(
+              `Sender domain ${senderDomain ?? "unknown"} is not verified for this account`,
+            ),
+            { responseCode: 550 },
+          );
         }
 
         const result = await deliverToRecipient(
