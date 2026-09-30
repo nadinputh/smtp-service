@@ -1,3 +1,5 @@
+import { signTrackedLink } from "@mailpocket/queue";
+
 /**
  * Rewrites HTML content to add click tracking and open tracking pixel.
  */
@@ -5,6 +7,7 @@ export function injectTracking(
   html: string,
   messageId: string,
   trackingBaseUrl: string,
+  signingSecret?: string,
 ): string {
   let result = html;
 
@@ -16,7 +19,10 @@ export function injectTracking(
       if (/^(mailto:|tel:|#|javascript:)/i.test(url)) {
         return _match;
       }
-      const tracked = `${trackingBaseUrl}/t/click/${messageId}?url=${encodeURIComponent(url)}`;
+      const sig = signingSecret
+        ? `&sig=${signTrackedLink(signingSecret, messageId, url)}`
+        : "";
+      const tracked = `${trackingBaseUrl}/t/click/${messageId}?url=${encodeURIComponent(url)}${sig}`;
       return `<a ${before}href="${tracked}"${after}>`;
     },
   );

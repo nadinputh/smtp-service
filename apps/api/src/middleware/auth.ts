@@ -1,13 +1,50 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
+import { createHash } from "node:crypto";
 import { getEnv } from "@mailpocket/env";
 import { getDb, apiKeys, users } from "@mailpocket/db";
 import { eq } from "drizzle-orm";
 
+export const API_KEY_SCOPES = ["send", "read", "delete"] as const;
+
+/** SHA-256 hex of a raw API key; keys are high-entropy so no salt/stretch needed. */
+export function hashApiKey(rawKey: string): string {
+  return createHash("sha256").update(rawKey).digest("hex");
+}
+
+// API keys are for integrations, not account management: these areas need a
+// user session (JWT).
+const SESSION_ONLY_PREFIXES = ["/api/keys", "/api/auth", "/api/admin"];
+
+/**
+ * Scope an API key needs for a request, or null if keys may not call it.
+ * send: POST /v1/messages*, forward. read: GET/HEAD. delete: DELETE.
+ */
+export function requiredApiKeyScope(
+  method: string,
+  route: string,
+): string | null {
+  if (
+    SESSION_ONLY_PREFIXES.some((p) => route === p || route.startsWith(`${p}/`))
+  ) {
+    return null;
+  }
+  if (method === "GET" || method === "HEAD") return "read";
+  if (method === "DELETE") return "delete";
+  if (
+    method === "POST" &&
+    (route.startsWith("/v1/messages") || route.endsWith("/forward"))
+  ) {
+    return "send";
+  }
+  return null;
+}
+
 export interface JwtPayload {
   userId: string;
   email: string;
+  iat?: number;
 }
 
 declare module "fastify" {
@@ -81,8 +118,12 @@ async function verifyOAuth2Token(token: string): Promise<JwtPayload | null> {
       audience: env.OAUTH2_CLIENT_ID,
     }) as any;
 
-    const email = (decoded.email as string) || "";
-    if (!email) return null;
+    const email =
+      typeof decoded.email === "string"
+        ? decoded.email.trim().toLowerCase()
+        : "";
+    // An unverified address must not be able to claim an existing account.
+    if (!email || decoded.email_verified === false) return null;
 
     // Look up user by email
     const db = getDb(env.DATABASE_URL);
@@ -133,27 +174,56 @@ export async function authGuard(request: FastifyRequest, reply: FastifyReply) {
     const env = getEnv();
     const db = getDb(env.DATABASE_URL);
 
-    const prefix = token.slice(0, 14);
-    const candidates = await db
-      .select()
-      .from(apiKeys)
-      .where(eq(apiKeys.prefix, prefix))
-      .limit(5);
+    // Current keys are stored as a SHA-256 digest (direct lookup); keys
+    // created before that were bcrypt-hashed and are matched by prefix.
+    let key = (
+      await db
+        .select()
+        .from(apiKeys)
+        .where(eq(apiKeys.keyHash, hashApiKey(token)))
+        .limit(1)
+    )[0];
 
-    for (const key of candidates) {
-      if (key.expiresAt && new Date(key.expiresAt) < new Date()) continue;
-      const match = await bcrypt.compare(token, key.keyHash);
-      if (match) {
-        request.user = { userId: key.userId, email: "" };
-        request.apiKeyScopes = key.scopes;
-        db.update(apiKeys)
-          .set({ lastUsedAt: new Date() })
-          .where(eq(apiKeys.id, key.id))
-          .catch(() => {});
-        return;
+    if (!key) {
+      const candidates = await db
+        .select()
+        .from(apiKeys)
+        .where(eq(apiKeys.prefix, token.slice(0, 14)))
+        .limit(5);
+      for (const candidate of candidates) {
+        if (
+          candidate.keyHash.startsWith("$2") &&
+          (await bcrypt.compare(token, candidate.keyHash))
+        ) {
+          key = candidate;
+          break;
+        }
       }
     }
-    return reply.status(401).send({ error: "Invalid API key" });
+
+    if (!key || (key.expiresAt && new Date(key.expiresAt) < new Date())) {
+      return reply.status(401).send({ error: "Invalid API key" });
+    }
+
+    const scope = requiredApiKeyScope(
+      request.method,
+      request.routeOptions?.url ?? request.url.split("?")[0],
+    );
+    if (!scope || !key.scopes.includes(scope)) {
+      return reply.status(403).send({
+        error: scope
+          ? `Insufficient scope. Required: ${scope}`
+          : "This endpoint requires a user session, not an API key",
+      });
+    }
+
+    request.user = { userId: key.userId, email: "" };
+    request.apiKeyScopes = key.scopes;
+    db.update(apiKeys)
+      .set({ lastUsedAt: new Date() })
+      .where(eq(apiKeys.id, key.id))
+      .catch(() => {});
+    return;
   }
 
   // JWT authentication (local tokens)
@@ -166,11 +236,18 @@ export async function authGuard(request: FastifyRequest, reply: FastifyReply) {
     const env = getEnv();
     const db = getDb(env.DATABASE_URL);
     const [u] = await db
-      .select({ id: users.id })
+      .select({ id: users.id, passwordChangedAt: users.passwordChangedAt })
       .from(users)
       .where(eq(users.id, payload.userId))
       .limit(1);
     if (!u) {
+      return reply.status(401).send({ error: "Invalid or expired token" });
+    }
+    // A password change/reset ends every session issued before it.
+    if (
+      u.passwordChangedAt &&
+      (payload.iat ?? 0) < Math.floor(u.passwordChangedAt.getTime() / 1000)
+    ) {
       return reply.status(401).send({ error: "Invalid or expired token" });
     }
     request.user = payload;

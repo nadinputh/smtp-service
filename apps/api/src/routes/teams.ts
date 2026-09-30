@@ -12,15 +12,31 @@ import {
 import { eq, and, inArray, or, ilike, desc, gt, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { authGuard } from "../middleware/auth.js";
-import { isGlobalAdmin } from "../middleware/access.js";
+import {
+  isGlobalAdmin,
+  requireUuidParams,
+  isUuid,
+  canViewTeam,
+} from "../middleware/access.js";
+import { normalizeEmail } from "../lib/address.js";
+import { cleanString, escapeLike, clampInt } from "../lib/validate.js";
+
+type TeamRole = "admin" | "member";
+
+/** undefined → "member"; anything other than admin/member → null. */
+function parseRole(role: unknown): TeamRole | null {
+  if (role === undefined) return "member";
+  return role === "admin" || role === "member" ? role : null;
+}
 
 export function registerTeamRoutes(app: FastifyInstance) {
   const env = getEnv();
   const db = getDb(env.DATABASE_URL);
+  const teamGuard = [authGuard, requireUuidParams];
 
   // ─── List teams ──────────────────────────────────────────
   // Admins see all teams; regular users see only teams they belong to.
-  app.get("/api/teams", { preHandler: [authGuard] }, async (request) => {
+  app.get("/api/teams", { preHandler: teamGuard }, async (request) => {
     const userId = request.user!.userId;
     const admin = await isGlobalAdmin(userId);
 
@@ -49,16 +65,18 @@ export function registerTeamRoutes(app: FastifyInstance) {
   // ─── Create team ─────────────────────────────────────────
   app.post<{ Body: { name: string } }>(
     "/api/teams",
-    { preHandler: [authGuard] },
+    { preHandler: teamGuard },
     async (request, reply) => {
-      const { name } = request.body;
-      if (!name?.trim()) {
-        return reply.status(400).send({ error: "Team name is required" });
+      const name = cleanString(request.body?.name, 255);
+      if (!name) {
+        return reply
+          .status(400)
+          .send({ error: "Team name is required (max 255 characters)" });
       }
 
       const [team] = await db
         .insert(teams)
-        .values({ name: name.trim(), ownerId: request.user!.userId })
+        .values({ name, ownerId: request.user!.userId })
         .returning();
 
       // Auto-add creator as team admin
@@ -83,7 +101,7 @@ export function registerTeamRoutes(app: FastifyInstance) {
   // ─── Get team detail ─────────────────────────────────────
   app.get<{ Params: { id: string } }>(
     "/api/teams/:id",
-    { preHandler: [authGuard] },
+    { preHandler: teamGuard },
     async (request, reply) => {
       const userId = request.user!.userId;
       const teamId = request.params.id;
@@ -128,7 +146,7 @@ export function registerTeamRoutes(app: FastifyInstance) {
   // ─── Update team ─────────────────────────────────────────
   app.put<{ Params: { id: string }; Body: { name?: string } }>(
     "/api/teams/:id",
-    { preHandler: [authGuard] },
+    { preHandler: teamGuard },
     async (request, reply) => {
       const userId = request.user!.userId;
       const teamId = request.params.id;
@@ -137,12 +155,13 @@ export function registerTeamRoutes(app: FastifyInstance) {
         return reply.status(403).send({ error: "Not authorized" });
       }
 
-      const updates: Record<string, unknown> = {
-        updatedAt: new Date(),
-      };
-      if (request.body.name?.trim()) {
-        updates.name = request.body.name.trim();
+      const name = cleanString(request.body?.name, 255);
+      if (!name) {
+        return reply
+          .status(400)
+          .send({ error: "Team name is required (max 255 characters)" });
       }
+      const updates = { name, updatedAt: new Date() };
 
       const [updated] = await db
         .update(teams)
@@ -169,12 +188,19 @@ export function registerTeamRoutes(app: FastifyInstance) {
   // ─── Delete team ─────────────────────────────────────────
   app.delete<{ Params: { id: string } }>(
     "/api/teams/:id",
-    { preHandler: [authGuard] },
+    { preHandler: teamGuard },
     async (request, reply) => {
       const userId = request.user!.userId;
       const teamId = request.params.id;
 
-      if (!(await canManageTeam(userId, teamId))) {
+      // Deleting a team is destructive: owner or global admin only, not
+      // team-level admins.
+      const [owned] = await db
+        .select({ ownerId: teams.ownerId })
+        .from(teams)
+        .where(eq(teams.id, teamId))
+        .limit(1);
+      if (owned && owned.ownerId !== userId && !(await isGlobalAdmin(userId))) {
         return reply.status(403).send({ error: "Not authorized" });
       }
 
@@ -194,40 +220,13 @@ export function registerTeamRoutes(app: FastifyInstance) {
   // ─── List team members ───────────────────────────────────
   app.get<{ Params: { id: string } }>(
     "/api/teams/:id/members",
-    { preHandler: [authGuard] },
+    { preHandler: teamGuard },
     async (request, reply) => {
       const userId = request.user!.userId;
       const teamId = request.params.id;
 
-      // Must be team member, owner, or global admin
-      const admin = await isGlobalAdmin(userId);
-      if (!admin) {
-        const [team] = await db
-          .select({ ownerId: teams.ownerId })
-          .from(teams)
-          .where(eq(teams.id, teamId))
-          .limit(1);
-
-        if (!team) {
-          return reply.status(404).send({ error: "Team not found" });
-        }
-
-        if (team.ownerId !== userId) {
-          const [member] = await db
-            .select()
-            .from(teamMembers)
-            .where(
-              and(
-                eq(teamMembers.teamId, teamId),
-                eq(teamMembers.userId, userId),
-              ),
-            )
-            .limit(1);
-
-          if (!member) {
-            return reply.status(404).send({ error: "Team not found" });
-          }
-        }
+      if (!(await canViewTeam(userId, teamId))) {
+        return reply.status(404).send({ error: "Team not found" });
       }
 
       return db
@@ -251,21 +250,25 @@ export function registerTeamRoutes(app: FastifyInstance) {
     Body: { userId: string; role?: string };
   }>(
     "/api/teams/:id/members",
-    { preHandler: [authGuard] },
+    { preHandler: teamGuard },
     async (request, reply) => {
       const actorId = request.user!.userId;
       const teamId = request.params.id;
-      const { userId: targetUserId, role } = request.body;
+      const { userId: targetUserId, role } = request.body ?? {};
 
-      if (!targetUserId) {
-        return reply.status(400).send({ error: "userId is required" });
+      if (!isUuid(targetUserId)) {
+        return reply.status(400).send({ error: "A valid userId is required" });
+      }
+      const memberRole = parseRole(role);
+      if (!memberRole) {
+        return reply
+          .status(400)
+          .send({ error: "role must be admin or member" });
       }
 
       if (!(await canManageTeam(actorId, teamId))) {
         return reply.status(403).send({ error: "Not authorized" });
       }
-
-      const memberRole = role === "admin" ? "admin" : "member";
 
       try {
         const [member] = await db
@@ -302,18 +305,28 @@ export function registerTeamRoutes(app: FastifyInstance) {
     Body: { role: string };
   }>(
     "/api/teams/:id/members/:userId",
-    { preHandler: [authGuard] },
+    { preHandler: teamGuard },
     async (request, reply) => {
       const actorId = request.user!.userId;
       const teamId = request.params.id;
       const targetUserId = request.params.userId;
-      const { role } = request.body;
+      const role = request.body?.role;
+
+      if (role !== "admin" && role !== "member") {
+        return reply
+          .status(400)
+          .send({ error: "role must be admin or member" });
+      }
+      const memberRole: TeamRole = role;
 
       if (!(await canManageTeam(actorId, teamId))) {
         return reply.status(403).send({ error: "Not authorized" });
       }
-
-      const memberRole = role === "admin" ? "admin" : "member";
+      if (await isTeamOwner(teamId, targetUserId)) {
+        return reply
+          .status(400)
+          .send({ error: "The team owner's membership can't be changed" });
+      }
 
       const [updated] = await db
         .update(teamMembers)
@@ -345,7 +358,7 @@ export function registerTeamRoutes(app: FastifyInstance) {
   // ─── Remove team member ──────────────────────────────────
   app.delete<{ Params: { id: string; userId: string } }>(
     "/api/teams/:id/members/:userId",
-    { preHandler: [authGuard] },
+    { preHandler: teamGuard },
     async (request, reply) => {
       const actorId = request.user!.userId;
       const teamId = request.params.id;
@@ -353,6 +366,11 @@ export function registerTeamRoutes(app: FastifyInstance) {
 
       if (!(await canManageTeam(actorId, teamId))) {
         return reply.status(403).send({ error: "Not authorized" });
+      }
+      if (await isTeamOwner(teamId, targetUserId)) {
+        return reply
+          .status(400)
+          .send({ error: "The team owner can't be removed from the team" });
       }
 
       const [deleted] = await db
@@ -384,16 +402,22 @@ export function registerTeamRoutes(app: FastifyInstance) {
   // ─── Search users (for team member picker) ───────────────
   app.get<{ Querystring: { q?: string } }>(
     "/api/users/search",
-    { preHandler: [authGuard] },
+    { preHandler: teamGuard },
     async (request, reply) => {
-      const query = request.query.q?.trim();
-      if (!query || query.length < 2) {
-        return reply
-          .status(400)
-          .send({ error: "Search query must be at least 2 characters" });
+      const query =
+        typeof request.query.q === "string" ? request.query.q.trim() : "";
+      if (query.length < 2 || query.length > 100) {
+        return reply.status(400).send({
+          error: "Search query must be between 2 and 100 characters",
+        });
       }
 
-      const term = `%${query}%`;
+      // The user directory is only exposed to people who can add members.
+      if (!(await canManageAnyTeam(request.user!.userId))) {
+        return reply.status(403).send({ error: "Not authorized" });
+      }
+
+      const term = `%${escapeLike(query)}%`;
       const results = await db
         .select({ id: users.id, email: users.email, name: users.name })
         .from(users)
@@ -407,40 +431,13 @@ export function registerTeamRoutes(app: FastifyInstance) {
   // ─── List team inboxes ───────────────────────────────────
   app.get<{ Params: { id: string } }>(
     "/api/teams/:id/inboxes",
-    { preHandler: [authGuard] },
+    { preHandler: teamGuard },
     async (request, reply) => {
       const userId = request.user!.userId;
       const teamId = request.params.id;
 
-      // Must be team member, owner, or global admin
-      const admin = await isGlobalAdmin(userId);
-      if (!admin) {
-        const [team] = await db
-          .select({ ownerId: teams.ownerId })
-          .from(teams)
-          .where(eq(teams.id, teamId))
-          .limit(1);
-
-        if (!team) {
-          return reply.status(404).send({ error: "Team not found" });
-        }
-
-        if (team.ownerId !== userId) {
-          const [member] = await db
-            .select()
-            .from(teamMembers)
-            .where(
-              and(
-                eq(teamMembers.teamId, teamId),
-                eq(teamMembers.userId, userId),
-              ),
-            )
-            .limit(1);
-
-          if (!member) {
-            return reply.status(404).send({ error: "Team not found" });
-          }
-        }
+      if (!(await canViewTeam(userId, teamId))) {
+        return reply.status(404).send({ error: "Team not found" });
       }
 
       return db
@@ -458,44 +455,14 @@ export function registerTeamRoutes(app: FastifyInstance) {
   // ─── Team activity log ──────────────────────────────────
   app.get<{ Params: { id: string }; Querystring: { limit?: string } }>(
     "/api/teams/:id/activity",
-    { preHandler: [authGuard] },
+    { preHandler: teamGuard },
     async (request, reply) => {
       const userId = request.user!.userId;
       const teamId = request.params.id;
-      const limit = Math.min(
-        parseInt(request.query.limit || "50", 10) || 50,
-        100,
-      );
+      const limit = clampInt(request.query.limit, 50, 100);
 
-      // Must be team member, owner, or global admin
-      const admin = await isGlobalAdmin(userId);
-      if (!admin) {
-        const [team] = await db
-          .select({ ownerId: teams.ownerId })
-          .from(teams)
-          .where(eq(teams.id, teamId))
-          .limit(1);
-
-        if (!team) {
-          return reply.status(404).send({ error: "Team not found" });
-        }
-
-        if (team.ownerId !== userId) {
-          const [member] = await db
-            .select()
-            .from(teamMembers)
-            .where(
-              and(
-                eq(teamMembers.teamId, teamId),
-                eq(teamMembers.userId, userId),
-              ),
-            )
-            .limit(1);
-
-          if (!member) {
-            return reply.status(404).send({ error: "Team not found" });
-          }
-        }
+      if (!(await canViewTeam(userId, teamId))) {
+        return reply.status(404).send({ error: "Team not found" });
       }
 
       return db
@@ -521,27 +488,33 @@ export function registerTeamRoutes(app: FastifyInstance) {
     Body: { email: string; role?: string };
   }>(
     "/api/teams/:id/invitations",
-    { preHandler: [authGuard] },
+    { preHandler: teamGuard },
     async (request, reply) => {
       const actorId = request.user!.userId;
       const teamId = request.params.id;
-      const { email, role } = request.body;
+      const email = normalizeEmail(request.body?.email);
+      const inviteRole = parseRole(request.body?.role);
 
-      if (!email?.trim()) {
-        return reply.status(400).send({ error: "Email is required" });
+      if (!email || email.length > 255) {
+        return reply
+          .status(400)
+          .send({ error: "A valid email address is required" });
+      }
+      if (!inviteRole) {
+        return reply
+          .status(400)
+          .send({ error: "role must be admin or member" });
       }
 
       if (!(await canManageTeam(actorId, teamId))) {
         return reply.status(403).send({ error: "Not authorized" });
       }
 
-      const inviteRole = role === "admin" ? "admin" : "member";
-
       // Check if user already a member
       const [existingUser] = await db
         .select({ id: users.id })
         .from(users)
-        .where(eq(users.email, email.trim().toLowerCase()))
+        .where(eq(users.email, email))
         .limit(1);
 
       if (existingUser) {
@@ -570,7 +543,7 @@ export function registerTeamRoutes(app: FastifyInstance) {
         .where(
           and(
             eq(teamInvitations.teamId, teamId),
-            eq(teamInvitations.email, email.trim().toLowerCase()),
+            eq(teamInvitations.email, email),
             gt(teamInvitations.expiresAt, new Date()),
           ),
         )
@@ -589,7 +562,7 @@ export function registerTeamRoutes(app: FastifyInstance) {
         .insert(teamInvitations)
         .values({
           teamId,
-          email: email.trim().toLowerCase(),
+          email: email,
           role: inviteRole,
           token,
           invitedBy: actorId,
@@ -602,7 +575,7 @@ export function registerTeamRoutes(app: FastifyInstance) {
         teamId,
         actorId,
         action: "invitation_sent",
-        meta: { email: email.trim().toLowerCase(), role: inviteRole },
+        meta: { email: email, role: inviteRole },
       });
 
       return reply.status(201).send(invitation);
@@ -612,7 +585,7 @@ export function registerTeamRoutes(app: FastifyInstance) {
   // ─── List team invitations ──────────────────────────────
   app.get<{ Params: { id: string } }>(
     "/api/teams/:id/invitations",
-    { preHandler: [authGuard] },
+    { preHandler: teamGuard },
     async (request, reply) => {
       const userId = request.user!.userId;
       const teamId = request.params.id;
@@ -658,7 +631,7 @@ export function registerTeamRoutes(app: FastifyInstance) {
   // ─── Revoke team invitation ─────────────────────────────
   app.delete<{ Params: { id: string; invitationId: string } }>(
     "/api/teams/:id/invitations/:invitationId",
-    { preHandler: [authGuard] },
+    { preHandler: teamGuard },
     async (request, reply) => {
       const actorId = request.user!.userId;
       const teamId = request.params.id;
@@ -689,7 +662,7 @@ export function registerTeamRoutes(app: FastifyInstance) {
   // ─── Get my pending invitations ─────────────────────────
   app.get(
     "/api/teams/my-invitations",
-    { preHandler: [authGuard] },
+    { preHandler: teamGuard },
     async (request) => {
       const userId = request.user!.userId;
 
@@ -718,7 +691,7 @@ export function registerTeamRoutes(app: FastifyInstance) {
         .innerJoin(users, eq(teamInvitations.invitedBy, users.id))
         .where(
           and(
-            eq(teamInvitations.email, user.email),
+            eq(teamInvitations.email, user.email.toLowerCase()),
             gt(teamInvitations.expiresAt, new Date()),
           ),
         )
@@ -729,7 +702,7 @@ export function registerTeamRoutes(app: FastifyInstance) {
   // ─── Accept team invitation ─────────────────────────────
   app.post<{ Params: { invitationId: string } }>(
     "/api/teams/invitations/:invitationId/accept",
-    { preHandler: [authGuard] },
+    { preHandler: teamGuard },
     async (request, reply) => {
       const userId = request.user!.userId;
       const invitationId = request.params.invitationId;
@@ -752,7 +725,7 @@ export function registerTeamRoutes(app: FastifyInstance) {
         .where(
           and(
             eq(teamInvitations.id, invitationId),
-            eq(teamInvitations.email, user.email),
+            eq(teamInvitations.email, user.email.toLowerCase()),
             gt(teamInvitations.expiresAt, new Date()),
           ),
         )
@@ -786,12 +759,21 @@ export function registerTeamRoutes(app: FastifyInstance) {
           .send({ error: "You are already a member of this team" });
       }
 
-      // Add as team member
-      await db.insert(teamMembers).values({
-        teamId: invitation.teamId,
-        userId,
-        role: invitation.role,
-      });
+      // Add as team member (a concurrent accept can lose the race)
+      const [added] = await db
+        .insert(teamMembers)
+        .values({
+          teamId: invitation.teamId,
+          userId,
+          role: invitation.role,
+        })
+        .onConflictDoNothing()
+        .returning({ id: teamMembers.id });
+      if (!added) {
+        return reply
+          .status(409)
+          .send({ error: "You are already a member of this team" });
+      }
 
       // Delete invitation
       await db
@@ -813,7 +795,7 @@ export function registerTeamRoutes(app: FastifyInstance) {
   // ─── Decline team invitation ────────────────────────────
   app.delete<{ Params: { invitationId: string } }>(
     "/api/teams/invitations/:invitationId",
-    { preHandler: [authGuard] },
+    { preHandler: teamGuard },
     async (request, reply) => {
       const userId = request.user!.userId;
       const invitationId = request.params.invitationId;
@@ -834,7 +816,7 @@ export function registerTeamRoutes(app: FastifyInstance) {
         .where(
           and(
             eq(teamInvitations.id, invitationId),
-            eq(teamInvitations.email, user.email),
+            eq(teamInvitations.email, user.email.toLowerCase()),
           ),
         )
         .returning({ id: teamInvitations.id });
@@ -850,22 +832,24 @@ export function registerTeamRoutes(app: FastifyInstance) {
   // ─── Admin: list all teams ──────────────────────────────
   app.get<{ Querystring: { page?: string; limit?: string; search?: string } }>(
     "/api/admin/teams",
-    { preHandler: [authGuard] },
+    { preHandler: teamGuard },
     async (request, reply) => {
       const userId = request.user!.userId;
       if (!(await isGlobalAdmin(userId))) {
         return reply.status(403).send({ error: "Not authorized" });
       }
 
-      const page = Math.max(1, parseInt(request.query.page || "1", 10) || 1);
-      const limit = Math.min(
-        parseInt(request.query.limit || "20", 10) || 20,
-        100,
-      );
+      const page = clampInt(request.query.page, 1, 1_000_000);
+      const limit = clampInt(request.query.limit, 20, 100);
       const offset = (page - 1) * limit;
-      const search = request.query.search?.trim();
+      const search =
+        typeof request.query.search === "string"
+          ? request.query.search.trim()
+          : "";
 
-      const conditions = search ? ilike(teams.name, `%${search}%`) : undefined;
+      const conditions = search
+        ? ilike(teams.name, `%${escapeLike(search)}%`)
+        : undefined;
 
       const [{ count: total }] = await db
         .select({ count: sql<number>`count(*)::int` })
@@ -895,6 +879,32 @@ export function registerTeamRoutes(app: FastifyInstance) {
       };
     },
   );
+
+  async function isTeamOwner(teamId: string, userId: string): Promise<boolean> {
+    const [team] = await db
+      .select({ id: teams.id })
+      .from(teams)
+      .where(and(eq(teams.id, teamId), eq(teams.ownerId, userId)))
+      .limit(1);
+    return !!team;
+  }
+
+  // Global admin, or owner/admin of at least one team
+  async function canManageAnyTeam(userId: string): Promise<boolean> {
+    if (await isGlobalAdmin(userId)) return true;
+    const [owned] = await db
+      .select({ id: teams.id })
+      .from(teams)
+      .where(eq(teams.ownerId, userId))
+      .limit(1);
+    if (owned) return true;
+    const [admin] = await db
+      .select({ id: teamMembers.id })
+      .from(teamMembers)
+      .where(and(eq(teamMembers.userId, userId), eq(teamMembers.role, "admin")))
+      .limit(1);
+    return !!admin;
+  }
 
   // ─── Helper: can the actor manage this team? ─────────────
   // Global admin, team owner, or team-level admin

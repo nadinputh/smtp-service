@@ -122,6 +122,12 @@ export function useAuth() {
     }
   }
 
+  // Swap in a refreshed token (e.g. after a password change ends old sessions)
+  function setToken(token: string) {
+    authState.token = token;
+    persist();
+  }
+
   async function fetchProviders(): Promise<AuthProviders> {
     if (authState.providers) return authState.providers;
     const res = await $fetch<AuthProviders>("/api/auth/providers");
@@ -284,5 +290,6 @@ export function useAuth() {
     resetPassword,
     logout,
     forceLogout,
+    setToken,
   };
 }

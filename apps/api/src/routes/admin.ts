@@ -11,14 +11,27 @@ import {
 import { eq, ilike, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { authGuard } from "../middleware/auth.js";
-import { requireAdmin } from "../middleware/access.js";
+import {
+  requireAdmin,
+  requireUuidParams,
+  isUuid,
+} from "../middleware/access.js";
+import { normalizeEmail } from "../lib/address.js";
+import { escapeLike, clampInt, cleanString } from "../lib/validate.js";
+import {
+  badPeriod,
+  isMetric,
+  overviewStats,
+  parsePeriod,
+  timeseries,
+} from "../lib/analytics.js";
 import { passwordPolicyError } from "../lib/password-policy.js";
 
 export function registerAdminRoutes(app: FastifyInstance) {
   const env = getEnv();
   const db = getDb(env.DATABASE_URL);
 
-  const adminPreHandler = [authGuard, requireAdmin];
+  const adminPreHandler = [authGuard, requireAdmin, requireUuidParams];
 
   // ─── Create user ─────────────────────────────────────────
   app.post<{
@@ -27,12 +40,22 @@ export function registerAdminRoutes(app: FastifyInstance) {
     "/api/admin/users",
     { preHandler: adminPreHandler },
     async (request, reply) => {
-      const { email, password, name, role } = request.body;
+      const { password, name, role } = request.body ?? {};
+      const email = normalizeEmail(request.body?.email);
 
-      if (!email?.trim() || !password) {
+      if (!email || email.length > 255 || password === undefined) {
         return reply
           .status(400)
-          .send({ error: "Email and password are required" });
+          .send({ error: "A valid email and a password are required" });
+      }
+      if (
+        name !== undefined &&
+        name !== null &&
+        (typeof name !== "string" || name.trim().length > 255)
+      ) {
+        return reply
+          .status(400)
+          .send({ error: "name must be a string of at most 255 characters" });
       }
 
       const createPasswordError = passwordPolicyError(password);
@@ -50,21 +73,21 @@ export function registerAdminRoutes(app: FastifyInstance) {
       const [existing] = await db
         .select({ id: users.id })
         .from(users)
-        .where(eq(users.email, email.trim().toLowerCase()))
+        .where(eq(users.email, email))
         .limit(1);
 
       if (existing) {
         return reply.status(409).send({ error: "Email already in use" });
       }
 
-      const passwordHash = await bcrypt.hash(password, 12);
+      const passwordHash = await bcrypt.hash(password as string, 12);
 
       const [created] = await db
         .insert(users)
         .values({
-          email: email.trim().toLowerCase(),
+          email,
           passwordHash,
-          name: name?.trim() || null,
+          name: typeof name === "string" ? name.trim() || null : null,
           role: role ?? "user",
         })
         .returning({
@@ -83,20 +106,17 @@ export function registerAdminRoutes(app: FastifyInstance) {
   app.get<{
     Querystring: { page?: string; limit?: string; search?: string };
   }>("/api/admin/users", { preHandler: adminPreHandler }, async (request) => {
-    const page = Math.max(1, parseInt(request.query.page ?? "1", 10) || 1);
-    const limit = Math.min(
-      100,
-      Math.max(1, parseInt(request.query.limit ?? "25", 10) || 25),
-    );
+    const page = clampInt(request.query.page, 1, 1_000_000);
+    const limit = clampInt(request.query.limit, 25, 100);
     const offset = (page - 1) * limit;
 
-    const conditions = [];
-    if (request.query.search?.trim()) {
-      const term = `%${request.query.search.trim()}%`;
-      conditions.push(ilike(users.email, term));
-    }
-
-    const where = conditions.length > 0 ? conditions[0] : undefined;
+    const search =
+      typeof request.query.search === "string"
+        ? request.query.search.trim()
+        : "";
+    const where = search
+      ? ilike(users.email, `%${escapeLike(search)}%`)
+      : undefined;
 
     const [data, countResult] = await Promise.all([
       db
@@ -164,7 +184,7 @@ export function registerAdminRoutes(app: FastifyInstance) {
     "/api/admin/users/:id",
     { preHandler: adminPreHandler },
     async (request, reply) => {
-      const { role, name } = request.body;
+      const { role, name } = request.body ?? {};
       const updates: Record<string, unknown> = { updatedAt: new Date() };
 
       if (role !== undefined) {
@@ -185,7 +205,15 @@ export function registerAdminRoutes(app: FastifyInstance) {
       }
 
       if (name !== undefined) {
-        updates.name = name.trim() || null;
+        if (name !== null && typeof name !== "string") {
+          return reply.status(400).send({ error: "name must be a string" });
+        }
+        if (typeof name === "string" && name.trim().length > 255) {
+          return reply
+            .status(400)
+            .send({ error: "name must be at most 255 characters" });
+        }
+        updates.name = name?.trim() || null;
       }
 
       const [updated] = await db
@@ -216,7 +244,7 @@ export function registerAdminRoutes(app: FastifyInstance) {
     "/api/admin/users/:id/password",
     { preHandler: adminPreHandler },
     async (request, reply) => {
-      const { password } = request.body;
+      const password = request.body?.password;
 
       if (!password) {
         return reply.status(400).send({ error: "Password is required" });
@@ -226,11 +254,15 @@ export function registerAdminRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: setPasswordError });
       }
 
-      const passwordHash = await bcrypt.hash(password, 12);
+      const passwordHash = await bcrypt.hash(password as string, 12);
 
       const [updated] = await db
         .update(users)
-        .set({ passwordHash, updatedAt: new Date() })
+        .set({
+          passwordHash,
+          passwordChangedAt: new Date(),
+          updatedAt: new Date(),
+        })
         .where(eq(users.id, request.params.id))
         .returning({ id: users.id });
 
@@ -275,16 +307,17 @@ export function registerAdminRoutes(app: FastifyInstance) {
   app.get<{
     Querystring: { page?: string; limit?: string; search?: string };
   }>("/api/admin/inboxes", { preHandler: adminPreHandler }, async (request) => {
-    const page = Math.max(1, parseInt(request.query.page ?? "1", 10) || 1);
-    const limit = Math.min(
-      100,
-      Math.max(1, parseInt(request.query.limit ?? "25", 10) || 25),
-    );
+    const page = clampInt(request.query.page, 1, 1_000_000);
+    const limit = clampInt(request.query.limit, 25, 100);
     const offset = (page - 1) * limit;
-    const search = request.query.search?.trim();
+    const search =
+      typeof request.query.search === "string"
+        ? request.query.search.trim()
+        : "";
 
+    const term = `%${escapeLike(search)}%`;
     const searchFilter = search
-      ? sql`AND (i.name ILIKE ${"%" + search + "%"} OR u.email ILIKE ${"%" + search + "%"} OR i.smtp_username ILIKE ${"%" + search + "%"})`
+      ? sql`AND (i.name ILIKE ${term} OR u.email ILIKE ${term} OR i.smtp_username ILIKE ${term})`
       : sql``;
 
     const [dataResult, countResult] = await Promise.all([
@@ -361,11 +394,26 @@ export function registerAdminRoutes(app: FastifyInstance) {
     "/api/admin/inboxes/:id",
     { preHandler: adminPreHandler },
     async (request, reply) => {
-      const { name, userId, teamId } = request.body;
+      const { name, userId, teamId } = request.body ?? {};
       const updates: Record<string, unknown> = { updatedAt: new Date() };
 
-      if (name?.trim()) {
-        updates.name = name.trim();
+      if (name !== undefined) {
+        const clean = cleanString(name, 255);
+        if (!clean) {
+          return reply
+            .status(400)
+            .send({ error: "name must be a non-empty string (max 255)" });
+        }
+        updates.name = clean;
+      }
+
+      if (
+        (userId !== undefined && !isUuid(userId)) ||
+        (teamId !== undefined && teamId !== null && !isUuid(teamId))
+      ) {
+        return reply
+          .status(400)
+          .send({ error: "userId and teamId must be UUIDs" });
       }
 
       if (userId) {
@@ -434,31 +482,12 @@ export function registerAdminRoutes(app: FastifyInstance) {
   app.get<{ Querystring: { period?: string } }>(
     "/api/admin/analytics/overview",
     { preHandler: adminPreHandler },
-    async (request) => {
-      const period = request.query.period ?? "30d";
-      const days = period === "7d" ? 7 : period === "90d" ? 90 : 30;
-      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    async (request, reply) => {
+      const period = parsePeriod(request.query.period);
+      if (!period) return badPeriod(reply);
 
-      const [systemResult, periodResult, entityCounts] = await Promise.all([
-        db.execute(sql`
-          SELECT
-            COUNT(*)::int AS total,
-            COUNT(*) FILTER (WHERE status IN ('queued','sending','delivered','bounced','failed'))::int AS sent,
-            COUNT(*) FILTER (WHERE status = 'delivered')::int AS delivered,
-            COUNT(*) FILTER (WHERE status = 'bounced' OR status = 'failed')::int AS bounced,
-            COUNT(*) FILTER (WHERE status = 'received')::int AS received
-          FROM messages
-        `),
-        db.execute(sql`
-          SELECT
-            COUNT(*)::int AS total,
-            COUNT(*) FILTER (WHERE status IN ('queued','sending','delivered','bounced','failed'))::int AS sent,
-            COUNT(*) FILTER (WHERE status = 'delivered')::int AS delivered,
-            COUNT(*) FILTER (WHERE status = 'bounced' OR status = 'failed')::int AS bounced,
-            COUNT(*) FILTER (WHERE status = 'received')::int AS received
-          FROM messages
-          WHERE created_at >= ${since}
-        `),
+      const [stats, entityCounts] = await Promise.all([
+        overviewStats(db, sql`TRUE`, period),
         db.execute(sql`
           SELECT
             (SELECT COUNT(*)::int FROM users) AS "totalUsers",
@@ -466,32 +495,13 @@ export function registerAdminRoutes(app: FastifyInstance) {
             (SELECT COUNT(*)::int FROM teams) AS "totalTeams"
         `),
       ]);
-
-      const sys = systemResult.rows[0] as Record<string, number>;
-      const per = periodResult.rows[0] as Record<string, number>;
       const ent = entityCounts.rows[0] as Record<string, number>;
 
       return {
         totalUsers: ent.totalUsers,
         totalInboxes: ent.totalInboxes,
         totalTeams: ent.totalTeams,
-        totalMessages: sys.total,
-        totalSent: sys.sent,
-        totalDelivered: sys.delivered,
-        totalBounced: sys.bounced,
-        totalReceived: sys.received,
-        deliveryRate:
-          sys.sent > 0 ? Math.round((sys.delivered / sys.sent) * 100) : 0,
-        bounceRate:
-          sys.sent > 0 ? Math.round((sys.bounced / sys.sent) * 100) : 0,
-        period: {
-          days,
-          total: per.total,
-          sent: per.sent,
-          delivered: per.delivered,
-          bounced: per.bounced,
-          received: per.received,
-        },
+        ...stats,
       };
     },
   );
@@ -500,54 +510,18 @@ export function registerAdminRoutes(app: FastifyInstance) {
   app.get<{ Querystring: { metric?: string; period?: string } }>(
     "/api/admin/analytics/timeseries",
     { preHandler: adminPreHandler },
-    async (request) => {
+    async (request, reply) => {
+      const period = parsePeriod(request.query.period);
+      if (!period) return badPeriod(reply);
+
       const metric = request.query.metric ?? "sent";
-      const period = request.query.period ?? "30d";
-      const days = period === "7d" ? 7 : period === "90d" ? 90 : 30;
-      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-
-      let statusFilter: string;
-      switch (metric) {
-        case "delivered":
-          statusFilter = `AND status = 'delivered'`;
-          break;
-        case "bounced":
-          statusFilter = `AND (status = 'bounced' OR status = 'failed')`;
-          break;
-        case "received":
-          statusFilter = `AND status = 'received'`;
-          break;
-        case "sent":
-        default:
-          statusFilter = `AND status IN ('queued','sending','delivered','bounced','failed')`;
-          break;
+      if (!isMetric(metric)) {
+        return reply.status(400).send({
+          error: "metric must be sent, delivered, bounced or received",
+        });
       }
 
-      const tsResult = await db.execute(sql`
-        SELECT
-          TO_CHAR(created_at::date, 'YYYY-MM-DD') AS day,
-          COUNT(*)::int AS count
-        FROM messages
-        WHERE created_at >= ${since}
-          ${sql.raw(statusFilter)}
-        GROUP BY created_at::date
-        ORDER BY created_at::date ASC
-      `);
-      const tsRows = tsResult.rows as { day: string; count: number }[];
-
-      const dataMap = new Map<string, number>();
-      for (const row of tsRows) dataMap.set(row.day, row.count);
-
-      const labels: string[] = [];
-      const values: number[] = [];
-      for (let d = 0; d < days; d++) {
-        const date = new Date(since.getTime() + d * 24 * 60 * 60 * 1000);
-        const key = date.toISOString().slice(0, 10);
-        labels.push(key);
-        values.push(dataMap.get(key) ?? 0);
-      }
-
-      return { labels, values, metric, period };
+      return timeseries(db, sql`TRUE`, metric, period);
     },
   );
 
@@ -556,10 +530,7 @@ export function registerAdminRoutes(app: FastifyInstance) {
     "/api/admin/analytics/top-users",
     { preHandler: adminPreHandler },
     async (request) => {
-      const limit = Math.min(
-        50,
-        Math.max(1, parseInt(request.query.limit ?? "10", 10) || 10),
-      );
+      const limit = clampInt(request.query.limit, 10, 50);
 
       const result = await db.execute(sql`
         SELECT
@@ -585,10 +556,7 @@ export function registerAdminRoutes(app: FastifyInstance) {
     "/api/admin/analytics/top-inboxes",
     { preHandler: adminPreHandler },
     async (request) => {
-      const limit = Math.min(
-        50,
-        Math.max(1, parseInt(request.query.limit ?? "10", 10) || 10),
-      );
+      const limit = clampInt(request.query.limit, 10, 50);
 
       const result = await db.execute(sql`
         SELECT

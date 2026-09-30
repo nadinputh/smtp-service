@@ -1,23 +1,28 @@
 import type { FastifyInstance } from "fastify";
 import { getEnv } from "@mailpocket/env";
-import { getDb, messages, inboxes, inboxRules } from "@mailpocket/db";
+import { getDb, messages, inboxes } from "@mailpocket/db";
 import { createStorage } from "@mailpocket/storage";
 import {
   eq,
   desc,
   and,
-  ilike,
-  gte,
-  lte,
   sql,
   count,
   gt,
   lt,
+  inArray,
 } from "drizzle-orm";
-import { buildRuleWhere } from "../lib/rule-conditions.js";
 import { authGuard } from "../middleware/auth.js";
-import { requireInboxRole, requireMessageRole } from "../middleware/access.js";
+import {
+  requireInboxRole,
+  requireMessageRole,
+  requireUuidParams,
+  isUuid,
+} from "../middleware/access.js";
 import { normalizeEmail } from "../lib/address.js";
+import { clampInt } from "../lib/validate.js";
+import { buildMessageConditions } from "../lib/message-filters.js";
+import { attachmentHeaders } from "../lib/attachment.js";
 import { findSuppressed } from "../lib/suppression.js";
 import { simpleParser } from "mailparser";
 import MailComposer from "nodemailer/lib/mail-composer/index.js";
@@ -87,6 +92,21 @@ export function registerMessageRoutes(app: FastifyInstance) {
   });
   const outboundQueue = createOutboundQueue(redisConn);
 
+  /** Remove a message's raw .eml and attachments; leftovers are only logged. */
+  async function removeStored(
+    rawKey: string,
+    attachments: { storageKey: string }[] | null,
+  ) {
+    const keys = [rawKey, ...(attachments ?? []).map((a) => a.storageKey)];
+    for (const key of keys) {
+      try {
+        await storage.removeObject(key);
+      } catch (err) {
+        app.log.warn({ err, key }, "Failed to remove stored object");
+      }
+    }
+  }
+
   const redisPub = new Redis.default({
     host: env.REDIS_HOST,
     port: env.REDIS_PORT,
@@ -109,7 +129,7 @@ export function registerMessageRoutes(app: FastifyInstance) {
     };
   }>(
     "/api/inboxes/:id/messages",
-    { preHandler: [authGuard, requireInboxRole("viewer")] },
+    { preHandler: [authGuard, requireUuidParams, requireInboxRole("viewer")] },
     async (request, reply) => {
       const { id } = request.params;
       const {
@@ -124,58 +144,23 @@ export function registerMessageRoutes(app: FastifyInstance) {
         ruleId,
       } = request.query;
 
-      const page = Math.max(1, parseInt(pageStr, 10) || 1);
-      const limit = Math.min(100, Math.max(1, parseInt(limitStr, 10) || 50));
+      const page = clampInt(pageStr, 1, 1_000_000);
+      const limit = clampInt(limitStr, 50, 100);
       const offset = (page - 1) * limit;
 
-      // Build filter conditions
-      const conditions = [eq(messages.inboxId, id)];
+      if (ruleId !== undefined && !isUuid(ruleId)) {
+        return reply.status(400).send({ error: "ruleId must be a UUID" });
+      }
 
-      if (q) {
-        const pattern = `%${q}%`;
-        conditions.push(
-          sql`(${messages.subject} ILIKE ${pattern} OR ${messages.from} ILIKE ${pattern} OR ${messages.to}::text ILIKE ${pattern})`,
-        );
-      }
-      if (fromFilter) {
-        conditions.push(ilike(messages.from, `%${fromFilter}%`));
-      }
-      if (toFilter) {
-        conditions.push(
-          sql`${messages.to}::text ILIKE ${"%" + toFilter + "%"}`,
-        );
-      }
-      if (statusFilter) {
-        conditions.push(eq(messages.status, statusFilter));
-      }
-      if (after) {
-        const afterDate = new Date(after);
-        if (!isNaN(afterDate.getTime())) {
-          conditions.push(gte(messages.createdAt, afterDate));
-        }
-      }
-      if (before) {
-        const beforeDate = new Date(before);
-        if (!isNaN(beforeDate.getTime())) {
-          // Include the full selected day by advancing to end-of-day
-          beforeDate.setUTCHours(23, 59, 59, 999);
-          conditions.push(lte(messages.createdAt, beforeDate));
-        }
-      }
-      if (ruleId) {
-        const [rule] = await db
-          .select()
-          .from(inboxRules)
-          .where(and(eq(inboxRules.id, ruleId), eq(inboxRules.inboxId, id)))
-          .limit(1);
-        if (rule) {
-          const ruleWhere = buildRuleWhere(
-            rule.conditions,
-            rule.logic ?? "AND",
-          );
-          if (ruleWhere) conditions.push(ruleWhere);
-        }
-      }
+      const conditions = await buildMessageConditions(db, id, {
+        q,
+        from: fromFilter,
+        to: toFilter,
+        status: statusFilter,
+        after,
+        before,
+        ruleId,
+      });
 
       const where = and(...conditions);
 
@@ -220,7 +205,9 @@ export function registerMessageRoutes(app: FastifyInstance) {
   // Get a single message with full details
   app.get<{ Params: { id: string } }>(
     "/api/messages/:id",
-    { preHandler: [authGuard, requireMessageRole("viewer")] },
+    {
+      preHandler: [authGuard, requireUuidParams, requireMessageRole("viewer")],
+    },
     async (request, reply) => {
       const { id } = request.params;
       const [message] = await db
@@ -240,7 +227,9 @@ export function registerMessageRoutes(app: FastifyInstance) {
   // Download the raw .eml for a message
   app.get<{ Params: { id: string } }>(
     "/api/messages/:id/raw",
-    { preHandler: [authGuard, requireMessageRole("viewer")] },
+    {
+      preHandler: [authGuard, requireUuidParams, requireMessageRole("viewer")],
+    },
     async (request, reply) => {
       const { id } = request.params;
       const [message] = await db
@@ -263,7 +252,9 @@ export function registerMessageRoutes(app: FastifyInstance) {
   // Get raw MIME source as plain text
   app.get<{ Params: { id: string } }>(
     "/api/messages/:id/source",
-    { preHandler: [authGuard, requireMessageRole("viewer")] },
+    {
+      preHandler: [authGuard, requireUuidParams, requireMessageRole("viewer")],
+    },
     async (request, reply) => {
       const { id } = request.params;
       const [message] = await db
@@ -285,7 +276,9 @@ export function registerMessageRoutes(app: FastifyInstance) {
   // Get parsed headers from the raw email
   app.get<{ Params: { id: string } }>(
     "/api/messages/:id/headers",
-    { preHandler: [authGuard, requireMessageRole("viewer")] },
+    {
+      preHandler: [authGuard, requireUuidParams, requireMessageRole("viewer")],
+    },
     async (request, reply) => {
       const { id } = request.params;
       const [message] = await db
@@ -429,7 +422,9 @@ export function registerMessageRoutes(app: FastifyInstance) {
   // Analyze email HTML compatibility across email clients
   app.get<{ Params: { id: string } }>(
     "/api/messages/:id/compatibility",
-    { preHandler: [authGuard, requireMessageRole("viewer")] },
+    {
+      preHandler: [authGuard, requireUuidParams, requireMessageRole("viewer")],
+    },
     async (request, reply) => {
       const { id } = request.params;
       const [message] = await db
@@ -461,7 +456,9 @@ export function registerMessageRoutes(app: FastifyInstance) {
   // Delete a single message
   app.delete<{ Params: { id: string } }>(
     "/api/messages/:id",
-    { preHandler: [authGuard, requireMessageRole("editor")] },
+    {
+      preHandler: [authGuard, requireUuidParams, requireMessageRole("editor")],
+    },
     async (request, reply) => {
       const { id } = request.params;
       const [message] = await db
@@ -479,18 +476,8 @@ export function registerMessageRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Message not found" });
       }
 
-      // Remove raw .eml from storage
-      await storage.removeObject(message.rawKey);
-
-      // Remove attachments from storage
-      if (message.attachments) {
-        for (const att of message.attachments) {
-          await storage.removeObject(att.storageKey);
-        }
-      }
-
-      // Delete from DB
       await db.delete(messages).where(eq(messages.id, id));
+      await removeStored(message.rawKey, message.attachments);
 
       return { success: true };
     },
@@ -499,32 +486,23 @@ export function registerMessageRoutes(app: FastifyInstance) {
   // Delete all messages in an inbox
   app.delete<{ Params: { id: string } }>(
     "/api/inboxes/:id/messages",
-    { preHandler: [authGuard, requireInboxRole("editor")] },
+    { preHandler: [authGuard, requireUuidParams, requireInboxRole("editor")] },
     async (request, reply) => {
       const { id } = request.params;
 
-      // Fetch all messages to clean up storage
+      // Delete rows first, then clean storage best-effort: a storage failure
+      // must not leave rows pointing at half-deleted objects.
       const inboxMessages = await db
-        .select({
-          id: messages.id,
+        .delete(messages)
+        .where(eq(messages.inboxId, id))
+        .returning({
           rawKey: messages.rawKey,
           attachments: messages.attachments,
-        })
-        .from(messages)
-        .where(eq(messages.inboxId, id));
+        });
 
-      // Remove storage objects
       for (const msg of inboxMessages) {
-        await storage.removeObject(msg.rawKey);
-        if (msg.attachments) {
-          for (const att of msg.attachments) {
-            await storage.removeObject(att.storageKey);
-          }
-        }
+        await removeStored(msg.rawKey, msg.attachments);
       }
-
-      // Delete all messages from DB
-      await db.delete(messages).where(eq(messages.inboxId, id));
 
       return { success: true, deleted: inboxMessages.length };
     },
@@ -533,7 +511,9 @@ export function registerMessageRoutes(app: FastifyInstance) {
   // ─── Forward a message ──────────────────────────────────
   app.post<{ Params: { id: string }; Body: { to: string } }>(
     "/api/messages/:id/forward",
-    { preHandler: [authGuard, requireMessageRole("editor")] },
+    {
+      preHandler: [authGuard, requireUuidParams, requireMessageRole("editor")],
+    },
     async (request, reply) => {
       const { id } = request.params;
       const toEmail = normalizeEmail(request.body?.to);
@@ -640,7 +620,9 @@ export function registerMessageRoutes(app: FastifyInstance) {
   // ─── Cancel a scheduled message ─────────────────────────
   app.delete<{ Params: { id: string } }>(
     "/api/messages/:id/schedule",
-    { preHandler: [authGuard, requireMessageRole("editor")] },
+    {
+      preHandler: [authGuard, requireUuidParams, requireMessageRole("editor")],
+    },
     async (request, reply) => {
       const { id } = request.params;
 
@@ -663,7 +645,14 @@ export function registerMessageRoutes(app: FastifyInstance) {
       // Remove from BullMQ queue
       const job = await outboundQueue.getJob(id);
       if (job) {
-        await job.remove();
+        try {
+          await job.remove();
+        } catch {
+          // BullMQ refuses to remove a job a worker has already picked up.
+          return reply
+            .status(409)
+            .send({ error: "Message is already being delivered" });
+        }
       }
 
       // Update status
@@ -679,7 +668,9 @@ export function registerMessageRoutes(app: FastifyInstance) {
   // ─── Stream an attachment ───────────────────────────────
   app.get<{ Params: { id: string; index: string } }>(
     "/api/messages/:id/attachments/:index",
-    { preHandler: [authGuard, requireMessageRole("viewer")] },
+    {
+      preHandler: [authGuard, requireUuidParams, requireMessageRole("viewer")],
+    },
     async (request, reply) => {
       const { id, index: indexStr } = request.params;
       const idx = parseInt(indexStr, 10);
@@ -707,11 +698,8 @@ export function registerMessageRoutes(app: FastifyInstance) {
 
       const att = message.attachments[idx];
       const stream = await storage.getObject(att.storageKey);
-      reply.header("Content-Type", att.contentType);
-      reply.header(
-        "Content-Disposition",
-        `inline; filename="${att.filename.replace(/"/g, '\\"')}"`,
-      );
+
+      reply.headers(attachmentHeaders(att.filename, att.contentType));
       return reply.send(stream);
     },
   );
@@ -719,7 +707,9 @@ export function registerMessageRoutes(app: FastifyInstance) {
   // ─── Mark a single message as read ─────────────────────
   app.put<{ Params: { id: string } }>(
     "/api/messages/:id/read",
-    { preHandler: [authGuard, requireMessageRole("viewer")] },
+    {
+      preHandler: [authGuard, requireUuidParams, requireMessageRole("viewer")],
+    },
     async (request, reply) => {
       const { id } = request.params;
 
@@ -754,7 +744,9 @@ export function registerMessageRoutes(app: FastifyInstance) {
   // ─── Mark a single message as unread ───────────────────
   app.delete<{ Params: { id: string } }>(
     "/api/messages/:id/read",
-    { preHandler: [authGuard, requireMessageRole("viewer")] },
+    {
+      preHandler: [authGuard, requireUuidParams, requireMessageRole("viewer")],
+    },
     async (request, reply) => {
       const { id } = request.params;
 
@@ -789,7 +781,7 @@ export function registerMessageRoutes(app: FastifyInstance) {
   // ─── Mark all messages in an inbox as read ─────────────
   app.put<{ Params: { id: string } }>(
     "/api/inboxes/:id/messages/read-all",
-    { preHandler: [authGuard, requireInboxRole("viewer")] },
+    { preHandler: [authGuard, requireUuidParams, requireInboxRole("viewer")] },
     async (request, _reply) => {
       const { id: inboxId } = request.params;
 
@@ -813,25 +805,30 @@ export function registerMessageRoutes(app: FastifyInstance) {
     Body: { messageIds: string[]; isRead: boolean };
   }>(
     "/api/inboxes/:id/messages/read",
-    { preHandler: [authGuard, requireInboxRole("viewer")] },
+    { preHandler: [authGuard, requireUuidParams, requireInboxRole("viewer")] },
     async (request, reply) => {
       const { id: inboxId } = request.params;
-      const { messageIds, isRead } = request.body;
+      const { messageIds, isRead } = request.body ?? {};
 
-      if (!Array.isArray(messageIds) || messageIds.length === 0) {
-        return reply
-          .status(400)
-          .send({ error: "messageIds array is required" });
+      if (
+        !Array.isArray(messageIds) ||
+        messageIds.length === 0 ||
+        messageIds.length > 1000 ||
+        !messageIds.every(isUuid)
+      ) {
+        return reply.status(400).send({
+          error: "messageIds must be 1-1000 message UUIDs",
+        });
+      }
+      if (typeof isRead !== "boolean") {
+        return reply.status(400).send({ error: "isRead must be a boolean" });
       }
 
       await db
         .update(messages)
         .set({ isRead })
         .where(
-          and(
-            eq(messages.inboxId, inboxId),
-            sql`${messages.id} = ANY(${messageIds})`,
-          ),
+          and(eq(messages.inboxId, inboxId), inArray(messages.id, messageIds)),
         );
 
       await redisPub.publish(

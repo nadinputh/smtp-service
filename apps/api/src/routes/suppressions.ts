@@ -5,6 +5,7 @@ import { eq, and, desc, ilike, count, sql } from "drizzle-orm";
 import { authGuard } from "../middleware/auth.js";
 import { isOwnerOrAdmin, isGlobalAdmin, isUuid } from "../middleware/access.js";
 import { normalizeEmail } from "../lib/address.js";
+import { escapeLike } from "../lib/validate.js";
 
 const MANUAL_REASONS = ["manual", "hard_bounce", "complaint"];
 
@@ -28,9 +29,7 @@ export function registerSuppressionRoutes(app: FastifyInstance) {
       conditions.push(eq(suppressions.userId, userId));
     }
     if (typeof q === "string" && q) {
-      // Escape LIKE wildcards so the search is a literal substring match.
-      const literal = q.replace(/[\\%_]/g, "\\$&");
-      conditions.push(ilike(suppressions.email, `%${literal}%`));
+      conditions.push(ilike(suppressions.email, `%${escapeLike(q)}%`));
     }
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;

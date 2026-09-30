@@ -11,8 +11,18 @@ import { passwordPolicyError } from "../lib/password-policy.js";
 import { getOrCreateSystemInbox } from "../lib/system-inbox.js";
 import { sendSystemEmail } from "../lib/send-system-email.js";
 import { isLdapConfigured } from "../lib/ldap-config.js";
+import { normalizeEmail } from "../lib/address.js";
+import { cleanString } from "../lib/validate.js";
 
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000; // 1 hour
+// Compared against when the account doesn't exist, so login takes the same
+// time whether or not an email is registered.
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync("not-a-real-password", 12);
+
+/** Reset tokens are stored hashed so a DB leak can't be used to reset accounts. */
+const hashResetToken = (token: string) =>
+  crypto.createHash("sha256").update(token).digest("hex");
+
 const LDAP_CONNECT_TIMEOUT_MS = 5000;
 const LDAP_OPERATION_TIMEOUT_MS = 10000;
 
@@ -25,7 +35,11 @@ export function registerAuthRoutes(app: FastifyInstance) {
       "LDAP_ENABLED is true but LDAP_URL, LDAP_BIND_DN, LDAP_BIND_PASSWORD, or LDAP_SEARCH_BASE is missing — LDAP login will report a configuration error to every user who tries it",
     );
   }
-  if (env.LDAP_ENABLED && env.LDAP_URL && !env.LDAP_URL.startsWith("ldaps://")) {
+  if (
+    env.LDAP_ENABLED &&
+    env.LDAP_URL &&
+    !env.LDAP_URL.startsWith("ldaps://")
+  ) {
     app.log.warn(
       { url: env.LDAP_URL },
       "LDAP_URL is not using ldaps:// — service and user credentials will be sent to the directory server unencrypted",
@@ -70,7 +84,7 @@ export function registerAuthRoutes(app: FastifyInstance) {
   app.post<{
     Body: { email: string; password: string; name?: string };
   }>("/api/auth/register", authRateLimit, async (request, reply) => {
-    const { email, password, name } = request.body;
+    const { email, password, name } = request.body ?? {};
 
     if (
       typeof email !== "string" ||
@@ -87,13 +101,28 @@ export function registerAuthRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: "Invalid credentials format" });
     }
 
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedEmail || normalizedEmail.length > 255) {
+      return reply
+        .status(400)
+        .send({ error: "A valid email address is required" });
+    }
+    if (
+      name !== undefined &&
+      name !== null &&
+      (typeof name !== "string" || name.trim().length > 255)
+    ) {
+      return reply
+        .status(400)
+        .send({ error: "name must be a string of at most 255 characters" });
+    }
+    const cleanName = cleanString(name, 255);
+
     // Password strength validation
     const passwordError = passwordPolicyError(password);
     if (passwordError) {
       return reply.status(400).send({ error: passwordError });
     }
-
-    const normalizedEmail = email.trim().toLowerCase();
 
     const [existing] = await db
       .select({ id: users.id })
@@ -109,14 +138,19 @@ export function registerAuthRoutes(app: FastifyInstance) {
 
     const [user] = await db
       .insert(users)
-      .values({ email: normalizedEmail, passwordHash, name: name ?? null })
+      .values({ email: normalizedEmail, passwordHash, name: cleanName })
       .returning({ id: users.id, email: users.email, role: users.role });
 
     const token = signToken({ userId: user.id, email: user.email });
 
     return reply.status(201).send({
       token,
-      user: { id: user.id, email: user.email, name, role: user.role },
+      user: {
+        id: user.id,
+        email: user.email,
+        name: cleanName,
+        role: user.role,
+      },
     });
   });
 
@@ -124,7 +158,7 @@ export function registerAuthRoutes(app: FastifyInstance) {
   app.post<{
     Body: { email: string; password: string };
   }>("/api/auth/login", authRateLimit, async (request, reply) => {
-    const { email, password } = request.body;
+    const { email, password } = request.body ?? {};
 
     if (
       typeof email !== "string" ||
@@ -149,12 +183,13 @@ export function registerAuthRoutes(app: FastifyInstance) {
       .where(eq(users.email, normalizedEmail))
       .limit(1);
 
-    if (!user || !user.passwordHash) {
-      return reply.status(401).send({ error: "Invalid credentials" });
-    }
-
-    const valid = await bcrypt.compare(password, user.passwordHash);
-    if (!valid) {
+    // Always run a bcrypt compare so timing doesn't reveal whether the
+    // account exists.
+    const valid = await bcrypt.compare(
+      password,
+      user?.passwordHash ?? DUMMY_PASSWORD_HASH,
+    );
+    if (!user || !user.passwordHash || !valid) {
       return reply.status(401).send({ error: "Invalid credentials" });
     }
 
@@ -181,7 +216,7 @@ export function registerAuthRoutes(app: FastifyInstance) {
         .send({ error: "LDAP authentication is not enabled" });
     }
 
-    const { username, password } = request.body;
+    const { username, password } = request.body ?? {};
     if (
       typeof username !== "string" ||
       typeof password !== "string" ||
@@ -296,7 +331,9 @@ export function registerAuthRoutes(app: FastifyInstance) {
         });
       });
 
-      const email = ldapUser.mail || `${username}@ldap.local`;
+      const email = (ldapUser.mail || `${username}@ldap.local`)
+        .trim()
+        .toLowerCase();
       const name = ldapUser.cn || username;
 
       // Find or create user by email
@@ -391,8 +428,13 @@ export function registerAuthRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: "OAuth2 is not enabled" });
     }
 
-    const { code, codeVerifier } = request.body;
-    if (!code || !codeVerifier) {
+    const { code, codeVerifier } = request.body ?? {};
+    if (
+      typeof code !== "string" ||
+      typeof codeVerifier !== "string" ||
+      !code ||
+      !codeVerifier
+    ) {
       return reply
         .status(400)
         .send({ error: "code and codeVerifier are required" });
@@ -447,7 +489,8 @@ export function registerAuthRoutes(app: FastifyInstance) {
         const payload = JSON.parse(
           Buffer.from(tokens.id_token.split(".")[1], "base64url").toString(),
         );
-        email = payload.email || "";
+        // Only trust an email the provider has verified.
+        if (payload.email_verified !== false) email = payload.email || "";
         name = payload.name || "";
       } catch {
         // Fall through to userinfo endpoint
@@ -461,13 +504,15 @@ export function registerAuthRoutes(app: FastifyInstance) {
       if (userinfoRes.ok) {
         const info = (await userinfoRes.json()) as {
           email?: string;
+          email_verified?: boolean;
           name?: string;
         };
-        email = info.email || email;
+        if (info.email_verified !== false) email = info.email || email;
         name = info.name || name;
       }
     }
 
+    email = typeof email === "string" ? email.trim().toLowerCase() : "";
     if (!email) {
       return reply
         .status(401)
@@ -542,9 +587,14 @@ export function registerAuthRoutes(app: FastifyInstance) {
     "/api/auth/change-password",
     { preHandler: [authGuard] },
     async (request, reply) => {
-      const { currentPassword, newPassword } = request.body;
+      const { currentPassword, newPassword } = request.body ?? {};
 
-      if (!currentPassword || !newPassword) {
+      if (
+        typeof currentPassword !== "string" ||
+        typeof newPassword !== "string" ||
+        !currentPassword ||
+        !newPassword
+      ) {
         return reply
           .status(400)
           .send({ error: "Current password and new password are required" });
@@ -578,10 +628,19 @@ export function registerAuthRoutes(app: FastifyInstance) {
 
       await db
         .update(users)
-        .set({ passwordHash, updatedAt: new Date() })
+        .set({
+          passwordHash,
+          passwordChangedAt: new Date(),
+          updatedAt: new Date(),
+        })
         .where(eq(users.id, user.id));
 
-      return { success: true };
+      // Other sessions are now invalid; hand this one a fresh token so the
+      // user isn't logged out of the device they just changed it on.
+      return {
+        success: true,
+        token: signToken({ userId: user.id, email: request.user!.email }),
+      };
     },
   );
 
@@ -589,7 +648,7 @@ export function registerAuthRoutes(app: FastifyInstance) {
   app.post<{
     Body: { email: string };
   }>("/api/auth/forgot-password", authRateLimit, async (request, reply) => {
-    const { email } = request.body;
+    const email = request.body?.email;
     if (typeof email !== "string" || !email) {
       return reply.status(400).send({ error: "Email is required" });
     }
@@ -615,7 +674,7 @@ export function registerAuthRoutes(app: FastifyInstance) {
     const token = crypto.randomBytes(32).toString("hex");
     await db.insert(passwordResets).values({
       userId: user.id,
-      token,
+      token: hashResetToken(token),
       expiresAt: new Date(Date.now() + PASSWORD_RESET_TTL_MS),
     });
 
@@ -637,7 +696,10 @@ export function registerAuthRoutes(app: FastifyInstance) {
     } catch (err) {
       // Delivery failure shouldn't leak account existence or block the
       // generic response — log server-side for operators to investigate.
-      app.log.error({ err, userId: user.id }, "Failed to send password reset email");
+      app.log.error(
+        { err, userId: user.id },
+        "Failed to send password reset email",
+      );
     }
 
     return genericResponse;
@@ -647,8 +709,13 @@ export function registerAuthRoutes(app: FastifyInstance) {
   app.post<{
     Body: { token: string; newPassword: string };
   }>("/api/auth/reset-password", authRateLimit, async (request, reply) => {
-    const { token, newPassword } = request.body;
-    if (!token || !newPassword) {
+    const { token, newPassword } = request.body ?? {};
+    if (
+      typeof token !== "string" ||
+      typeof newPassword !== "string" ||
+      !token ||
+      !newPassword
+    ) {
       return reply
         .status(400)
         .send({ error: "Token and new password are required" });
@@ -659,17 +726,18 @@ export function registerAuthRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: newPasswordError });
     }
 
+    // Claim the token atomically so a concurrent second use can't also succeed.
     const [reset] = await db
-      .select({ id: passwordResets.id, userId: passwordResets.userId })
-      .from(passwordResets)
+      .update(passwordResets)
+      .set({ usedAt: new Date() })
       .where(
         and(
-          eq(passwordResets.token, token),
+          eq(passwordResets.token, hashResetToken(token)),
           isNull(passwordResets.usedAt),
           gt(passwordResets.expiresAt, new Date()),
         ),
       )
-      .limit(1);
+      .returning({ userId: passwordResets.userId });
 
     if (!reset) {
       return reply
@@ -681,13 +749,23 @@ export function registerAuthRoutes(app: FastifyInstance) {
 
     await db
       .update(users)
-      .set({ passwordHash, updatedAt: new Date() })
+      .set({
+        passwordHash,
+        passwordChangedAt: new Date(),
+        updatedAt: new Date(),
+      })
       .where(eq(users.id, reset.userId));
 
+    // Any other outstanding reset links for this account are now void.
     await db
       .update(passwordResets)
       .set({ usedAt: new Date() })
-      .where(eq(passwordResets.id, reset.id));
+      .where(
+        and(
+          eq(passwordResets.userId, reset.userId),
+          isNull(passwordResets.usedAt),
+        ),
+      );
 
     return { success: true };
   });

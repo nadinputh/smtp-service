@@ -78,7 +78,7 @@ await app.register(multipart, { limits: { fileSize: 25 * 1024 * 1024 } });
 
 // ─── Global Rate Limiting ─────────────────────────────────
 await app.register(rateLimit, {
-  max: 100, // 100 requests per window
+  max: env.RATE_LIMIT_MAX, // requests per window
   timeWindow: 60000, // 1 minute
   keyGenerator: (request) => {
     // Rate limit by authenticated user or IP

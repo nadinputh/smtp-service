@@ -1,10 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { randomBytes } from "node:crypto";
-import bcrypt from "bcryptjs";
 import { getEnv } from "@mailpocket/env";
 import { getDb, apiKeys } from "@mailpocket/db";
 import { eq, and } from "drizzle-orm";
-import { authGuard } from "../middleware/auth.js";
+import { authGuard, hashApiKey, API_KEY_SCOPES } from "../middleware/auth.js";
+import { isUuid } from "../middleware/access.js";
+import { cleanString } from "../lib/validate.js";
 
 export function registerApiKeyRoutes(app: FastifyInstance) {
   const env = getEnv();
@@ -30,25 +31,39 @@ export function registerApiKeyRoutes(app: FastifyInstance) {
   app.post<{
     Body: { name: string; scopes: string[]; expiresAt?: string };
   }>("/api/keys", { preHandler: authGuard }, async (request, reply) => {
-    const { name, scopes, expiresAt } = request.body;
+    const body = request.body ?? ({} as Record<string, unknown>);
+    const name = cleanString(body.name, 255);
 
-    if (!name || !scopes?.length) {
+    if (!name || !Array.isArray(body.scopes) || !body.scopes.length) {
       return reply.status(400).send({ error: "name and scopes are required" });
     }
 
-    const validScopes = ["send", "read", "delete"];
-    const invalidScopes = scopes.filter((s) => !validScopes.includes(s));
+    const scopes = [...new Set(body.scopes)] as string[];
+    const invalidScopes = scopes.filter(
+      (s) => !(API_KEY_SCOPES as readonly unknown[]).includes(s),
+    );
     if (invalidScopes.length) {
-      return reply
-        .status(400)
-        .send({ error: `Invalid scopes: ${invalidScopes.join(", ")}` });
+      return reply.status(400).send({
+        error: `Invalid scopes: ${invalidScopes.map(String).join(", ")}`,
+      });
+    }
+
+    let expiresAt: Date | null = null;
+    if (body.expiresAt !== undefined && body.expiresAt !== null) {
+      expiresAt =
+        typeof body.expiresAt === "string" ? new Date(body.expiresAt) : null;
+      if (!expiresAt || isNaN(expiresAt.getTime()) || expiresAt <= new Date()) {
+        return reply
+          .status(400)
+          .send({ error: "expiresAt must be a future ISO 8601 timestamp" });
+      }
     }
 
     // Generate key: smtps_live_<32 hex chars>
     const hex = randomBytes(16).toString("hex");
     const rawKey = `smtps_live_${hex}`;
     const prefix = rawKey.slice(0, 14);
-    const keyHash = await bcrypt.hash(rawKey, 10);
+    const keyHash = hashApiKey(rawKey);
 
     const [created] = await db
       .insert(apiKeys)
@@ -58,7 +73,7 @@ export function registerApiKeyRoutes(app: FastifyInstance) {
         keyHash,
         prefix,
         scopes,
-        expiresAt: expiresAt ? new Date(expiresAt) : null,
+        expiresAt,
       })
       .returning();
 
@@ -80,6 +95,11 @@ export function registerApiKeyRoutes(app: FastifyInstance) {
     { preHandler: authGuard },
     async (request, reply) => {
       const { id } = request.params;
+
+      if (!isUuid(id)) {
+        return reply.status(404).send({ error: "API key not found" });
+      }
+
       const deleted = await db
         .delete(apiKeys)
         .where(

@@ -218,6 +218,7 @@ export function createOutboundProcessor(
           parsed.html as string,
           messageId,
           env.TRACKING_BASE_URL,
+          env.JWT_SECRET,
         );
         // Rebuild the MIME message with tracked HTML
         const mail = new MailComposer({
@@ -281,7 +282,22 @@ export function createOutboundProcessor(
         );
       for (const r of rows) suppressedNow.add(r.email);
     }
+    // A retry re-runs the whole recipient list; don't mail people twice.
+    const alreadyDelivered = new Set(
+      (
+        await db
+          .select({ recipient: deliveryLogs.recipient })
+          .from(deliveryLogs)
+          .where(
+            and(
+              eq(deliveryLogs.messageId, messageId),
+              eq(deliveryLogs.status, "delivered"),
+            ),
+          )
+      ).map((r) => r.recipient),
+    );
     let attempted = 0;
+    let deliveredCount = 0;
 
     if (dkim) {
       console.log(
@@ -303,6 +319,11 @@ export function createOutboundProcessor(
           lastAttemptAt: new Date(),
         });
         console.log(`  🚫 ${recipient} skipped (suppressed)`);
+        continue;
+      }
+      if (alreadyDelivered.has(recipient)) {
+        attempted++;
+        deliveredCount++;
         continue;
       }
       attempted++;
@@ -346,6 +367,7 @@ export function createOutboundProcessor(
             recipient,
             mxHost: "localhost",
           });
+          deliveredCount++;
           continue;
         }
 
@@ -371,6 +393,7 @@ export function createOutboundProcessor(
         }
 
         console.log(`  ✅ ${recipient} → delivered via ${result.mxHost}`);
+        deliveredCount++;
 
         // Fire webhook
         await fireWebhooks(redisPub, "delivered", {
@@ -439,10 +462,18 @@ export function createOutboundProcessor(
     }
 
     // 4. Update message status
-    const allDelivered = true; // simplified — check logs in production
     await db
       .update(messages)
-      .set({ status: attempted === 0 ? "suppressed" : "delivered" })
+      .set({
+        // A message only counts as delivered if at least one recipient was;
+        // permanent per-recipient failures no longer leave it "delivered".
+        status:
+          attempted === 0
+            ? "suppressed"
+            : deliveredCount > 0
+              ? "delivered"
+              : "bounced",
+      })
       .where(eq(messages.id, messageId));
 
     // 5. Publish real-time event so the UI refreshes

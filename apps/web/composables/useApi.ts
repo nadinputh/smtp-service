@@ -519,7 +519,7 @@ export function useApi() {
     },
 
     async changePassword(currentPassword: string, newPassword: string) {
-      return await $fetch<{ success: boolean }>("/api/auth/change-password", {
+      return await $fetch<{ success: boolean; token: string }>("/api/auth/change-password", {
         method: "PUT",
         headers: authHeaders(),
         body: { currentPassword, newPassword },

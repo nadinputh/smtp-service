@@ -8,7 +8,12 @@ import {
   type Job,
   QUEUE_NAMES,
   type WebhookDeliveryPayload,
+  isPrivateAddress,
+  isInternalHostname,
+  bareHost,
 } from "@mailpocket/queue";
+import { promises as dns } from "node:dns";
+import { isIP } from "node:net";
 import type { Queue } from "bullmq";
 
 interface WebhookEvent {
@@ -108,10 +113,33 @@ async function enqueueWebhooks(
   }
 }
 
+/**
+ * In production, refuse to call into private networks. The host is resolved
+ * here (not just checked syntactically) so a public-looking name that points
+ * at an internal address is caught too.
+ */
+async function assertPublicTarget(rawUrl: string): Promise<void> {
+  const url = new URL(rawUrl);
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("Webhook URL must use http or https");
+  }
+  const host = bareHost(url);
+  if (isInternalHostname(host)) {
+    throw new Error("Webhook target is not a public host");
+  }
+  const addresses = isIP(host)
+    ? [host]
+    : (await dns.lookup(host, { all: true })).map((a) => a.address);
+  if (addresses.length === 0 || addresses.some(isPrivateAddress)) {
+    throw new Error("Webhook target is not a public host");
+  }
+}
+
 export function createWebhookDeliveryWorker(
   connection: ConnectionOptions,
   db: ReturnType<typeof getDb>,
   webhookQueue: Queue<WebhookDeliveryPayload>,
+  env: Pick<Env, "APP_MODE">,
 ) {
   return new Worker<WebhookDeliveryPayload>(
     QUEUE_NAMES.WEBHOOK_DELIVERY,
@@ -119,17 +147,20 @@ export function createWebhookDeliveryWorker(
       const { webhookLogId, url, event, payload, attempt } = job.data;
 
       try {
+        if (env.APP_MODE === "production") await assertPublicTarget(url);
+
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 10000);
 
+        // Redirects aren't followed: they could bounce a checked public URL
+        // to an internal one. A 3xx therefore counts as a failed delivery.
         const response = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
           signal: controller.signal,
-        });
-
-        clearTimeout(timeout);
+          redirect: "manual",
+        }).finally(() => clearTimeout(timeout));
 
         const responseBody = await response.text().catch(() => "");
 

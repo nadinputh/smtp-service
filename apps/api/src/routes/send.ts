@@ -17,7 +17,7 @@ import {
   createRedisConnection,
   type OutboundEmailPayload,
 } from "@mailpocket/queue";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, lte, sql } from "drizzle-orm";
 import { authGuard } from "../middleware/auth.js";
 import { resolveInboxRole, hasMinRole } from "../middleware/access.js";
 import {
@@ -56,14 +56,43 @@ interface BatchSendBody {
   }>;
 }
 
-/** Replace {{var}} placeholders in a string */
-function substituteVariables(
+const HTML_ESCAPES: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+};
+
+/**
+ * Replace {{var}} placeholders. Only own, scalar values are substituted;
+ * unknown keys stay as-is. Pass `html` to escape values for an HTML body so
+ * recipient-supplied data can't inject markup.
+ */
+export function substituteVariables(
   content: string,
-  vars: Record<string, string>,
+  vars: Record<string, unknown>,
+  html = false,
 ): string {
-  return content.replace(
-    /\{\{(\w+)\}\}/g,
-    (_, key) => vars[key] ?? `{{${key}}}`,
+  return content.replace(/\{\{(\w+)\}\}/g, (match, key) => {
+    const value = Object.hasOwn(vars, key) ? vars[key] : undefined;
+    if (
+      typeof value !== "string" &&
+      typeof value !== "number" &&
+      typeof value !== "boolean"
+    ) {
+      return match;
+    }
+    const str = String(value);
+    return html ? str.replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]) : str;
+  });
+}
+
+/** A variables payload must be a plain object. */
+function isVariablesObject(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (typeof value === "object" && value !== null && !Array.isArray(value))
   );
 }
 
@@ -141,6 +170,10 @@ export function registerSendRoutes(app: FastifyInstance) {
           .send({ error: "from, to, and inboxId are required" });
       }
 
+      if (!isVariablesObject(variables)) {
+        return reply.status(400).send({ error: "variables must be an object" });
+      }
+
       const toEntries = parseRecipients(to);
       const ccEntries = cc ? parseRecipients(cc) : undefined;
       const bccEntries = bcc ? parseRecipients(bcc) : undefined;
@@ -159,16 +192,6 @@ export function registerSendRoutes(app: FastifyInstance) {
       const inboxRole = await resolveInboxRole(request.user!.userId, inboxId);
       if (!hasMinRole(inboxRole, "editor")) {
         return reply.status(404).send({ error: "Inbox not found" });
-      }
-
-      // ─── Quota check ─────────────────────────────────────
-      const quotaError = await checkAndIncrementQuota(
-        db,
-        request.user!.userId,
-        toEntries.length,
-      );
-      if (quotaError) {
-        return reply.status(429).send({ error: quotaError });
       }
 
       // Resolve template if provided
@@ -194,7 +217,7 @@ export function registerSendRoutes(app: FastifyInstance) {
 
         const vars = variables ?? {};
         subject = subject ?? substituteVariables(tpl.subject ?? "", vars);
-        html = substituteVariables(tpl.html, vars);
+        html = substituteVariables(tpl.html, vars, true);
         text = tpl.text ? substituteVariables(tpl.text, vars) : text;
       }
 
@@ -252,18 +275,30 @@ export function registerSendRoutes(app: FastifyInstance) {
         });
       }
 
+      // Everyone who actually receives the message: to + cc + bcc.
+      const activeCc = ccEntries?.filter(isActive) ?? [];
+      const activeBcc = bccEntries?.filter(isActive) ?? [];
+      const envelopeTo = [
+        ...new Set(
+          [...activeTo, ...activeCc, ...activeBcc].map((r) => r.email),
+        ),
+      ];
+
+      const quotaError = await checkAndIncrementQuota(
+        db,
+        request.user!.userId,
+        envelopeTo.length,
+      );
+      if (quotaError) {
+        return reply.status(429).send({ error: quotaError });
+      }
+
       // Build MIME message
       const mailOpts: Record<string, unknown> = {
         from,
         to: activeTo.map((r) => r.raw).join(", "),
-        cc: ccEntries
-          ?.filter(isActive)
-          .map((r) => r.raw)
-          .join(", "),
-        bcc: bccEntries
-          ?.filter(isActive)
-          .map((r) => r.raw)
-          .join(", "),
+        cc: activeCc.map((r) => r.raw).join(", ") || undefined,
+        bcc: activeBcc.map((r) => r.raw).join(", ") || undefined,
         subject,
         text,
         html,
@@ -300,6 +335,8 @@ export function registerSendRoutes(app: FastifyInstance) {
         inboxId,
         from,
         to: activeTo.map((r) => r.email),
+        cc: activeCc.length ? activeCc.map((r) => r.email) : null,
+        bcc: activeBcc.length ? activeBcc.map((r) => r.email) : null,
         subject,
         text: text ?? null,
         html: html ?? null,
@@ -315,7 +352,7 @@ export function registerSendRoutes(app: FastifyInstance) {
         messageId,
         userId: request.user!.userId,
         from,
-        to: activeTo.map((r) => r.email),
+        to: envelopeTo,
         rawKey,
       };
 
@@ -426,18 +463,30 @@ export function registerSendRoutes(app: FastifyInstance) {
           .send({ error: "At least one of text or html is required" });
       }
 
+      // Everyone who actually receives the message: to + cc + bcc.
+      const activeCc = ccEntries?.filter(isActive) ?? [];
+      const activeBcc = bccEntries?.filter(isActive) ?? [];
+      const envelopeTo = [
+        ...new Set(
+          [...activeTo, ...activeCc, ...activeBcc].map((r) => r.email),
+        ),
+      ];
+
+      const quotaError = await checkAndIncrementQuota(
+        db,
+        request.user!.userId,
+        envelopeTo.length,
+      );
+      if (quotaError) {
+        return reply.status(429).send({ error: quotaError });
+      }
+
       // Build MIME with attachments
       const mail = new MailComposer({
         from,
         to: activeTo.map((r) => r.raw).join(", "),
-        cc: ccEntries
-          ?.filter(isActive)
-          .map((r) => r.raw)
-          .join(", "),
-        bcc: bccEntries
-          ?.filter(isActive)
-          .map((r) => r.raw)
-          .join(", "),
+        cc: activeCc.map((r) => r.raw).join(", ") || undefined,
+        bcc: activeBcc.map((r) => r.raw).join(", ") || undefined,
         subject,
         text,
         html,
@@ -470,6 +519,8 @@ export function registerSendRoutes(app: FastifyInstance) {
         inboxId,
         from,
         to: activeTo.map((r) => r.email),
+        cc: activeCc.length ? activeCc.map((r) => r.email) : null,
+        bcc: activeBcc.length ? activeBcc.map((r) => r.email) : null,
         subject,
         text: text ?? null,
         html: html ?? null,
@@ -482,7 +533,7 @@ export function registerSendRoutes(app: FastifyInstance) {
         messageId,
         userId: request.user!.userId,
         from,
-        to: activeTo.map((r) => r.email),
+        to: envelopeTo,
         rawKey,
       };
 
@@ -543,10 +594,11 @@ export function registerSendRoutes(app: FastifyInstance) {
       }> = [];
       for (const r of recipients) {
         const email = normalizeEmail(r?.to);
-        if (!email) {
-          return reply
-            .status(400)
-            .send({ error: "Every recipient needs a valid email address" });
+        if (!email || !isVariablesObject(r.variables)) {
+          return reply.status(400).send({
+            error:
+              "Every recipient needs a valid email address and object variables",
+          });
         }
         batch.push({ raw: r.to.trim(), email, variables: r.variables });
       }
@@ -608,6 +660,20 @@ export function registerSendRoutes(app: FastifyInstance) {
         batch.map((r) => r.email),
       );
 
+      const activeCount = batch.filter(
+        (r) => !suppressedEmails.has(r.email),
+      ).length;
+      if (activeCount > 0) {
+        const quotaError = await checkAndIncrementQuota(
+          db,
+          request.user!.userId,
+          activeCount,
+        );
+        if (quotaError) {
+          return reply.status(429).send({ error: quotaError });
+        }
+      }
+
       const batchId = randomUUID();
       const messageIds: string[] = [];
       const suppressed: string[] = [];
@@ -623,9 +689,9 @@ export function registerSendRoutes(app: FastifyInstance) {
           ? substituteVariables(tpl.subject ?? rawSubject ?? "", vars)
           : substituteVariables(rawSubject ?? "", vars);
         const html = tpl
-          ? substituteVariables(tpl.html, vars)
+          ? substituteVariables(tpl.html, vars, true)
           : rawHtml
-            ? substituteVariables(rawHtml, vars)
+            ? substituteVariables(rawHtml, vars, true)
             : undefined;
         const text = tpl?.text
           ? substituteVariables(tpl.text, vars)
@@ -698,51 +764,52 @@ export function registerSendRoutes(app: FastifyInstance) {
 }
 
 // ─── Quota Helper ─────────────────────────────────────────
+/**
+ * Atomically consume `count` sends from the user's monthly quota. The check
+ * and increment are one UPDATE so concurrent requests can't both slip under
+ * the limit. Returns an error message when the quota would be exceeded.
+ */
 async function checkAndIncrementQuota(
-  db: any,
+  db: ReturnType<typeof getDb>,
   userId: string,
-  recipientCount: number,
+  count: number,
 ): Promise<string | null> {
-  // Get or create quota record
-  let [quota] = await db
+  const now = new Date();
+  const nextReset = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1),
+  );
+
+  await db
+    .insert(userQuotas)
+    .values({ userId, quotaResetAt: nextReset })
+    .onConflictDoNothing();
+
+  // New month: start counting again
+  await db
+    .update(userQuotas)
+    .set({ currentMonthlySent: 0, quotaResetAt: nextReset })
+    .where(
+      and(eq(userQuotas.userId, userId), lte(userQuotas.quotaResetAt, now)),
+    );
+
+  const [consumed] = await db
+    .update(userQuotas)
+    .set({
+      currentMonthlySent: sql`${userQuotas.currentMonthlySent} + ${count}`,
+    })
+    .where(
+      and(
+        eq(userQuotas.userId, userId),
+        sql`${userQuotas.currentMonthlySent} + ${count} <= ${userQuotas.monthlySendLimit}`,
+      ),
+    )
+    .returning({ id: userQuotas.id });
+  if (consumed) return null;
+
+  const [quota] = await db
     .select()
     .from(userQuotas)
     .where(eq(userQuotas.userId, userId))
     .limit(1);
-
-  if (!quota) {
-    const nextReset = new Date(
-      Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 1),
-    );
-    [quota] = await db
-      .insert(userQuotas)
-      .values({ userId, quotaResetAt: nextReset })
-      .returning();
-  }
-
-  // Check reset
-  if (quota.quotaResetAt && new Date(quota.quotaResetAt) <= new Date()) {
-    const nextReset = new Date(
-      Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 1),
-    );
-    await db
-      .update(userQuotas)
-      .set({ currentMonthlySent: 0, quotaResetAt: nextReset })
-      .where(eq(userQuotas.userId, userId));
-    quota.currentMonthlySent = 0;
-  }
-
-  if (quota.currentMonthlySent + recipientCount > quota.monthlySendLimit) {
-    return `Monthly send quota exceeded. Used ${quota.currentMonthlySent}/${quota.monthlySendLimit}. Resets at ${quota.quotaResetAt?.toISOString() ?? "next month"}`;
-  }
-
-  // Increment
-  await db
-    .update(userQuotas)
-    .set({
-      currentMonthlySent: quota.currentMonthlySent + recipientCount,
-    })
-    .where(eq(userQuotas.userId, userId));
-
-  return null;
+  return `Monthly send quota exceeded. Used ${quota.currentMonthlySent}/${quota.monthlySendLimit}. Resets at ${quota.quotaResetAt?.toISOString() ?? "next month"}`;
 }

@@ -139,6 +139,30 @@ describe.skipIf(!url)("outbound worker (database)", () => {
     expect(r.status).toBe("delivered");
   });
 
+  it("does not re-deliver to recipients that already succeeded (retry)", async () => {
+    const to = ["retry-a@example.com", "retry-b@example.com"];
+    const { messageId, rawKey } = await queueMessage(to);
+    // First attempt already delivered "a" before the job was retried.
+    await db.insert(deliveryLogs).values({
+      messageId,
+      recipient: to[0],
+      status: "delivered",
+    });
+    await processor({
+      data: { messageId, userId: owner, from: "a@example.com", to, rawKey },
+      attemptsMade: 1,
+    } as any);
+    const logs = await db
+      .select({
+        recipient: deliveryLogs.recipient,
+        status: deliveryLogs.status,
+      })
+      .from(deliveryLogs)
+      .where(eq(deliveryLogs.messageId, messageId));
+    expect(logs.filter((l) => l.recipient === to[0])).toHaveLength(1);
+    expect(logs.filter((l) => l.recipient === to[1])).toHaveLength(1);
+  });
+
   describe("getDkimConfig", () => {
     const domain = `dkim-${suffix}.example.com`;
 

@@ -6,6 +6,8 @@ export const users = pgTable("users", {
   passwordHash: varchar("password_hash", { length: 255 }),
   name: varchar("name", { length: 255 }),
   role: varchar("role", { length: 20 }).notNull().default("user"), // user, admin
+  // Sessions issued before this moment are rejected (set on password change/reset)
+  passwordChangedAt: timestamp("password_changed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

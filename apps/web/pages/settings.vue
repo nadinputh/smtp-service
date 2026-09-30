@@ -144,7 +144,7 @@ definePageMeta({ layout: "default" });
 useHead({ title: "Settings" });
 
 const api = useApi();
-const { user } = useAuth();
+const { user, setToken } = useAuth();
 
 const form = reactive({
   currentPassword: "",
@@ -166,7 +166,9 @@ async function handleChangePassword() {
 
   saving.value = true;
   try {
-    await api.changePassword(form.currentPassword, form.newPassword);
+    const res = await api.changePassword(form.currentPassword, form.newPassword);
+    // Other sessions were ended; keep this one signed in.
+    if (res?.token) setToken(res.token);
     success.value = "Password updated successfully";
     form.currentPassword = "";
     form.newPassword = "";

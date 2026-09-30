@@ -198,7 +198,7 @@ const redisWebhookSub = new Redis.default({
 });
 const webhookQueue = createWebhookDeliveryQueue(redisConnection);
 startWebhookDispatcher(env, db, redisWebhookSub, webhookQueue);
-createWebhookDeliveryWorker(redisConnection, db, webhookQueue);
+createWebhookDeliveryWorker(redisConnection, db, webhookQueue, env);
 
 // ─── Cleanup Worker ───────────────────────────────────────
 async function processCleanup(job: Job<CleanupPayload>) {

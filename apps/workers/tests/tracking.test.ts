@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { injectTracking } from "../src/tracking.js";
+import { verifyTrackedLink } from "@mailpocket/queue";
 
 const BASE_URL = "http://localhost:3002";
 const MSG_ID = "test-msg-123";
@@ -60,5 +61,32 @@ describe("injectTracking", () => {
   it("handles empty HTML gracefully", () => {
     const result = injectTracking("", MSG_ID, BASE_URL);
     expect(result).toContain(`/t/open/${MSG_ID}`);
+  });
+});
+
+describe("injectTracking signing", () => {
+  it("adds a verifiable signature to each rewritten link when a secret is given", () => {
+    const secret = "test-secret-test-secret";
+    const out = injectTracking(
+      '<a href="https://example.com/x?a=1&b=2">go</a>',
+      MSG_ID,
+      BASE_URL,
+      secret,
+    );
+    const href = /href="([^"]+)"/.exec(out)![1];
+    const parsed = new URL(href.replace(/&amp;/g, "&"));
+    expect(
+      verifyTrackedLink(
+        secret,
+        MSG_ID,
+        parsed.searchParams.get("url")!,
+        parsed.searchParams.get("sig"),
+      ),
+    ).toBe(true);
+  });
+
+  it("stays unsigned when no secret is provided", () => {
+    const out = injectTracking('<a href="https://example.com">go</a>', MSG_ID, BASE_URL);
+    expect(out).not.toContain("sig=");
   });
 });

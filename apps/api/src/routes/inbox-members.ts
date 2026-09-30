@@ -3,7 +3,8 @@ import { getEnv } from "@mailpocket/env";
 import { getDb, inboxes, inboxMembers, users } from "@mailpocket/db";
 import { eq, and } from "drizzle-orm";
 import { authGuard } from "../middleware/auth.js";
-import { requireInboxRole } from "../middleware/access.js";
+import { requireInboxRole, requireUuidParams } from "../middleware/access.js";
+import { normalizeEmail } from "../lib/address.js";
 
 export function registerInboxMemberRoutes(app: FastifyInstance) {
   const env = getEnv();
@@ -12,7 +13,7 @@ export function registerInboxMemberRoutes(app: FastifyInstance) {
   // ─── List members ──────────────────────────────────────
   app.get<{ Params: { id: string } }>(
     "/api/inboxes/:id/members",
-    { preHandler: [authGuard, requireInboxRole("viewer")] },
+    { preHandler: [authGuard, requireUuidParams, requireInboxRole("viewer")] },
     async (request, reply) => {
       const { id } = request.params;
 
@@ -64,14 +65,16 @@ export function registerInboxMemberRoutes(app: FastifyInstance) {
   // ─── Add member (invite by email) ──────────────────────
   app.post<{ Params: { id: string }; Body: { email: string; role?: string } }>(
     "/api/inboxes/:id/members",
-    { preHandler: [authGuard, requireInboxRole("owner")] },
+    { preHandler: [authGuard, requireUuidParams, requireInboxRole("owner")] },
     async (request, reply) => {
       const { id } = request.params;
-      const { email, role = "viewer" } = request.body;
-      const userId = request.user!.userId;
+      const { role = "viewer" } = request.body ?? {};
+      const email = normalizeEmail(request.body?.email);
 
       if (!email) {
-        return reply.status(400).send({ error: "email is required" });
+        return reply
+          .status(400)
+          .send({ error: "A valid email address is required" });
       }
 
       if (!["editor", "viewer"].includes(role)) {
@@ -93,8 +96,16 @@ export function registerInboxMemberRoutes(app: FastifyInstance) {
           .send({ error: "User not found. They must register first." });
       }
 
-      if (targetUser.id === userId) {
-        return reply.status(400).send({ error: "You are already the owner" });
+      const [inbox] = await db
+        .select({ userId: inboxes.userId })
+        .from(inboxes)
+        .where(eq(inboxes.id, id))
+        .limit(1);
+
+      if (targetUser.id === inbox?.userId) {
+        return reply
+          .status(400)
+          .send({ error: "That user already owns this inbox" });
       }
 
       // Upsert member
@@ -121,12 +132,12 @@ export function registerInboxMemberRoutes(app: FastifyInstance) {
     Body: { role: string };
   }>(
     "/api/inboxes/:id/members/:memberId",
-    { preHandler: [authGuard, requireInboxRole("owner")] },
+    { preHandler: [authGuard, requireUuidParams, requireInboxRole("owner")] },
     async (request, reply) => {
       const { id, memberId } = request.params;
-      const { role } = request.body;
+      const role = request.body?.role;
 
-      if (!["editor", "viewer"].includes(role)) {
+      if (role !== "editor" && role !== "viewer") {
         return reply
           .status(400)
           .send({ error: "role must be editor or viewer" });
@@ -149,7 +160,7 @@ export function registerInboxMemberRoutes(app: FastifyInstance) {
   // ─── Remove member ─────────────────────────────────────
   app.delete<{ Params: { id: string; memberId: string } }>(
     "/api/inboxes/:id/members/:memberId",
-    { preHandler: [authGuard, requireInboxRole("owner")] },
+    { preHandler: [authGuard, requireUuidParams, requireInboxRole("owner")] },
     async (request, reply) => {
       const { id, memberId } = request.params;
 

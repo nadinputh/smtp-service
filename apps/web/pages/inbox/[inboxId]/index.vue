@@ -137,32 +137,35 @@
             />
           </button>
         </div>
-        <span class="text-gray-500 dark:text-gray-400">Password:</span>
-        <div class="flex items-center gap-1">
-          <code class="text-gray-800 dark:text-gray-200">{{
-            showPassword ? inboxDetail.smtpPassword : "••••••••••••"
-          }}</code>
-          <button
-            @click="showPassword = !showPassword"
-            :aria-label="showPassword ? 'Hide password' : 'Show password'"
-            class="text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
-          >
-            <Icon
-              :name="showPassword ? 'lucide:eye-off' : 'lucide:eye'"
-              class="w-3.5 h-3.5"
-            />
-          </button>
-          <button
-            @click="copy(inboxDetail.smtpPassword, 'password')"
-            :aria-label="copiedField === 'password' ? 'Password copied' : 'Copy password'"
-            class="text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
-          >
-            <Icon
-              :name="copiedField === 'password' ? 'lucide:check' : 'lucide:copy'"
-              class="w-3.5 h-3.5"
-            />
-          </button>
-        </div>
+        <!-- Read-only viewers aren't sent the SMTP password -->
+        <template v-if="inboxDetail.smtpPassword">
+          <span class="text-gray-500 dark:text-gray-400">Password:</span>
+          <div class="flex items-center gap-1">
+            <code class="text-gray-800 dark:text-gray-200">{{
+              showPassword ? inboxDetail.smtpPassword : "••••••••••••"
+            }}</code>
+            <button
+              @click="showPassword = !showPassword"
+              :aria-label="showPassword ? 'Hide password' : 'Show password'"
+              class="text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+            >
+              <Icon
+                :name="showPassword ? 'lucide:eye-off' : 'lucide:eye'"
+                class="w-3.5 h-3.5"
+              />
+            </button>
+            <button
+              @click="copy(inboxDetail.smtpPassword, 'password')"
+              :aria-label="copiedField === 'password' ? 'Password copied' : 'Copy password'"
+              class="text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+            >
+              <Icon
+                :name="copiedField === 'password' ? 'lucide:check' : 'lucide:copy'"
+                class="w-3.5 h-3.5"
+              />
+            </button>
+          </div>
+        </template>
       </div>
     </div>
 

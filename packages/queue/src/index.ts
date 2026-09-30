@@ -122,5 +122,12 @@ export function createQuotaResetQueue(connection: ConnectionOptions) {
   });
 }
 
+export { signTrackedLink, verifyTrackedLink } from "./tracking-signature.js";
+export {
+  isPrivateAddress,
+  isInternalHostname,
+  bareHost,
+} from "./url-safety.js";
+
 // Re-export BullMQ types for convenience
 export { Queue, Worker, type ConnectionOptions, type Job };

@@ -4,7 +4,8 @@ import { getDb, messages, inboxRules } from "@mailpocket/db";
 import type { RuleCondition } from "@mailpocket/db";
 import { eq, and, asc, count, sql } from "drizzle-orm";
 import { authGuard } from "../middleware/auth.js";
-import { requireInboxRole } from "../middleware/access.js";
+import { requireInboxRole, requireUuidParams } from "../middleware/access.js";
+import { cleanString } from "../lib/validate.js";
 import { buildRuleWhere } from "../lib/rule-conditions.js";
 
 const VALID_FIELDS = new Set([
@@ -14,6 +15,17 @@ const VALID_FIELDS = new Set([
   "status",
   "spam_score",
   "has_attachment",
+]);
+// Matches the palette the rule UI can render.
+const RULE_COLORS = new Set([
+  "indigo",
+  "blue",
+  "green",
+  "yellow",
+  "orange",
+  "red",
+  "purple",
+  "pink",
 ]);
 const VALID_OPS = new Set([
   "contains",
@@ -46,7 +58,7 @@ export function registerInboxRuleRoutes(app: FastifyInstance) {
   // List rules with message counts
   app.get<{ Params: { id: string } }>(
     "/api/inboxes/:id/rules",
-    { preHandler: [authGuard, requireInboxRole("viewer")] },
+    { preHandler: [authGuard, requireUuidParams, requireInboxRole("viewer")] },
     async (request, _reply) => {
       const { id } = request.params;
 
@@ -97,18 +109,23 @@ export function registerInboxRuleRoutes(app: FastifyInstance) {
     };
   }>(
     "/api/inboxes/:id/rules",
-    { preHandler: [authGuard, requireInboxRole("editor")] },
+    { preHandler: [authGuard, requireUuidParams, requireInboxRole("editor")] },
     async (request, reply) => {
       const { id } = request.params;
       const {
-        name,
         color = "indigo",
         conditions,
         logic = "AND",
-      } = request.body;
+      } = request.body ?? {};
+      const name = cleanString(request.body?.name, 255);
 
-      if (!name?.trim()) {
-        return reply.status(400).send({ error: "name is required" });
+      if (!name) {
+        return reply
+          .status(400)
+          .send({ error: "name is required (max 255 characters)" });
+      }
+      if (!RULE_COLORS.has(color)) {
+        return reply.status(400).send({ error: "invalid color" });
       }
       if (!Array.isArray(conditions) || !conditions.length) {
         return reply
@@ -125,7 +142,7 @@ export function registerInboxRuleRoutes(app: FastifyInstance) {
         .insert(inboxRules)
         .values({
           inboxId: id,
-          name: name.trim(),
+          name,
           color,
           conditions,
           logic: logic === "OR" ? "OR" : "AND",
@@ -148,10 +165,24 @@ export function registerInboxRuleRoutes(app: FastifyInstance) {
     };
   }>(
     "/api/inboxes/:id/rules/:ruleId",
-    { preHandler: [authGuard, requireInboxRole("editor")] },
+    { preHandler: [authGuard, requireUuidParams, requireInboxRole("editor")] },
     async (request, reply) => {
       const { id, ruleId } = request.params;
-      const { name, color, conditions, logic, order } = request.body;
+      const { color, conditions, logic, order } = request.body ?? {};
+      const name =
+        request.body?.name === undefined
+          ? undefined
+          : cleanString(request.body.name, 255);
+
+      if (
+        name === null ||
+        (color !== undefined && !RULE_COLORS.has(color)) ||
+        (order !== undefined && !Number.isInteger(order))
+      ) {
+        return reply
+          .status(400)
+          .send({ error: "invalid name, color, or order" });
+      }
 
       if (
         conditions !== undefined &&
@@ -163,7 +194,7 @@ export function registerInboxRuleRoutes(app: FastifyInstance) {
       }
 
       const updates: Record<string, unknown> = {};
-      if (name !== undefined) updates.name = name.trim();
+      if (name !== undefined) updates.name = name;
       if (color !== undefined) updates.color = color;
       if (conditions !== undefined) updates.conditions = conditions;
       if (logic !== undefined) updates.logic = logic === "OR" ? "OR" : "AND";
@@ -186,7 +217,7 @@ export function registerInboxRuleRoutes(app: FastifyInstance) {
   // Delete a rule
   app.delete<{ Params: { id: string; ruleId: string } }>(
     "/api/inboxes/:id/rules/:ruleId",
-    { preHandler: [authGuard, requireInboxRole("editor")] },
+    { preHandler: [authGuard, requireUuidParams, requireInboxRole("editor")] },
     async (request, reply) => {
       const { id, ruleId } = request.params;
 

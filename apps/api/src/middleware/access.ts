@@ -22,6 +22,22 @@ export function isUuid(value: unknown): value is string {
 }
 
 /**
+ * preHandler: 404 unless every id-like path param (`id`, `inboxId`, `userId`…)
+ * is a UUID, which avoids DB cast errors. Other params (e.g. `index`) are
+ * left to their routes.
+ */
+export async function requireUuidParams(
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const params = (request.params ?? {}) as Record<string, unknown>;
+  const ids = Object.entries(params).filter(([name]) => /id$/i.test(name));
+  if (!ids.every(([, value]) => isUuid(value))) {
+    return reply.status(404).send({ error: "Not found" });
+  }
+}
+
+/**
  * Resolve the effective role a user has on an inbox.
  * Priority: global admin > inbox creator > inbox_members role > team membership.
  * Returns null if no access.
@@ -248,4 +264,33 @@ export function requireMessageRole(minRole: InboxRole) {
 
     request.inboxRole = role!;
   };
+}
+
+/**
+ * Can the user see this team? Global admin, team owner, or any team member.
+ * Also the bar for attaching an inbox to a team.
+ */
+export async function canViewTeam(
+  userId: string,
+  teamId: string,
+): Promise<boolean> {
+  if (await isGlobalAdmin(userId)) return true;
+
+  const env = getEnv();
+  const db = getDb(env.DATABASE_URL);
+
+  const [team] = await db
+    .select({ ownerId: teams.ownerId })
+    .from(teams)
+    .where(eq(teams.id, teamId))
+    .limit(1);
+  if (!team) return false;
+  if (team.ownerId === userId) return true;
+
+  const [member] = await db
+    .select({ id: teamMembers.id })
+    .from(teamMembers)
+    .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)))
+    .limit(1);
+  return !!member;
 }

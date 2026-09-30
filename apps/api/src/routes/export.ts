@@ -1,13 +1,21 @@
 import type { FastifyInstance } from "fastify";
 import { getEnv } from "@mailpocket/env";
-import { getDb, messages, inboxes, inboxRules } from "@mailpocket/db";
+import { getDb, messages, inboxes } from "@mailpocket/db";
 import { createStorage, type StorageClient } from "@mailpocket/storage";
-import { eq, and, ilike, gte, lte, sql } from "drizzle-orm";
-import { buildRuleWhere } from "../lib/rule-conditions.js";
+import { eq, and, desc } from "drizzle-orm";
+import { buildMessageConditions } from "../lib/message-filters.js";
+import { contentDisposition } from "../lib/attachment.js";
+import { csvCell } from "../lib/csv.js";
 import { authGuard } from "../middleware/auth.js";
-import { requireInboxRole } from "../middleware/access.js";
+import {
+  requireInboxRole,
+  requireUuidParams,
+  isUuid,
+} from "../middleware/access.js";
 import archiver from "archiver";
 import { Readable, PassThrough } from "node:stream";
+
+const EXPORT_MAX_MESSAGES = 10_000;
 
 export function registerExportRoutes(app: FastifyInstance) {
   const env = getEnv();
@@ -45,7 +53,7 @@ export function registerExportRoutes(app: FastifyInstance) {
     };
   }>(
     "/api/inboxes/:id/export",
-    { preHandler: [authGuard, requireInboxRole("viewer")] },
+    { preHandler: [authGuard, requireUuidParams, requireInboxRole("viewer")] },
     async (request, reply) => {
       const { id } = request.params;
       const {
@@ -70,71 +78,47 @@ export function registerExportRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Inbox not found" });
       }
 
+      if (ruleId !== undefined && !isUuid(ruleId)) {
+        return reply.status(400).send({ error: "ruleId must be a UUID" });
+      }
+      if (format !== "csv" && format !== "mbox" && format !== "eml") {
+        return reply
+          .status(400)
+          .send({ error: "Invalid format. Use csv, mbox, or eml." });
+      }
+
       // Same filter conditions as the messages list endpoint, so
       // "export" reflects whatever is currently on screen.
-      const conditions = [eq(messages.inboxId, id)];
+      const conditions = await buildMessageConditions(db, id, {
+        q,
+        from: fromFilter,
+        to: toFilter,
+        status: statusFilter,
+        after,
+        before,
+        ruleId,
+      });
 
-      if (q) {
-        const pattern = `%${q}%`;
-        conditions.push(
-          sql`(${messages.subject} ILIKE ${pattern} OR ${messages.from} ILIKE ${pattern} OR ${messages.to}::text ILIKE ${pattern})`,
-        );
-      }
-      if (fromFilter) {
-        conditions.push(ilike(messages.from, `%${fromFilter}%`));
-      }
-      if (toFilter) {
-        conditions.push(
-          sql`${messages.to}::text ILIKE ${"%" + toFilter + "%"}`,
-        );
-      }
-      if (statusFilter) {
-        conditions.push(eq(messages.status, statusFilter));
-      }
-      if (after) {
-        const afterDate = new Date(after);
-        if (!isNaN(afterDate.getTime())) {
-          conditions.push(gte(messages.createdAt, afterDate));
-        }
-      }
-      if (before) {
-        const beforeDate = new Date(before);
-        if (!isNaN(beforeDate.getTime())) {
-          beforeDate.setUTCHours(23, 59, 59, 999);
-          conditions.push(lte(messages.createdAt, beforeDate));
-        }
-      }
-      if (ruleId) {
-        const [rule] = await db
-          .select()
-          .from(inboxRules)
-          .where(and(eq(inboxRules.id, ruleId), eq(inboxRules.inboxId, id)))
-          .limit(1);
-        if (rule) {
-          const ruleWhere = buildRuleWhere(
-            rule.conditions,
-            rule.logic ?? "AND",
-          );
-          if (ruleWhere) conditions.push(ruleWhere);
-        }
-      }
-
-      const inboxMessages = await db
+      // Bounded so a huge inbox can't exhaust memory; fetch one extra row to
+      // tell the caller when the export was cut short.
+      const rows = await db
         .select()
         .from(messages)
-        .where(and(...conditions));
+        .where(and(...conditions))
+        .orderBy(desc(messages.createdAt))
+        .limit(EXPORT_MAX_MESSAGES + 1);
+      const truncated = rows.length > EXPORT_MAX_MESSAGES;
+      const inboxMessages = truncated
+        ? rows.slice(0, EXPORT_MAX_MESSAGES)
+        : rows;
+      if (truncated) reply.header("X-Export-Truncated", "true");
 
       if (format === "csv") {
         return exportCsv(reply, inbox.name, inboxMessages);
       } else if (format === "mbox") {
         return exportMbox(reply, inbox.name, inboxMessages, storage);
-      } else if (format === "eml") {
-        return exportEmlZip(reply, inbox.name, inboxMessages, storage);
-      } else {
-        return reply
-          .status(400)
-          .send({ error: "Invalid format. Use csv, mbox, or eml." });
       }
+      return exportEmlZip(reply, inbox.name, inboxMessages, storage);
     },
   );
 }
@@ -142,19 +126,27 @@ export function registerExportRoutes(app: FastifyInstance) {
 function exportCsv(reply: any, inboxName: string, msgs: any[]) {
   const header = "id,from,to,subject,date,status,spam_score,size,created_at\n";
   const rows = msgs
-    .map((m) => {
-      const to = Array.isArray(m.to) ? m.to.join("; ") : m.to;
-      const subject = (m.subject ?? "").replace(/"/g, '""');
-      const date = m.date ? new Date(m.date).toISOString() : "";
-      const createdAt = m.createdAt ? new Date(m.createdAt).toISOString() : "";
-      return `${m.id},"${m.from}","${to}","${subject}",${date},${m.status},${m.spamScore ?? ""},${m.size ?? ""},${createdAt}`;
-    })
+    .map((m) =>
+      [
+        m.id,
+        m.from,
+        Array.isArray(m.to) ? m.to.join("; ") : m.to,
+        m.subject,
+        m.date ? new Date(m.date).toISOString() : "",
+        m.status,
+        m.spamScore,
+        m.size,
+        m.createdAt ? new Date(m.createdAt).toISOString() : "",
+      ]
+        .map(csvCell)
+        .join(","),
+    )
     .join("\n");
 
   reply.header("Content-Type", "text/csv; charset=utf-8");
   reply.header(
     "Content-Disposition",
-    `attachment; filename="${inboxName}-export.csv"`,
+    contentDisposition("attachment", `${inboxName}-export.csv`),
   );
   return reply.send(header + rows);
 }
@@ -168,7 +160,7 @@ async function exportMbox(
   reply.header("Content-Type", "application/mbox");
   reply.header(
     "Content-Disposition",
-    `attachment; filename="${inboxName}-export.mbox"`,
+    contentDisposition("attachment", `${inboxName}-export.mbox`),
   );
 
   const passthrough = new PassThrough();
@@ -204,7 +196,7 @@ async function exportEmlZip(
   reply.header("Content-Type", "application/zip");
   reply.header(
     "Content-Disposition",
-    `attachment; filename="${inboxName}-export.zip"`,
+    contentDisposition("attachment", `${inboxName}-export.zip`),
   );
 
   const archive = archiver("zip", { zlib: { level: 6 } });

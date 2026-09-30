@@ -3,7 +3,10 @@ import { getEnv } from "@mailpocket/env";
 import { getDb, templates } from "@mailpocket/db";
 import { eq, and, desc } from "drizzle-orm";
 import { authGuard } from "../middleware/auth.js";
-import { isOwnerOrAdmin, isGlobalAdmin } from "../middleware/access.js";
+import { isOwnerOrAdmin, isGlobalAdmin, isUuid } from "../middleware/access.js";
+import { cleanString, isOptionalString } from "../lib/validate.js";
+
+const MAX_BODY = 1_000_000;
 
 /** Extract {{var}} names from content */
 function extractVariables(
@@ -44,6 +47,10 @@ export function registerTemplateRoutes(app: FastifyInstance) {
     "/api/templates/:id",
     { preHandler: authGuard },
     async (request, reply) => {
+      if (!isUuid(request.params.id)) {
+        return reply.status(404).send({ error: "Template not found" });
+      }
+
       const [tpl] = await db
         .select()
         .from(templates)
@@ -64,13 +71,27 @@ export function registerTemplateRoutes(app: FastifyInstance) {
 
   // Create template
   app.post<{
-    Body: { name: string; subject?: string; html: string; text?: string };
+    Body: Record<string, unknown>;
   }>("/api/templates", { preHandler: authGuard }, async (request, reply) => {
-    const { name, subject, html, text } = request.body;
+    const body = request.body ?? ({} as Record<string, unknown>);
+    const name = cleanString(body.name, 255);
+    const html = cleanString(body.html, MAX_BODY);
 
     if (!name || !html) {
-      return reply.status(400).send({ error: "name and html are required" });
+      return reply
+        .status(400)
+        .send({ error: "name and html are required non-empty strings" });
     }
+    if (
+      !isOptionalString(body.subject, 1000) ||
+      !isOptionalString(body.text, MAX_BODY)
+    ) {
+      return reply
+        .status(400)
+        .send({ error: "subject (max 1000 chars) and text must be strings" });
+    }
+    const subject = (body.subject as string | null | undefined) ?? null;
+    const text = (body.text as string | null | undefined) ?? null;
 
     const variables = extractVariables(subject, html, text);
 
@@ -79,9 +100,9 @@ export function registerTemplateRoutes(app: FastifyInstance) {
       .values({
         userId: request.user!.userId,
         name,
-        subject: subject ?? null,
+        subject,
         html,
-        text: text ?? null,
+        text,
         variables,
       })
       .returning();
@@ -92,13 +113,36 @@ export function registerTemplateRoutes(app: FastifyInstance) {
   // Update template
   app.put<{
     Params: { id: string };
-    Body: { name?: string; subject?: string; html?: string; text?: string };
+    Body: Record<string, unknown>;
   }>(
     "/api/templates/:id",
     { preHandler: authGuard },
     async (request, reply) => {
       const { id } = request.params;
-      const { name, subject, html, text } = request.body;
+      const body = request.body ?? ({} as Record<string, unknown>);
+
+      if (!isUuid(id)) {
+        return reply.status(404).send({ error: "Template not found" });
+      }
+
+      // Only supplied fields are validated; name/html may not be blanked.
+      const name =
+        body.name === undefined ? undefined : cleanString(body.name, 255);
+      const html =
+        body.html === undefined ? undefined : cleanString(body.html, MAX_BODY);
+      if (
+        name === null ||
+        html === null ||
+        !isOptionalString(body.subject, 1000) ||
+        !isOptionalString(body.text, MAX_BODY)
+      ) {
+        return reply.status(400).send({
+          error:
+            "name and html must be non-empty strings; subject (max 1000 chars) and text must be strings",
+        });
+      }
+      const subject = body.subject as string | null | undefined;
+      const text = body.text as string | null | undefined;
 
       const [existing] = await db
         .select()
@@ -142,6 +186,10 @@ export function registerTemplateRoutes(app: FastifyInstance) {
     { preHandler: authGuard },
     async (request, reply) => {
       const { id } = request.params;
+
+      if (!isUuid(id)) {
+        return reply.status(404).send({ error: "Template not found" });
+      }
 
       const [existing] = await db
         .select({ id: templates.id, userId: templates.userId })

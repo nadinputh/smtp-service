@@ -20,6 +20,25 @@ describe("API Integration Tests", () => {
   const testEmail = `test-${Date.now()}@integration.test`;
   const testPassword = "IntegrationTest123!";
 
+  /** Give a describe block its own account so shared-user quotas (10 inboxes) aren't exhausted. */
+  function withFreshUser(tag: string) {
+    let saved: string;
+    beforeAll(async () => {
+      saved = token;
+      const { body } = await api("/api/auth/register", {
+        method: "POST",
+        body: JSON.stringify({
+          email: `${tag}-${Date.now()}@integration.test`,
+          password: "IntegrationTest123!",
+        }),
+      });
+      token = body.token;
+    });
+    afterAll(() => {
+      token = saved;
+    });
+  }
+
   describe("Health", () => {
     it("GET /health returns ok", async () => {
       const { status, body } = await api("/health");
@@ -256,6 +275,652 @@ describe("API Integration Tests", () => {
     });
   });
 
+  describe("Templates validation", () => {
+    it.each([
+      [{ name: { a: 1 }, html: "x" }],
+      [{ name: "   ", html: "x" }],
+      [{ name: "n", html: ["x"] }],
+      [{ name: "x".repeat(300), html: "x" }],
+      [{ name: "n", html: "x", subject: "s".repeat(1100) }],
+    ])("POST /api/templates rejects %j", async (payload) => {
+      const { status } = await api("/api/templates", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      expect(status).toBe(400);
+    });
+
+    it("PUT cannot blank the name and malformed ids 404", async () => {
+      const created = await api("/api/templates", {
+        method: "POST",
+        body: JSON.stringify({ name: "t", html: "<p>{{a}}</p>" }),
+      });
+      const blank = await api(`/api/templates/${created.body.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ name: "" }),
+      });
+      expect(blank.status).toBe(400);
+      for (const method of ["GET", "PUT", "DELETE"]) {
+        const r = await api("/api/templates/not-a-uuid", {
+          method,
+          ...(method === "PUT" ? { body: JSON.stringify({ name: "x" }) } : {}),
+        });
+        expect(r.status).toBe(404);
+      }
+      await api(`/api/templates/${created.body.id}`, { method: "DELETE" });
+    });
+  });
+
+  describe("API keys", () => {
+    async function makeKey(scopes: string[]) {
+      const { body } = await api("/api/keys", {
+        method: "POST",
+        body: JSON.stringify({ name: "scope-test", scopes }),
+      });
+      return { id: body.id as string, raw: body.rawKey as string };
+    }
+    const withKey = (raw: string, path: string, init: RequestInit = {}) =>
+      fetch(`${API_BASE}${path}`, {
+        ...init,
+        headers: { "x-api-key": raw, "Content-Type": "application/json" },
+      }).then((r) => r.status);
+
+    it.each([
+      [{ name: "k", scopes: "send" }],
+      [{ name: "k", scopes: ["nope"] }],
+      [{ name: "k", scopes: ["send"], expiresAt: "garbage" }],
+      [{ name: "k", scopes: ["send"], expiresAt: "2001-01-01" }],
+      [{ name: "k".repeat(300), scopes: ["send"] }],
+    ])("POST /api/keys rejects %j", async (payload) => {
+      const { status } = await api("/api/keys", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      expect(status).toBe(400);
+    });
+
+    it("enforces scopes and keeps key management session-only", async () => {
+      const read = await makeKey(["read"]);
+      const send = await makeKey(["send"]);
+      expect(await withKey(read.raw, "/api/templates")).toBe(200);
+      expect(await withKey(send.raw, "/api/templates")).toBe(403);
+      expect(
+        await withKey(read.raw, "/v1/messages", {
+          method: "POST",
+          body: "{}",
+        }),
+      ).toBe(403);
+      expect(await withKey(read.raw, "/api/keys")).toBe(403);
+      expect(
+        await withKey(send.raw, "/api/keys", {
+          method: "POST",
+          body: JSON.stringify({ name: "x", scopes: ["send"] }),
+        }),
+      ).toBe(403);
+      expect(
+        await withKey("smtps_live_" + "0".repeat(32), "/api/templates"),
+      ).toBe(401);
+      for (const k of [read, send]) {
+        await api(`/api/keys/${k.id}`, { method: "DELETE" });
+      }
+    });
+
+    it("DELETE /api/keys/:id 404s on a malformed id", async () => {
+      const { status } = await api("/api/keys/not-a-uuid", {
+        method: "DELETE",
+      });
+      expect(status).toBe(404);
+    });
+  });
+
+  describe("Analytics validation", () => {
+    withFreshUser("analytics");
+
+    it("rejects an unknown period or metric", async () => {
+      expect((await api("/api/analytics/overview?period=1y")).status).toBe(400);
+      expect((await api("/api/analytics/timeseries?metric=bogus")).status).toBe(
+        400,
+      );
+      expect((await api("/api/analytics/bounce-rate?period=x")).status).toBe(
+        400,
+      );
+    });
+
+    it("timeseries window ends today and includes today's messages", async () => {
+      const inbox = await api("/api/inboxes", {
+        method: "POST",
+        body: JSON.stringify({ name: "Analytics Inbox" }),
+      });
+      await api("/v1/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          inboxId: inbox.body.id,
+          from: "test@example.com",
+          to: ["today@example.com"],
+          subject: "today",
+          text: "hi",
+        }),
+      });
+      const { body } = await api("/api/analytics/timeseries?period=7d");
+      expect(body.labels).toHaveLength(7);
+      expect(body.labels.at(-1)).toBe(new Date().toISOString().slice(0, 10));
+      expect(body.values.at(-1)).toBeGreaterThanOrEqual(1);
+    });
+
+    it("overview has the full shape for a user with no inboxes", async () => {
+      const ownerToken = token;
+      const other = await api("/api/auth/register", {
+        method: "POST",
+        body: JSON.stringify({
+          email: `empty-${Date.now()}@integration.test`,
+          password: "IntegrationTest123!",
+        }),
+      });
+      token = other.body.token;
+      try {
+        const { status, body } = await api("/api/analytics/overview");
+        expect(status).toBe(200);
+        expect(body.period).toMatchObject({ days: 30, total: 0 });
+        expect(body.totalMessages).toBe(0);
+      } finally {
+        token = ownerToken;
+      }
+    });
+  });
+
+  describe("Teams hardening", () => {
+    async function registerUser(tag: string) {
+      const { body } = await api("/api/auth/register", {
+        method: "POST",
+        body: JSON.stringify({
+          email: `${tag}-${Date.now()}@integration.test`,
+          password: "IntegrationTest123!",
+        }),
+      });
+      return { token: body.token as string, id: body.user.id as string };
+    }
+    async function as<T>(t: string, fn: () => Promise<T>) {
+      const prev = token;
+      token = t;
+      try {
+        return await fn();
+      } finally {
+        token = prev;
+      }
+    }
+
+    it("validates input, protects the owner, and limits deletion", async () => {
+      const teamAdmin = await registerUser("team-admin");
+      const outsider = await registerUser("outsider");
+      const team = await api("/api/teams", {
+        method: "POST",
+        body: JSON.stringify({ name: "Hardening" }),
+      });
+      const teamId = team.body.id as string;
+
+      expect(
+        (
+          await api("/api/teams", {
+            method: "POST",
+            body: JSON.stringify({ name: { a: 1 } }),
+          })
+        ).status,
+      ).toBe(400);
+      expect((await api("/api/teams/not-a-uuid")).status).toBe(404);
+
+      const badRole = await api(`/api/teams/${teamId}/members`, {
+        method: "POST",
+        body: JSON.stringify({ userId: teamAdmin.id, role: "root" }),
+      });
+      expect(badRole.status).toBe(400);
+      const added = await api(`/api/teams/${teamId}/members`, {
+        method: "POST",
+        body: JSON.stringify({ userId: teamAdmin.id, role: "admin" }),
+      });
+      expect(added.status).toBe(201);
+
+      // A missing role must not silently demote.
+      const noRole = await api(`/api/teams/${teamId}/members/${teamAdmin.id}`, {
+        method: "PUT",
+        body: JSON.stringify({}),
+      });
+      expect(noRole.status).toBe(400);
+
+      // Team admins can't touch the owner's membership or delete the team.
+      const ownerId = team.body.ownerId as string;
+      await as(teamAdmin.token, async () => {
+        expect(
+          (
+            await api(`/api/teams/${teamId}/members/${ownerId}`, {
+              method: "DELETE",
+            })
+          ).status,
+        ).toBe(400);
+        expect(
+          (await api(`/api/teams/${teamId}`, { method: "DELETE" })).status,
+        ).toBe(403);
+      });
+
+      // Only team managers may search the user directory.
+      await as(outsider.token, async () => {
+        expect((await api("/api/users/search?q=integration")).status).toBe(403);
+      });
+
+      const invite = await api(`/api/teams/${teamId}/invitations`, {
+        method: "POST",
+        body: JSON.stringify({ email: "not-an-email" }),
+      });
+      expect(invite.status).toBe(400);
+      expect((await api(`/api/teams/${teamId}/activity?limit=-5`)).status).toBe(
+        200,
+      );
+
+      expect(
+        (await api(`/api/teams/${teamId}`, { method: "DELETE" })).status,
+      ).toBe(204);
+    });
+  });
+
+  describe("Inbox hardening", () => {
+    withFreshUser("inbox-hard");
+
+    async function registerUser(tag: string) {
+      const { body } = await api("/api/auth/register", {
+        method: "POST",
+        body: JSON.stringify({
+          email: `${tag}-${Date.now()}@integration.test`,
+          password: "IntegrationTest123!",
+        }),
+      });
+      return { token: body.token as string, email: body.user.email as string };
+    }
+    async function as<T>(t: string, fn: () => Promise<T>) {
+      const prev = token;
+      token = t;
+      try {
+        return await fn();
+      } finally {
+        token = prev;
+      }
+    }
+
+    it("rejects bad input and foreign teams", async () => {
+      const other = await registerUser("team-owner");
+      const foreignTeam = await as(other.token, () =>
+        api("/api/teams", {
+          method: "POST",
+          body: JSON.stringify({ name: "Foreign" }),
+        }),
+      );
+
+      for (const payload of [
+        { name: { a: 1 } },
+        { name: "x".repeat(300) },
+        { name: "ok", teamId: "not-a-uuid" },
+      ]) {
+        const r = await api("/api/inboxes", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        expect(r.status).toBe(400);
+      }
+
+      // Can't attach an inbox to a team the user doesn't belong to.
+      const foreign = await api("/api/inboxes", {
+        method: "POST",
+        body: JSON.stringify({ name: "x", teamId: foreignTeam.body.id }),
+      });
+      expect(foreign.status).toBe(404);
+
+      const mine = await api("/api/inboxes", {
+        method: "POST",
+        body: JSON.stringify({ name: "Mine" }),
+      });
+      const moved = await api(`/api/inboxes/${mine.body.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ teamId: foreignTeam.body.id }),
+      });
+      expect(moved.status).toBe(404);
+      const blank = await api(`/api/inboxes/${mine.body.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ name: "" }),
+      });
+      expect(blank.status).toBe(400);
+    });
+
+    it("looks members up case-insensitively and hides the SMTP password from viewers", async () => {
+      const viewer = await registerUser("viewer");
+      const inbox = await api("/api/inboxes", {
+        method: "POST",
+        body: JSON.stringify({ name: "Shared" }),
+      });
+      const id = inbox.body.id as string;
+
+      const added = await api(`/api/inboxes/${id}/members`, {
+        method: "POST",
+        body: JSON.stringify({ email: viewer.email.toUpperCase() }),
+      });
+      expect(added.status).toBe(200);
+      const bad = await api(`/api/inboxes/${id}/members`, {
+        method: "POST",
+        body: JSON.stringify({ email: "nope" }),
+      });
+      expect(bad.status).toBe(400);
+      expect(
+        (
+          await api(`/api/inboxes/${id}/members/not-a-uuid`, {
+            method: "DELETE",
+          })
+        ).status,
+      ).toBe(404);
+
+      const asViewer = await as(viewer.token, () => api(`/api/inboxes/${id}`));
+      expect(asViewer.status).toBe(200);
+      expect(asViewer.body.smtpPassword).toBeUndefined();
+      const asOwner = await api(`/api/inboxes/${id}`);
+      expect(asOwner.body.smtpPassword).toBeDefined();
+    });
+  });
+
+  describe("Auth hardening", () => {
+    const pw = "IntegrationTest123!";
+
+    it.each([
+      [{ email: "nope", password: pw }],
+      [
+        {
+          email: `x-${Date.now()}@integration.test`,
+          password: pw,
+          name: { a: 1 },
+        },
+      ],
+      [{ email: { a: 1 }, password: pw }],
+    ])("POST /api/auth/register rejects %j", async (payload) => {
+      const { status } = await api("/api/auth/register", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      expect(status).toBe(400);
+    });
+
+    it("changing the password ends other sessions but keeps the fresh token valid", async () => {
+      const email = `session-${Date.now()}@integration.test`;
+      const reg = await api("/api/auth/register", {
+        method: "POST",
+        body: JSON.stringify({ email, password: pw }),
+      });
+      const oldToken = reg.body.token as string;
+      const asToken = <T>(t: string, fn: () => Promise<T>) => {
+        const prev = token;
+        token = t;
+        return fn().finally(() => {
+          token = prev;
+        });
+      };
+
+      // JWT iat has 1s resolution; make sure the change lands in a later second.
+      await new Promise((r) => setTimeout(r, 1100));
+      const changed = await asToken(oldToken, () =>
+        api("/api/auth/change-password", {
+          method: "PUT",
+          body: JSON.stringify({
+            currentPassword: pw,
+            newPassword: "ChangedPassw0rd!",
+          }),
+        }),
+      );
+      expect(changed.status).toBe(200);
+      expect(changed.body.token).toBeDefined();
+
+      expect((await asToken(oldToken, () => api("/api/auth/me"))).status).toBe(
+        401,
+      );
+      expect(
+        (await asToken(changed.body.token, () => api("/api/auth/me"))).status,
+      ).toBe(200);
+    });
+
+    it("login is case-insensitive on email and rejects malformed bodies", async () => {
+      const email = `Case-${Date.now()}@integration.test`;
+      await api("/api/auth/register", {
+        method: "POST",
+        body: JSON.stringify({ email, password: pw }),
+      });
+      const ok = await api("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email: email.toUpperCase(), password: pw }),
+      });
+      expect(ok.status).toBe(200);
+      const bad = await api("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email: { a: 1 }, password: pw }),
+      });
+      expect(bad.status).toBe(400);
+    });
+  });
+
+  describe("Webhooks isolation", () => {
+    withFreshUser("hooks");
+
+    it("validates urls and won't expose or retry another inbox's webhook", async () => {
+      const a = await api("/api/inboxes", {
+        method: "POST",
+        body: JSON.stringify({ name: "Hook A" }),
+      });
+      const b = await api("/api/inboxes", {
+        method: "POST",
+        body: JSON.stringify({ name: "Hook B" }),
+      });
+
+      for (const url of ["ftp://example.com", "https://u:p@example.com", 5]) {
+        const bad = await api(`/api/inboxes/${a.body.id}/webhooks`, {
+          method: "POST",
+          body: JSON.stringify({ url }),
+        });
+        expect(bad.status).toBe(400);
+      }
+      const flags = await api(`/api/inboxes/${a.body.id}/webhooks`, {
+        method: "POST",
+        body: JSON.stringify({ url: "https://example.com/h", onOpened: "yes" }),
+      });
+      expect(flags.status).toBe(400);
+
+      const hook = await api(`/api/inboxes/${a.body.id}/webhooks`, {
+        method: "POST",
+        body: JSON.stringify({ url: "https://example.com/h" }),
+      });
+      expect(hook.status).toBe(201);
+
+      // Same webhook id via a different inbox must not resolve.
+      const logs = await api(
+        `/api/inboxes/${b.body.id}/webhooks/${hook.body.id}/logs`,
+      );
+      expect(logs.status).toBe(404);
+      const retry = await api(
+        `/api/inboxes/${b.body.id}/webhooks/${hook.body.id}/logs/${hook.body.id}/retry`,
+        { method: "POST" },
+      );
+      expect(retry.status).toBe(404);
+      expect(
+        (
+          await api(`/api/inboxes/${a.body.id}/webhooks/not-a-uuid`, {
+            method: "DELETE",
+          })
+        ).status,
+      ).toBe(404);
+    });
+  });
+
+  describe("Message list and bulk read", () => {
+    withFreshUser("msglist");
+
+    it("bulk mark-read validates input and accepts valid ids", async () => {
+      const inbox = await api("/api/inboxes", {
+        method: "POST",
+        body: JSON.stringify({ name: "Bulk Read" }),
+      });
+      const path = `/api/inboxes/${inbox.body.id}/messages/read`;
+      const unknownId = "00000000-0000-4000-8000-000000000000";
+      const put = (body: unknown) =>
+        api(path, { method: "PUT", body: JSON.stringify(body) });
+
+      expect((await put({ messageIds: ["nope"], isRead: true })).status).toBe(
+        400,
+      );
+      expect(
+        (await put({ messageIds: [unknownId], isRead: "yes" })).status,
+      ).toBe(400);
+      expect((await put({ messageIds: [], isRead: true })).status).toBe(400);
+      expect(
+        (await put({ messageIds: [unknownId], isRead: true })).status,
+      ).toBe(200);
+    });
+
+    it("list tolerates junk pagination and rejects a malformed ruleId", async () => {
+      const inbox = await api("/api/inboxes", {
+        method: "POST",
+        body: JSON.stringify({ name: "List Junk" }),
+      });
+      const base = `/api/inboxes/${inbox.body.id}/messages`;
+      expect(
+        (await api(`${base}?page=99999999999&limit=-3&q=%25&from=_`)).status,
+      ).toBe(200);
+      expect((await api(`${base}?ruleId=nope`)).status).toBe(400);
+    });
+  });
+
+  describe("Click tracking redirect safety", () => {
+    it("does not redirect unsigned links; shows a confirmation page instead", async () => {
+      const res = await fetch(
+        `${API_BASE}/t/click/11111111-1111-4111-8111-111111111111?url=${encodeURIComponent("https://evil.example/login")}`,
+        { redirect: "manual" },
+      );
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("text/html");
+      expect(res.headers.get("location")).toBeNull();
+      expect(await res.text()).toContain("https://evil.example/login");
+    });
+
+    it("escapes the destination in the confirmation page", async () => {
+      const res = await fetch(
+        `${API_BASE}/t/click/x?url=${encodeURIComponent('https://e.example/"><script>alert(1)</script>')}`,
+        { redirect: "manual" },
+      );
+      expect(await res.text()).not.toContain("<script>");
+    });
+  });
+
+  describe("Inbox rules validation", () => {
+    withFreshUser("rules");
+
+    it("rejects unknown colors, blank names, and malformed ids", async () => {
+      const inbox = await api("/api/inboxes", {
+        method: "POST",
+        body: JSON.stringify({ name: "Rules Validation" }),
+      });
+      const base = `/api/inboxes/${inbox.body.id}/rules`;
+      const conditions = [{ field: "from", op: "contains", value: "a" }];
+      const post = (body: unknown) =>
+        api(base, { method: "POST", body: JSON.stringify(body) });
+
+      expect((await post({ name: "  ", conditions })).status).toBe(400);
+      expect((await post({ name: { a: 1 }, conditions })).status).toBe(400);
+      expect(
+        (await post({ name: "r", color: "javascript:x", conditions })).status,
+      ).toBe(400);
+      expect(
+        (await post({ name: "ok", color: "blue", conditions })).status,
+      ).toBe(200);
+      expect(
+        (await api(`${base}/not-a-uuid`, { method: "DELETE" })).status,
+      ).toBe(404);
+    });
+  });
+
+  describe("Export hardening", () => {
+    withFreshUser("export");
+
+    it("neutralizes hostile inbox names and rejects bad params", async () => {
+      const inbox = await api("/api/inboxes", {
+        method: "POST",
+        body: JSON.stringify({ name: 'Evil"\r\nx' }),
+      });
+      // Node refuses CR/LF in headers, so a naive name would 500 here.
+      const ok = await fetch(
+        `${API_BASE}/api/inboxes/${inbox.body.id}/export?format=csv`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      expect(ok.status).toBe(200);
+      expect(ok.headers.get("content-disposition")).not.toMatch(/[\r\n]/);
+
+      const base = `/api/inboxes/${inbox.body.id}/export`;
+      expect((await api(`${base}?format=pdf`)).status).toBe(400);
+      expect((await api(`${base}?format=csv&ruleId=nope`)).status).toBe(400);
+    });
+  });
+
+  describe("Send quota and cc/bcc", () => {
+    withFreshUser("quota");
+
+    it("counts cc/bcc and mime/batch sends against the monthly quota", async () => {
+      const inbox = await api("/api/inboxes", {
+        method: "POST",
+        body: JSON.stringify({ name: "Quota" }),
+      });
+      const before = (await api("/api/account/usage")).body.currentMonthlySent;
+
+      const json = await api("/v1/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          inboxId: inbox.body.id,
+          from: "q@example.com",
+          to: ["to@example.com"],
+          cc: ["cc@example.com"],
+          bcc: ["bcc@example.com"],
+          subject: "quota",
+          text: "hi",
+        }),
+      });
+      expect(json.status).toBe(202);
+
+      const batch = await api("/v1/messages/batch", {
+        method: "POST",
+        body: JSON.stringify({
+          inboxId: inbox.body.id,
+          from: "q@example.com",
+          subject: "quota",
+          text: "hi",
+          recipients: [{ to: "b1@example.com" }, { to: "b2@example.com" }],
+        }),
+      });
+      expect(batch.status).toBe(202);
+
+      const used = (await api("/api/account/usage")).body.currentMonthlySent;
+      expect(used - before).toBe(3 + 2);
+    });
+
+    it("rejects a send that would exceed the monthly limit", async () => {
+      const inbox = await api("/api/inboxes", {
+        method: "POST",
+        body: JSON.stringify({ name: "Quota Over" }),
+      });
+      const tooMany = Array.from({ length: 1001 }, (_, i) => `u${i}@example.com`);
+      const r = await api("/v1/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          inboxId: inbox.body.id,
+          from: "q@example.com",
+          to: tooMany,
+          subject: "quota",
+          text: "hi",
+        }),
+      });
+      expect(r.status).toBe(429);
+    });
+  });
+
   describe("Tracking Endpoints", () => {
     it("GET /t/open/:messageId returns tracking pixel", async () => {
       const res = await fetch(`${API_BASE}/t/open/fake-message-id`);
@@ -263,13 +928,16 @@ describe("API Integration Tests", () => {
       expect(res.headers.get("content-type")).toContain("image/gif");
     });
 
-    it("GET /t/click/:messageId redirects to url", async () => {
+    it("GET /t/click/:messageId with an unsigned url confirms instead of redirecting", async () => {
       const res = await fetch(
         `${API_BASE}/t/click/fake-message-id?url=${encodeURIComponent("https://example.com")}`,
         { redirect: "manual" },
       );
-      expect(res.status).toBe(302);
-      expect(res.headers.get("location")).toContain("example.com");
+      // Signed links (see packages/queue tracking-signature tests) redirect;
+      // unsigned ones must not act as an open redirect.
+      expect(res.status).toBe(200);
+      expect(res.headers.get("location")).toBeNull();
+      expect(await res.text()).toContain("example.com");
     });
 
     it("GET /t/click rejects missing url parameter", async () => {
@@ -466,7 +1134,10 @@ describe("API Integration Tests", () => {
     it("POST /api/suppressions rejects an unknown reason", async () => {
       const { status } = await api("/api/suppressions", {
         method: "POST",
-        body: JSON.stringify({ email: "reason@example.com", reason: "x".repeat(80) }),
+        body: JSON.stringify({
+          email: "reason@example.com",
+          reason: "x".repeat(80),
+        }),
       });
       expect(status).toBe(400);
     });
