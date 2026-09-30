@@ -5,6 +5,7 @@
     "moduleResolution": "Bundler",
     "declaration": false,
     "declarationMap": false,
-    "outDir": ".nuxt/tsconfig"
+    "outDir": ".nuxt/tsconfig",
+    "rootDir": "."
   }
 }

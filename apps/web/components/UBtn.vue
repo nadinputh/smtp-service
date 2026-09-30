@@ -30,14 +30,19 @@ const variantClasses: Record<string, string> = {
 };
 
 const sizeClasses: Record<string, string> = {
-  xs: "text-xs px-2.5 py-2 gap-1",
-  sm: "text-sm px-3 py-2.5 gap-1.5",
+  // Visible padding stays as-is everywhere it's already shipped; the
+  // pseudo-element below pads the tap target up toward 44px (WCAG 2.5.5)
+  // without changing layout. Vertical-only: these buttons are almost always
+  // in tight horizontal clusters (e.g. "Edit  Delete"), so widening the hit
+  // area sideways would make adjacent buttons overlap and misfire.
+  xs: "text-xs px-2.5 py-2 gap-1 before:absolute before:inset-x-0 before:-top-1.5 before:-bottom-1.5 before:content-['']",
+  sm: "text-sm px-3 py-2.5 gap-1.5 before:absolute before:inset-x-0 before:-top-0.5 before:-bottom-0.5 before:content-['']",
   md: "text-sm px-4 py-3 gap-2",
 };
 
 const classes = computed(() => {
   return [
-    "inline-flex items-center justify-center rounded-lg transition-colors disabled:opacity-50",
+    "relative inline-flex items-center justify-center rounded-lg transition-colors disabled:opacity-50",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800",
     variantClasses[props.variant],
     sizeClasses[props.size],

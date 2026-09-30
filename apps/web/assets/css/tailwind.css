@@ -2,6 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Default Tailwind placeholder gray (gray-400) is ~2.5:1 on white, below WCAG
+   AA's 4.5:1 floor for text. gray-500 clears it; gray-400 already clears it
+   against the dark-mode surfaces used here. */
+@layer base {
+  input::placeholder,
+  textarea::placeholder {
+    @apply text-gray-500 dark:text-gray-400;
+    opacity: 1;
+  }
+}
+
 @keyframes toast-progress {
   from {
     width: 100%;

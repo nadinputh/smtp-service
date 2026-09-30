@@ -488,13 +488,8 @@ const themeOptions = [
 ];
 
 const manageNav = [
-  { to: "/domains", icon: "lucide:globe", label: "Domains", upcoming: true },
-  {
-    to: "/suppressions",
-    icon: "lucide:shield-off",
-    label: "Suppressions",
-    upcoming: true,
-  },
+  { to: "/domains", icon: "lucide:globe", label: "Domains" },
+  { to: "/suppressions", icon: "lucide:shield-off", label: "Suppressions" },
   { to: "/api-keys", icon: "lucide:key", label: "API Keys", upcoming: true },
   { to: "/teams", icon: "lucide:users-round", label: "Teams" },
 ];
