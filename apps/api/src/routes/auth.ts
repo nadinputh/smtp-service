@@ -216,7 +216,11 @@ export function registerAuthRoutes(app: FastifyInstance) {
         .send({ error: "LDAP authentication is not enabled" });
     }
 
-    const { username, password } = request.body ?? {};
+    const { username: rawUsername, password } = request.body ?? {};
+    // Trimmed so " Alice" and "alice" resolve to the same directory entry
+    // and the same local user.
+    const username =
+      typeof rawUsername === "string" ? rawUsername.trim() : rawUsername;
     if (
       typeof username !== "string" ||
       typeof password !== "string" ||
@@ -331,23 +335,38 @@ export function registerAuthRoutes(app: FastifyInstance) {
         });
       });
 
-      const email = (ldapUser.mail || `${username}@ldap.local`)
-        .trim()
-        .toLowerCase();
+      // Users are matched case-insensitively: stored emails are always
+      // lowercase, so normalize the directory's mail (or the typed username)
+      // the same way before lookup and insert.
+      const email = normalizeEmail(ldapUser.mail || `${username}@ldap.local`);
+      if (!email) {
+        request.log.warn(
+          { dn: ldapUser.dn },
+          "LDAP entry has no usable mail attribute and username is not a valid local part",
+        );
+        return reply
+          .status(403)
+          .send({ error: "Your directory account has no valid email address" });
+      }
       const name = ldapUser.cn || username;
 
-      // Find or create user by email
-      let [user] = await db
-        .select({ id: users.id, email: users.email, role: users.role })
-        .from(users)
-        .where(eq(users.email, email))
-        .limit(1);
+      const findUser = () =>
+        db
+          .select({ id: users.id, email: users.email, role: users.role })
+          .from(users)
+          .where(eq(users.email, email))
+          .limit(1)
+          .then(([row]) => row);
 
+      // Insert-or-ignore then re-read: two concurrent first logins (or a
+      // double-click) must not surface the unique-email violation as a 500.
+      let user = await findUser();
       if (!user) {
-        [user] = await db
+        await db
           .insert(users)
           .values({ email, name })
-          .returning({ id: users.id, email: users.email, role: users.role });
+          .onConflictDoNothing({ target: users.email });
+        user = await findUser();
       }
 
       const token = signToken({ userId: user.id, email: user.email });
