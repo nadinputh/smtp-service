@@ -56,5 +56,7 @@ export function shouldIgnoreHotkey(e: KeyboardEvent): boolean {
     (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))
   )
     return true;
+  // An open menu owns the keyboard (arrows, type-ahead, Escape).
+  if (el?.closest?.('[role="menu"]')) return true;
   return !!document.querySelector('[role="dialog"], [role="alertdialog"]');
 }

@@ -27,6 +27,16 @@
   }
 }
 
+@media (pointer: coarse) {
+  .menu-item {
+    min-height: 2.75rem;
+  }
+  .icon-btn {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+}
+
 @keyframes toast-progress {
   from {
     width: 100%;

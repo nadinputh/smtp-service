@@ -6,6 +6,18 @@ const props = defineProps<{ html: string }>();
 // Always defaults to "light" regardless of the dashboard theme: the preview
 // approximates how the email renders for recipients, not for the viewer.
 const previewBg = ref<"light" | "dark">("light");
+
+// Remote images/styles/fonts are blocked by a CSP until the viewer opts in:
+// fetching them tells the sender the message was opened.
+const allowRemote = ref(false);
+const hasRemote = computed(() =>
+  /(?:src\s*=|url\(|@import)\s*["']?\s*(?:https?:)?\/\//i.test(props.html),
+);
+const csp = computed(() =>
+  allowRemote.value
+    ? "default-src 'none'; img-src data: blob: https: http:; style-src 'unsafe-inline' https: http:; font-src data: https: http:"
+    : "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; font-src data:",
+);
 const modes = [
   { value: "light", label: "Light", icon: "lucide:sun" },
   {
@@ -55,9 +67,9 @@ const srcdoc = computed(() => {
       "html{filter:invert(1) hue-rotate(180deg);background:#ffffff}",
       "img,video,canvas,iframe{filter:invert(1) hue-rotate(180deg)}",
     ].join("");
-    return `<html><head><meta name="color-scheme" content="dark"><style>${darkStyle}</style>${headExtra}</head><body style="margin:0">${bodyHtml}</body></html>`;
+    return `<html><head><meta http-equiv="Content-Security-Policy" content="${csp.value}"><meta name="color-scheme" content="dark"><style>${darkStyle}</style>${headExtra}</head><body style="margin:0">${bodyHtml}</body></html>`;
   }
-  return `<html><head><style>html{background:#ffffff}body{margin:0;color:#1f2937}</style>${headExtra}</head><body>${bodyHtml}</body></html>`;
+  return `<html><head><meta http-equiv="Content-Security-Policy" content="${csp.value}"><style>html{background:#ffffff}body{margin:0;color:#1f2937}</style>${headExtra}</head><body>${bodyHtml}</body></html>`;
 });
 
 // The unsandboxed parent may attach a listener inside a same-origin sandboxed
@@ -65,10 +77,20 @@ const srcdoc = computed(() => {
 // gates script declared inside the sandboxed document.
 const clickedLink = ref<string | null>(null);
 
+// Size the frame to its content so the page has one scroll region, not two.
+const frameHeight = ref<number | null>(null);
+let resizeObserver: ResizeObserver | undefined;
+onBeforeUnmount(() => resizeObserver?.disconnect());
+
 function handleLoad(e: Event) {
   clickedLink.value = null;
   const doc = (e.target as HTMLIFrameElement).contentDocument;
   if (!doc) return;
+  resizeObserver?.disconnect();
+  const fit = () => (frameHeight.value = doc.documentElement.scrollHeight);
+  fit();
+  resizeObserver = new ResizeObserver(fit);
+  resizeObserver.observe(doc.documentElement);
   doc.addEventListener(
     "click",
     (ev) => {
@@ -91,18 +113,34 @@ function handleLoad(e: Event) {
     <div
       class="flex flex-wrap items-center justify-between gap-2 px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"
     >
-      <span class="text-xs text-gray-600 dark:text-gray-400">
-        HTML preview
-        <span class="hidden sm:inline"
-          >· independent of your dashboard theme</span
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <slot name="format" />
+        <span class="hidden sm:inline text-xs text-gray-600 dark:text-gray-400"
+          >Independent of your dashboard theme</span
         >
-      </span>
+      </div>
       <SegmentedControl
         :model-value="previewBg"
         :options="modes"
         label="Preview mode"
         @update:model-value="previewBg = $event === 'dark' ? 'dark' : 'light'"
       />
+    </div>
+    <div
+      v-if="hasRemote"
+      class="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm text-gray-700 dark:text-gray-300"
+    >
+      <Icon name="lucide:shield" class="w-4 h-4 shrink-0" aria-hidden="true" />
+      <span class="flex-1 min-w-0">
+        {{
+          allowRemote
+            ? "Remote content is loading; the sender can see this message was opened."
+            : "Remote images and styles are blocked so the sender can't track opens."
+        }}
+      </span>
+      <UBtn size="xs" variant="ghost" @click="allowRemote = !allowRemote">{{
+        allowRemote ? "Block remote content" : "Load remote content"
+      }}</UBtn>
     </div>
     <div
       v-if="clickedLink"
@@ -146,7 +184,8 @@ function handleLoad(e: Event) {
       <iframe
         :srcdoc="srcdoc"
         title="Email HTML preview"
-        class="w-full min-h-[calc(100vh-300px)] border-0"
+        class="w-full min-h-64 border-0 block"
+        :style="frameHeight ? { height: frameHeight + 'px' } : undefined"
         sandbox="allow-same-origin"
         @load="handleLoad"
       />

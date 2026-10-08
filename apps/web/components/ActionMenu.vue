@@ -15,6 +15,8 @@ interface Item {
 const props = withDefaults(
   defineProps<{
     label: string;
+    /** Accessible name of the menu when the visible label is terse ("More"). */
+    menuLabel?: string;
     icon?: string;
     items: Item[];
     align?: "left" | "right";
@@ -68,6 +70,33 @@ function toggle() {
   if (open.value) nextTick(() => menuItems()[0]?.focus());
 }
 
+// Down/Up on the trigger open the menu on its first/last item.
+function onTriggerKeydown(e: KeyboardEvent) {
+  if (open.value || (e.key !== "ArrowDown" && e.key !== "ArrowUp")) return;
+  e.preventDefault();
+  open.value = true;
+  const last = e.key === "ArrowUp";
+  nextTick(() => {
+    const items = menuItems();
+    items[last ? items.length - 1 : 0]?.focus();
+  });
+}
+
+// Type-ahead: a printable key jumps to the next item starting with it.
+let typed = "";
+let typedTimer: ReturnType<typeof setTimeout> | undefined;
+function typeAhead(key: string, items: HTMLElement[], from: number) {
+  clearTimeout(typedTimer);
+  typed += key.toLowerCase();
+  typedTimer = setTimeout(() => (typed = ""), 600);
+  // A repeated first letter cycles; a longer prefix keeps the current item.
+  const begin = typed.length > 1 ? Math.max(from, 0) : from + 1;
+  [...items.slice(begin), ...items.slice(0, begin)]
+    .find((el) => el.textContent?.trim().toLowerCase().startsWith(typed))
+    ?.focus();
+}
+onBeforeUnmount(() => clearTimeout(typedTimer));
+
 function close(returnFocus = false) {
   open.value = false;
   if (returnFocus)
@@ -90,7 +119,7 @@ function onKeydown(e: KeyboardEvent) {
     items[(i + 1) % items.length]?.focus();
   } else if (e.key === "ArrowUp") {
     e.preventDefault();
-    items[(i - 1 + items.length) % items.length]?.focus();
+    items[i <= 0 ? items.length - 1 : i - 1]?.focus();
   } else if (e.key === "Home") {
     e.preventDefault();
     items[0]?.focus();
@@ -102,6 +131,8 @@ function onKeydown(e: KeyboardEvent) {
     close(true);
   } else if (e.key === "Tab") {
     close();
+  } else if (e.key.length === 1 && e.key !== " " && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    typeAhead(e.key, items, i);
   }
 }
 
@@ -123,6 +154,7 @@ onUnmounted(() => document.removeEventListener("click", onDocClick));
       :aria-expanded="open"
       :icon="icon"
       @click="toggle"
+      @keydown="onTriggerKeydown"
     >
       {{ label }}
       <Icon name="lucide:chevron-down" class="w-4 h-4" aria-hidden="true" />
@@ -131,7 +163,7 @@ onUnmounted(() => document.removeEventListener("click", onDocClick));
       v-if="open"
       :id="menuId"
       role="menu"
-      :aria-label="label"
+      :aria-label="menuLabel ?? label"
       class="absolute top-full mt-1 z-30 min-w-56 py-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg"
       :class="align === 'right' ? 'right-0' : 'left-0'"
       @keydown="onKeydown"
@@ -143,7 +175,7 @@ onUnmounted(() => document.removeEventListener("click", onDocClick));
           class="my-1 border-t border-gray-100 dark:border-gray-700"
         />
         <div
-          role="group"
+          :role="group.heading ? 'group' : undefined"
           :aria-labelledby="group.heading ? `${menuId}-${group.id}` : undefined"
         >
           <p
@@ -159,7 +191,7 @@ onUnmounted(() => document.removeEventListener("click", onDocClick));
             type="button"
             role="menuitem"
             :disabled="item.disabled"
-            class="flex items-center gap-2 w-full text-left px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 focus-visible:outline-none focus-visible:bg-gray-100 dark:focus-visible:bg-gray-700 disabled:opacity-50"
+            class="menu-item flex items-center gap-2 w-full text-left px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 focus-visible:outline-none focus-visible:bg-gray-100 dark:focus-visible:bg-gray-700 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 disabled:opacity-50"
             :class="
               item.danger
                 ? 'text-red-700 dark:text-red-400'

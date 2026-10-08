@@ -8,19 +8,14 @@
       </NuxtLink>
       <div class="min-w-0 flex-1 basis-48">
         <h1
-          class="text-lg font-semibold text-gray-800 dark:text-gray-100 truncate"
+          class="text-lg font-semibold text-gray-800 dark:text-gray-100 line-clamp-2 break-words"
+          :title="message?.subject || undefined"
         >
           {{
             message?.subject ||
             (messageError ? "Message unavailable" : "(no subject)")
           }}
         </h1>
-        <p
-          v-if="message"
-          class="text-sm text-gray-600 dark:text-gray-400 truncate"
-        >
-          From: {{ message.from }}
-        </p>
       </div>
       <div v-if="message" class="flex items-center gap-2">
         <div
@@ -31,8 +26,9 @@
           <button
             type="button"
             class="icon-btn"
-            aria-label="Previous message (press [)"
-            title="Previous message ( [ )"
+            aria-label="Previous message"
+            aria-keyshortcuts="["
+            :title="navTitle('Previous message ( [ )', canPrev)"
             :disabled="!canPrev || navigating"
             @click="go('prev')"
           >
@@ -41,8 +37,9 @@
           <button
             type="button"
             class="icon-btn"
-            aria-label="Next message (press ])"
-            title="Next message ( ] )"
+            aria-label="Next message"
+            aria-keyshortcuts="]"
+            :title="navTitle('Next message ( ] )', canNext)"
             :disabled="!canNext || navigating"
             @click="go('next')"
           >
@@ -56,7 +53,12 @@
           @click="showForward = true"
           >Forward</UBtn
         >
-        <ActionMenu label="More" :items="menuItems" @select="onMenu" />
+        <ActionMenu
+          label="More"
+          menu-label="Message actions"
+          :items="menuItems"
+          @select="onMenu"
+        />
       </div>
     </header>
 
@@ -69,13 +71,12 @@
     >
     <InlineError v-if="cancelError" block>{{ cancelError }}</InlineError>
 
-    <p
-      v-if="pending && !message"
-      role="status"
-      class="p-6 text-gray-600 dark:text-gray-400"
-    >
-      Loading message…
-    </p>
+    <div v-if="pending && !message" class="p-6 space-y-3 animate-pulse">
+      <p role="status" class="sr-only">Loading message…</p>
+      <div class="h-4 w-1/3 rounded bg-gray-200 dark:bg-gray-700" />
+      <div class="h-4 w-1/2 rounded bg-gray-200 dark:bg-gray-700" />
+      <div class="h-64 rounded-lg bg-gray-100 dark:bg-gray-800" />
+    </div>
 
     <div
       v-else-if="messageError && !message"
@@ -105,6 +106,12 @@
       <div
         class="px-6 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-sm space-y-1.5"
       >
+        <div class="flex items-start gap-2 text-gray-700 dark:text-gray-300">
+          <span class="text-gray-600 dark:text-gray-400 w-12 shrink-0"
+            >From:</span
+          >
+          <span class="min-w-0 break-all">{{ message.from }}</span>
+        </div>
         <RecipientList label="To" :addresses="message.to ?? []" />
         <RecipientList label="Cc" :addresses="message.cc ?? []" />
         <RecipientList label="Bcc" :addresses="message.bcc ?? []" />
@@ -115,7 +122,12 @@
           <time :datetime="messageDate" :title="formatFullDate(messageDate)">{{
             formatDateTime(messageDate)
           }}</time>
-          <StatusBadge :status="message.status" class="ml-2" />
+        </div>
+        <div class="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+          <span class="text-gray-600 dark:text-gray-400 w-12 shrink-0"
+            >Status:</span
+          >
+          <StatusBadge :status="message.status" />
         </div>
       </div>
 
@@ -128,23 +140,27 @@
 
       <div class="p-6">
         <TabPanel id-prefix="msg" tab="preview" :active="activeTab">
-          <div class="mb-3" v-if="message.html && message.text">
+          <MessageHtmlPreview
+            v-if="previewMode === 'html' && message.html"
+            :html="message.html"
+          >
+            <template v-if="message.text" #format>
+              <SegmentedControl
+                v-bind="formatControl"
+                @update:model-value="
+                  previewOverride = $event === 'text' ? 'text' : 'html'
+                "
+              />
+            </template>
+          </MessageHtmlPreview>
+          <div v-if="previewMode === 'text' && message.html" class="mb-3">
             <SegmentedControl
-              :model-value="previewMode"
-              :options="[
-                { value: 'html', label: 'HTML' },
-                { value: 'text', label: 'Plain text' },
-              ]"
-              label="Body format"
+              v-bind="formatControl"
               @update:model-value="
                 previewOverride = $event === 'text' ? 'text' : 'html'
               "
             />
           </div>
-          <MessageHtmlPreview
-            v-if="previewMode === 'html' && message.html"
-            :html="message.html"
-          />
           <pre
             v-else-if="message.text"
             class="whitespace-pre-wrap break-words text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4"
@@ -269,6 +285,11 @@ const canNext = computed(
       listNav.value.page < listNav.value.totalPages),
 );
 
+const navTitle = (label: string, enabled: boolean) =>
+  enabled || navIndex.value >= 0
+    ? label
+    : "Not in a list you can step through (it may have changed since you opened it)";
+
 const navigating = ref(false);
 async function go(dir: "prev" | "next") {
   if (navigating.value || navIndex.value < 0) return;
@@ -316,6 +337,58 @@ async function go(dir: "prev" | "next") {
   }
 }
 
+// Reload or shared link: the in-memory list context is gone, so rebuild it from
+// the list query (filters + page) carried in the URL.
+async function restoreListNav() {
+  if (listNav.value.inboxId === inboxId && navIndex.value >= 0) return;
+  const q = listQuery.value;
+  const urlPage = Math.max(1, parseInt(q.page ?? "1", 10) || 1);
+  const fetchPage = (page: number) =>
+    api.getInboxMessages(inboxId, {
+      q: q.q,
+      status: q.status,
+      after: q.after,
+      before: q.before,
+      ruleId: q.rule,
+      page,
+      limit: INBOX_PAGE_SIZE,
+    });
+  try {
+    // Try the page named in the URL first, then walk the others (bounded) in
+    // case the link carries no page or the list has shifted since.
+    let totalPages = 1;
+    const tried = new Set<number>();
+    for (let page = urlPage, n = 0; n < 10; n++) {
+      tried.add(page);
+      const res = await fetchPage(page);
+      totalPages = Math.max(1, Math.ceil(res.total / INBOX_PAGE_SIZE));
+      if (res.messages.some((m) => m.id === messageId)) {
+        listNav.value = {
+          inboxId,
+          ids: res.messages.map((m) => m.id),
+          page,
+          totalPages,
+        };
+        return;
+      }
+      const next = [...Array(totalPages).keys()]
+        .map((i) => i + 1)
+        .find((i) => !tried.has(i));
+      if (!next) break;
+      page = next;
+    }
+    // Not in the filtered list (it no longer matches): step through the whole
+    // inbox instead, and make "back" return to that unfiltered list too.
+    if (Object.keys(q).some((k) => k !== "page")) {
+      await navigateTo({ query: {}, replace: true });
+      return restoreListNav();
+    }
+  } catch {
+    /* prev/next stay disabled, with their explanatory title */
+  }
+}
+onMounted(restoreListNav);
+
 // ─── Message ─────────────────────────────────────────────────────────────────
 const {
   data: message,
@@ -338,7 +411,10 @@ watch(
   (msg) => {
     if (msg && !msg.isRead) {
       msg.isRead = true;
-      api.markMessageRead(messageId).catch(() => {});
+      api.markMessageRead(messageId).catch(() => {
+        msg.isRead = false;
+        toast.error("Couldn't mark this message as read.");
+      });
     }
   },
   { immediate: true },
@@ -394,6 +470,15 @@ const previewOverride = ref<"html" | "text" | null>(null);
 const previewMode = computed<"html" | "text">(
   () => previewOverride.value ?? (message.value?.html ? "html" : "text"),
 );
+
+const formatControl = computed(() => ({
+  modelValue: previewMode.value,
+  options: [
+    { value: "html", label: "HTML" },
+    { value: "text", label: "Plain text" },
+  ],
+  label: "Body format",
+}));
 
 const tabs = computed(() => {
   const verdict = spamVerdict(message.value?.spamScore);

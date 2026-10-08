@@ -23,21 +23,27 @@
             {{ inbox?.name ?? "Inbox" }}
           </h1>
           <p class="text-sm text-gray-600 dark:text-gray-400">
-            {{ list.totalMessages.value }}
-            {{ list.hasActiveFilters.value ? "matching" : "" }}
-            {{ list.totalMessages.value === 1 ? "message" : "messages" }}
-            <span
-              v-if="list.totalUnread.value > 0"
-              class="text-indigo-700 dark:text-indigo-300 font-medium"
-              >· {{ list.totalUnread.value }} unread</span
+            <span role="status" aria-live="polite" aria-atomic="true"
+              >{{ list.totalMessages.value }}
+              {{ list.hasActiveFilters.value ? "matching" : "" }}
+              {{ list.totalMessages.value === 1 ? "message" : "messages" }}
+              <span
+                v-if="list.totalUnread.value > 0"
+                class="text-indigo-700 dark:text-indigo-300 font-medium"
+                ><span aria-hidden="true">· </span
+                >{{ list.totalUnread.value }} unread</span
+              ></span
             >
+            <span v-if="list.attentionTotal.value > 0" aria-hidden="true">
+              ·
+            </span>
             <button
               v-if="list.attentionTotal.value > 0"
               type="button"
-              class="ml-1 font-medium text-red-700 dark:text-red-400 hover:underline rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+              class="font-medium text-red-700 dark:text-red-400 hover:underline rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
               @click="list.filterStatus.value = 'bounced,failed'"
             >
-              · {{ list.attentionTotal.value }} need attention
+              {{ list.attentionTotal.value }} need attention
             </button>
           </p>
         </div>
@@ -131,13 +137,16 @@
           @clear="list.clearFilters"
         />
 
-        <p
+        <div
           v-if="list.pending.value && !list.messages.value.length"
-          role="status"
-          class="p-6 text-gray-600 dark:text-gray-400"
+          class="divide-y divide-gray-100 dark:divide-gray-700 animate-pulse"
         >
-          Loading messages…
-        </p>
+          <p role="status" class="sr-only">Loading messages…</p>
+          <div v-for="n in 6" :key="n" class="pl-12 pr-14 py-3 space-y-2">
+            <div class="h-3.5 w-1/4 rounded bg-gray-200 dark:bg-gray-700" />
+            <div class="h-3.5 w-2/3 rounded bg-gray-200 dark:bg-gray-700" />
+          </div>
+        </div>
         <div
           v-else-if="list.fetchError.value && !list.messages.value.length"
           class="p-6 flex justify-center"
@@ -217,10 +226,7 @@
             class="px-6 py-3 border-t border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-center justify-between shrink-0"
           >
             <p class="text-xs text-gray-600 dark:text-gray-400">
-              {{ list.totalMessages.value }} message{{
-                list.totalMessages.value === 1 ? "" : "s"
-              }}
-              · Page {{ list.currentPage.value }} of {{ list.totalPages.value }}
+              Page {{ list.currentPage.value }} of {{ list.totalPages.value }}
             </p>
             <div class="flex gap-1">
               <UBtn
@@ -566,6 +572,7 @@ async function loadRules() {
     rules.value = await api.getRules(inboxId);
   } catch {
     rules.value = [];
+    toast.error("Couldn't load saved filters.");
   }
 }
 function openRule(rule: InboxRule | null) {
