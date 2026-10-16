@@ -1,6 +1,6 @@
 import { createReadStream, existsSync } from "node:fs";
 import { mkdir, writeFile, rm, unlink, access } from "node:fs/promises";
-import { join, dirname, isAbsolute, resolve } from "node:path";
+import { join, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { Readable } from "node:stream";
 import type { StorageClient, LocalStorageConfig } from "./types.js";
 
@@ -24,9 +24,11 @@ export class LocalStorage implements StorageClient {
   }
 
   private resolve(key: string): string {
-    // Prevent path traversal
-    const resolved = join(this.basePath, key);
-    if (!resolved.startsWith(this.basePath)) {
+    // Prevent path traversal. Compare the relative path rather than string
+    // prefixes: "/data/emails-other" starts with "/data/emails" but is outside.
+    const resolved = resolve(this.basePath, key);
+    const rel = relative(this.basePath, resolved);
+    if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
       throw new Error("Invalid key: path traversal detected");
     }
     return resolved;

@@ -1,5 +1,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+/** What an open-tracking pixel signs, in place of a click URL. */
+export const OPEN_PIXEL_TARGET = "open";
+
 /**
  * HMAC over a tracked click link. Signed links are the only ones the click
  * endpoint will redirect to directly, so it can't be used as an open redirect.

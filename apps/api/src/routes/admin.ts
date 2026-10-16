@@ -90,6 +90,7 @@ export function registerAdminRoutes(app: FastifyInstance) {
           passwordHash,
           name: typeof name === "string" ? name.trim() || null : null,
           role: role ?? "user",
+          emailVerifiedAt: new Date(), // an admin vouches for the address
         })
         .returning({
           id: users.id,

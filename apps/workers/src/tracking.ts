@@ -1,4 +1,4 @@
-import { signTrackedLink } from "@mailpocket/queue";
+import { signTrackedLink, OPEN_PIXEL_TARGET } from "@mailpocket/queue";
 
 /**
  * Rewrites HTML content to add click tracking and open tracking pixel.
@@ -28,7 +28,10 @@ export function injectTracking(
   );
 
   // 2. Inject open tracking pixel before </body>
-  const pixel = `<img src="${trackingBaseUrl}/t/open/${messageId}" width="1" height="1" style="display:none" alt="" />`;
+  const pixelSig = signingSecret
+    ? `?sig=${signTrackedLink(signingSecret, messageId, OPEN_PIXEL_TARGET)}`
+    : "";
+  const pixel = `<img src="${trackingBaseUrl}/t/open/${messageId}${pixelSig}" width="1" height="1" style="display:none" alt="" />`;
 
   if (result.includes("</body>")) {
     result = result.replace("</body>", `${pixel}</body>`);

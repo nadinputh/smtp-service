@@ -10,7 +10,8 @@ import {
   type IncomingEmailPayload,
 } from "@mailpocket/queue";
 import { eq } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { PassThrough } from "node:stream";
 
 const env = getEnv();
@@ -51,11 +52,60 @@ const incomingQueue = createIncomingQueue(redisConnection);
 
 await storage.ensureBucket();
 
+// ─── TLS ──────────────────────────────────────────────────
+const MAX_MESSAGE_BYTES = 25 * 1024 * 1024;
+const hasTls = !!(env.SMTP_TLS_CERT_PATH && env.SMTP_TLS_KEY_PATH);
+if (!hasTls && !isTesting) {
+  console.warn(
+    "⚠️  SMTP_TLS_CERT_PATH/SMTP_TLS_KEY_PATH are not set: inbox SMTP credentials are accepted over plaintext connections. Set them, or terminate TLS in front of this port.",
+  );
+}
+
+// ─── Failed-login throttle ────────────────────────────────
+// Inbox passwords are random, but nothing else slows a guessing client down.
+const MAX_FAILED_AUTH = 10;
+const FAILED_AUTH_WINDOW_MS = 10 * 60 * 1000;
+const failedAuth = new Map<string, { count: number; resetAt: number }>();
+
+function authBlocked(ip: string): boolean {
+  const entry = failedAuth.get(ip);
+  if (!entry) return false;
+  if (entry.resetAt < Date.now()) {
+    failedAuth.delete(ip);
+    return false;
+  }
+  return entry.count >= MAX_FAILED_AUTH;
+}
+
+function recordFailedAuth(ip: string) {
+  const entry = failedAuth.get(ip);
+  if (!entry || entry.resetAt < Date.now()) {
+    failedAuth.set(ip, { count: 1, resetAt: Date.now() + FAILED_AUTH_WINDOW_MS });
+  } else {
+    entry.count++;
+  }
+}
+
+const digest = (value: string) => createHash("sha256").update(value).digest();
+const safeEqual = (a: string, b: string) =>
+  timingSafeEqual(digest(a), digest(b));
+
 // ─── SMTP Server ──────────────────────────────────────────
 const smtpOptions: ConstructorParameters<typeof SMTPServer>[0] = {
   authOptional: isTesting,
-  allowInsecureAuth: true, // Only for local dev — TLS will be enforced in production
-  disabledCommands: ["STARTTLS"], // Disable TLS for local testing
+  size: MAX_MESSAGE_BYTES,
+  maxClients: 200,
+  ...(hasTls
+    ? {
+        key: readFileSync(env.SMTP_TLS_KEY_PATH!),
+        cert: readFileSync(env.SMTP_TLS_CERT_PATH!),
+        allowInsecureAuth: false,
+      }
+    : {
+        // No certificate: plaintext only (local dev / TLS terminated in front)
+        allowInsecureAuth: true,
+        disabledCommands: ["STARTTLS"],
+      }),
 
   onConnect(session, callback) {
     console.log(
@@ -75,15 +125,23 @@ const smtpOptions: ConstructorParameters<typeof SMTPServer>[0] = {
   },
 
   // Authenticate against the inboxes table
-  async onAuth(auth, _session, callback) {
+  async onAuth(auth, session, callback) {
+    const ip = session.remoteAddress;
     try {
+      if (authBlocked(ip)) {
+        return callback(new Error("Too many failed attempts, try again later"));
+      }
+
       const [inbox] = await db
         .select()
         .from(inboxes)
         .where(eq(inboxes.smtpUsername, auth.username ?? ""))
         .limit(1);
 
-      if (!inbox || inbox.smtpPassword !== auth.password) {
+      if (!inbox || !safeEqual(inbox.smtpPassword, auth.password ?? "")) {
+        recordFailedAuth(ip);
+        // Slow down guessing
+        await new Promise((resolve) => setTimeout(resolve, 1000));
         return callback(new Error("Invalid username or password"));
       }
 
@@ -102,11 +160,19 @@ const smtpOptions: ConstructorParameters<typeof SMTPServer>[0] = {
 
     stream.on("data", (chunk: Buffer) => {
       size += chunk.length;
-      passthrough.write(chunk);
+      // Past the limit the message is rejected on "end": don't keep buffering it
+      if (size <= MAX_MESSAGE_BYTES) passthrough.write(chunk);
     });
 
     stream.on("end", async () => {
       passthrough.end();
+      if ((stream as { sizeExceeded?: boolean }).sizeExceeded) {
+        return callback(
+          Object.assign(new Error("Message exceeds the maximum size"), {
+            responseCode: 552,
+          }),
+        );
+      }
       console.log(`[SMTP] DATA received ${size} bytes, saving to ${rawKey}`);
 
       try {

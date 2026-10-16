@@ -5,12 +5,22 @@ import { sql } from "drizzle-orm";
 import { authGuard } from "../middleware/auth.js";
 import Redis from "ioredis";
 
+/** Each stream holds a Redis connection, so one user may only open a few. */
+const MAX_STREAMS_PER_USER = 5;
+const openStreams = new Map<string, number>();
+
 export function registerSSERoutes(app: FastifyInstance) {
   const env = getEnv();
   const db = getDb(env.DATABASE_URL);
 
   app.get("/api/events", { preHandler: authGuard }, async (request, reply) => {
     const userId = request.user!.userId;
+
+    const open = openStreams.get(userId) ?? 0;
+    if (open >= MAX_STREAMS_PER_USER) {
+      return reply.status(429).send({ error: "Too many open event streams" });
+    }
+    openStreams.set(userId, open + 1);
 
     // Load inbox IDs the user has access to
     const accessibleInboxes = await db.execute(sql`
@@ -76,6 +86,9 @@ export function registerSSERoutes(app: FastifyInstance) {
     }, 25_000);
 
     request.raw.on("close", () => {
+      const left = (openStreams.get(userId) ?? 1) - 1;
+      if (left > 0) openStreams.set(userId, left);
+      else openStreams.delete(userId);
       clearInterval(refreshInterval);
       clearInterval(heartbeatInterval);
       sub.unsubscribe();

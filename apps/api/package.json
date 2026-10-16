@@ -31,7 +31,7 @@
     "jsonwebtoken": "^9.0.3",
     "ldapjs": "^3.0.7",
     "mailparser": "^3.9.6",
-    "nodemailer": "^8.0.4"
+    "nodemailer": "^10.1.1"
   },
   "devDependencies": {
     "@types/archiver": "^7.0.0",

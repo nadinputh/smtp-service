@@ -75,10 +75,14 @@ export function registerWebhookRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const { inboxId } = request.params;
 
-      return await db
+      const rows = await db
         .select()
         .from(webhooks)
         .where(eq(webhooks.inboxId, inboxId));
+      // The signing secret is for people who manage the webhook, not viewers.
+      return request.inboxRole === "viewer"
+        ? rows.map(({ secret: _secret, ...rest }) => rest)
+        : rows;
     },
   );
 

@@ -12,7 +12,10 @@ import {
   isInternalHostname,
   bareHost,
 } from "@mailpocket/queue";
-import { promises as dns } from "node:dns";
+import dns from "node:dns";
+import http from "node:http";
+import https from "node:https";
+import { createHmac } from "node:crypto";
 import { isIP } from "node:net";
 import type { Queue } from "bullmq";
 
@@ -113,26 +116,89 @@ async function enqueueWebhooks(
   }
 }
 
+const MAX_RESPONSE_BYTES = 64 * 1024;
+
 /**
- * In production, refuse to call into private networks. The host is resolved
- * here (not just checked syntactically) so a public-looking name that points
- * at an internal address is caught too.
+ * DNS lookup that refuses non-public addresses. The socket connects to the
+ * address validated here, so a name that resolves differently on a second
+ * lookup (DNS rebinding) can't slip past the check.
  */
-async function assertPublicTarget(rawUrl: string): Promise<void> {
-  const url = new URL(rawUrl);
+const publicOnlyLookup = ((hostname: string, options: any, callback: any) => {
+  dns.lookup(hostname, options, (err, address, family) => {
+    if (err) return callback(err, address, family);
+    const list: { address: string }[] = Array.isArray(address)
+      ? address
+      : [{ address: address as string }];
+    if (list.length === 0 || list.some((a) => isPrivateAddress(a.address))) {
+      return callback(new Error("Webhook target is not a public host"), "", 0);
+    }
+    callback(null, address, family);
+  });
+}) as typeof dns.lookup;
+
+/** Literal-address and internal-name checks that DNS pinning doesn't cover. */
+function assertPublicHost(url: URL): void {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error("Webhook URL must use http or https");
   }
   const host = bareHost(url);
-  if (isInternalHostname(host)) {
+  if (isInternalHostname(host) || (isIP(host) && isPrivateAddress(host))) {
     throw new Error("Webhook target is not a public host");
   }
-  const addresses = isIP(host)
-    ? [host]
-    : (await dns.lookup(host, { all: true })).map((a) => a.address);
-  if (addresses.length === 0 || addresses.some(isPrivateAddress)) {
-    throw new Error("Webhook target is not a public host");
-  }
+}
+
+/**
+ * POST a JSON body. Redirects are not followed (a 3xx counts as a failed
+ * delivery) and only the first 64 KiB of the response is read.
+ */
+export async function postJson(
+  rawUrl: string,
+  body: string,
+  headers: Record<string, string>,
+  publicOnly: boolean,
+): Promise<{ status: number; body: string }> {
+  const url = new URL(rawUrl);
+  if (publicOnly) assertPublicHost(url);
+  const client = url.protocol === "https:" ? https : http;
+
+  return new Promise((resolve, reject) => {
+    const req = client.request(
+      url,
+      {
+        method: "POST",
+        headers: { ...headers, "Content-Length": Buffer.byteLength(body) },
+        timeout: 10_000,
+        ...(publicOnly ? { lookup: publicOnlyLookup } : {}),
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        let size = 0;
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          resolve({
+            status: res.statusCode ?? 0,
+            body: Buffer.concat(chunks).toString("utf8"),
+          });
+        };
+        res.on("data", (chunk: Buffer) => {
+          size += chunk.length;
+          if (size <= MAX_RESPONSE_BYTES) chunks.push(chunk);
+          else {
+            finish();
+            res.destroy();
+          }
+        });
+        res.on("end", finish);
+        res.on("close", finish);
+        res.on("error", finish);
+      },
+    );
+    req.on("timeout", () => req.destroy(new Error("Webhook request timed out")));
+    req.on("error", reject);
+    req.end(body);
+  });
 }
 
 export function createWebhookDeliveryWorker(
@@ -144,27 +210,31 @@ export function createWebhookDeliveryWorker(
   return new Worker<WebhookDeliveryPayload>(
     QUEUE_NAMES.WEBHOOK_DELIVERY,
     async (job: Job<WebhookDeliveryPayload>) => {
-      const { webhookLogId, url, event, payload, attempt } = job.data;
+      const { webhookLogId, webhookId, url, event, payload, attempt } =
+        job.data;
 
       try {
-        if (env.APP_MODE === "production") await assertPublicTarget(url);
+        const [hook] = await db
+          .select({ secret: webhooks.secret })
+          .from(webhooks)
+          .where(eq(webhooks.id, webhookId))
+          .limit(1);
+        if (!hook) return; // webhook was deleted while the job waited
 
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 10000);
+        const body = JSON.stringify(payload);
+        const response = await postJson(
+          url,
+          body,
+          {
+            "Content-Type": "application/json",
+            "X-MailPocket-Event": event,
+            "X-MailPocket-Signature": `sha256=${createHmac("sha256", hook.secret).update(body).digest("hex")}`,
+          },
+          env.APP_MODE === "production",
+        );
+        const responseBody = response.body;
 
-        // Redirects aren't followed: they could bounce a checked public URL
-        // to an internal one. A 3xx therefore counts as a failed delivery.
-        const response = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-          signal: controller.signal,
-          redirect: "manual",
-        }).finally(() => clearTimeout(timeout));
-
-        const responseBody = await response.text().catch(() => "");
-
-        if (response.ok) {
+        if (response.status >= 200 && response.status < 300) {
           await db
             .update(webhookLogs)
             .set({

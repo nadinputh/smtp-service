@@ -31,6 +31,10 @@ const envSchema = z
     SMTP_HOST: z.string().default("localhost"), // advertised/external hostname, not a bind address
     SMTP_BIND_HOST: z.string().default("0.0.0.0"),
     SMTP_PORTS: z.string().optional(), // Comma-separated additional ports, e.g. "2525,1025"
+    // PEM files enabling STARTTLS on the SMTP server. With them, credentials
+    // are only accepted over TLS.
+    SMTP_TLS_CERT_PATH: z.string().optional(),
+    SMTP_TLS_KEY_PATH: z.string().optional(),
 
     // API Server
     API_PORT: z.coerce.number().default(3001),
@@ -95,6 +99,11 @@ const envSchema = z
     CLEANUP_MAX_AGE_HOURS: z.coerce.number().default(24),
     CLEANUP_BATCH_SIZE: z.coerce.number().default(500),
 
+    // Reverse proxies in front of the API whose X-Forwarded-For entries are
+    // trusted, counted from the right (the Nuxt proxy is one). Defaults to 1 in
+    // production and 0 otherwise; add one per extra load balancer.
+    TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).optional(),
+
     // API rate limit: requests per user (or IP) per minute
     RATE_LIMIT_MAX: z.coerce.number().int().positive().default(100),
   })
@@ -104,6 +113,19 @@ const envSchema = z
         code: "custom",
         path: ["SYSTEM_EMAIL_FROM"],
         message: "SYSTEM_EMAIL_FROM is required when APP_MODE=production",
+      });
+    }
+    // JWT_SECRET signs every session and tracking link: a short or
+    // copied-from-.env.example value lets anyone forge admin tokens.
+    if (
+      data.APP_MODE === "production" &&
+      (data.JWT_SECRET.length < 32 || /^change-?me/i.test(data.JWT_SECRET))
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["JWT_SECRET"],
+        message:
+          "JWT_SECRET must be a random value of at least 32 characters when APP_MODE=production (e.g. `openssl rand -base64 48`)",
       });
     }
     if (data.APP_MODE === "production" && !data.DKIM_ENCRYPTION_KEY) {

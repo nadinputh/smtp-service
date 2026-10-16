@@ -128,7 +128,11 @@ export function createQuotaResetQueue(connection: ConnectionOptions) {
   });
 }
 
-export { signTrackedLink, verifyTrackedLink } from "./tracking-signature.js";
+export {
+  signTrackedLink,
+  verifyTrackedLink,
+  OPEN_PIXEL_TARGET,
+} from "./tracking-signature.js";
 export {
   isPrivateAddress,
   isInternalHostname,

@@ -44,7 +44,7 @@ async function seed() {
         // Promote existing user to admin
         await db
           .update(users)
-          .set({ role: "admin" })
+          .set({ role: "admin", emailVerifiedAt: new Date() })
           .where(eq(users.id, existing.id));
         console.log(
           `✅  Promoted existing user "${ADMIN_EMAIL}" to admin role.`,
@@ -57,6 +57,7 @@ async function seed() {
         passwordHash,
         name: "Admin",
         role: "admin",
+        emailVerifiedAt: new Date(),
       });
       console.log(`✅  Created admin user "${ADMIN_EMAIL}".`);
     }

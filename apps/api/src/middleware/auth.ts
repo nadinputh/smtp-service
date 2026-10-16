@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { getEnv } from "@mailpocket/env";
 import { getDb, apiKeys, users } from "@mailpocket/db";
 import { eq, and, like } from "drizzle-orm";
+import { resolveSsoUser } from "../lib/sso-user.js";
 
 export const API_KEY_SCOPES = ["send", "read", "delete"] as const;
 
@@ -61,7 +62,9 @@ export function signToken(payload: JwtPayload): string {
 
 export function verifyToken(token: string): JwtPayload {
   const env = getEnv();
-  return jwt.verify(token, env.JWT_SECRET) as JwtPayload;
+  return jwt.verify(token, env.JWT_SECRET, {
+    algorithms: ["HS256"],
+  }) as JwtPayload;
 }
 
 // ─── OAuth2 OIDC Discovery Cache ─────────────────────────
@@ -116,6 +119,11 @@ async function verifyOAuth2Token(token: string): Promise<JwtPayload | null> {
     const decoded = jwt.verify(token, pem, {
       issuer: oidc.issuer,
       audience: env.OAUTH2_CLIENT_ID,
+      // Asymmetric only: never let a token pick an HMAC "verified" with a public key
+      algorithms: [
+        "RS256", "RS384", "RS512", "ES256", "ES384", "ES512",
+        "PS256", "PS384", "PS512",
+      ],
     }) as any;
 
     const email =
@@ -125,28 +133,14 @@ async function verifyOAuth2Token(token: string): Promise<JwtPayload | null> {
     // An unverified address must not be able to claim an existing account.
     if (!email || decoded.email_verified === false) return null;
 
-    // Look up user by email
     const db = getDb(env.DATABASE_URL);
-    let [user] = await db
-      .select({ id: users.id, email: users.email })
-      .from(users)
-      .where(eq(users.email, email))
-      .limit(1);
-
-    if (!user) {
-      // Auto-provision user from OAuth2
-      [user] = await db
-        .insert(users)
-        .values({
-          email,
-          name: (decoded.name as string) || null,
-        })
-        .onConflictDoNothing()
-        .returning({ id: users.id, email: users.email });
-    }
-
-    if (!user) return null;
-    return { userId: user.id, email: user.email };
+    const resolved = await resolveSsoUser(
+      db,
+      email,
+      typeof decoded.name === "string" ? decoded.name : null,
+    );
+    if ("error" in resolved) return null;
+    return { userId: resolved.user.id, email: resolved.user.email };
   } catch {
     return null;
   }

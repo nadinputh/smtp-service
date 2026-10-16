@@ -13,7 +13,7 @@ import {
   inboxes,
 } from "@mailpocket/db";
 import type { StorageClient } from "@mailpocket/storage";
-import { type OutboundEmailPayload } from "@mailpocket/queue";
+import { type OutboundEmailPayload, isPrivateAddress } from "@mailpocket/queue";
 import { eq, and, inArray } from "drizzle-orm";
 import { systemEmailFrom, type Env } from "@mailpocket/env";
 import type Redis from "ioredis";
@@ -29,6 +29,24 @@ async function resolveMx(domain: string): Promise<string> {
     // Fallback to A record if no MX
     return domain;
   }
+}
+
+/**
+ * First public address of the MX host. Recipient domains are attacker-chosen,
+ * so an MX pointing at loopback/private space must not be connected to.
+ * Returning the address (rather than the name) pins the connection to what was
+ * checked.
+ */
+async function publicMxAddress(mxHost: string): Promise<string> {
+  const addresses = await dns.lookup(mxHost, { all: true });
+  const usable = addresses.find((a) => !isPrivateAddress(a.address));
+  if (!usable) {
+    throw Object.assign(
+      new Error(`MX host ${mxHost} does not resolve to a public address`),
+      { responseCode: 550 },
+    );
+  }
+  return usable.address;
 }
 
 // ─── Classify SMTP errors ─────────────────────────────────
@@ -139,12 +157,14 @@ async function deliverToRecipient(
   if (!recipientDomain) throw new Error(`Invalid recipient: ${recipient}`);
 
   const mxHost = await resolveMx(recipientDomain);
+  const mxAddress = await publicMxAddress(mxHost);
 
   const transport = createTransport({
-    host: mxHost,
+    host: mxAddress,
     port: 25,
     secure: false, // use STARTTLS opportunistically
     tls: {
+      servername: mxHost,
       rejectUnauthorized: false, // many MTAs use self-signed certs
     },
     connectionTimeout: 30000,
@@ -213,6 +233,8 @@ export function createOutboundProcessor(
         );
         // Rebuild the MIME message with tracked HTML
         const mail = new MailComposer({
+          disableFileAccess: true,
+          disableUrlAccess: true,
           from: parsed.from?.text,
           to: parsed.to
             ? Array.isArray(parsed.to)

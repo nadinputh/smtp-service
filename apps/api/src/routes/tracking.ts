@@ -9,7 +9,7 @@ import {
   requireUuidParams,
   isUuid,
 } from "../middleware/access.js";
-import { verifyTrackedLink } from "@mailpocket/queue";
+import { verifyTrackedLink, OPEN_PIXEL_TARGET } from "@mailpocket/queue";
 
 const escapeHtml = (s: string) =>
   s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -46,8 +46,11 @@ export function registerTrackingRoutes(app: FastifyInstance) {
       return reply.status(400).send("Invalid URL");
     }
 
-    // Log the click event asynchronously
-    if (isUuid(messageId)) {
+    const signed = verifyTrackedLink(env.JWT_SECRET, messageId, url, sig);
+
+    // Log the click event asynchronously (only for links we signed, so
+    // arbitrary callers can't fabricate webhook events)
+    if (signed && isUuid(messageId)) {
       redisPub
         .publish(
           "webhook:fire",
@@ -63,7 +66,7 @@ export function registerTrackingRoutes(app: FastifyInstance) {
     // Only links we signed when sending redirect straight through. Anything
     // else (forged or from before signing existed) gets a confirmation page,
     // so this endpoint can't be used to disguise a phishing link.
-    if (verifyTrackedLink(env.JWT_SECRET, messageId, url, sig)) {
+    if (signed) {
       return reply.redirect(targetUrl.href);
     }
     const shown = escapeHtml(targetUrl.href);
@@ -78,13 +81,21 @@ export function registerTrackingRoutes(app: FastifyInstance) {
   });
 
   // Open tracking: 1x1 transparent pixel
-  app.get<{ Params: { messageId: string } }>(
+  app.get<{ Params: { messageId: string }; Querystring: { sig?: string } }>(
     "/t/open/:messageId",
     async (request, reply) => {
       const { messageId } = request.params;
 
-      // Fire opened webhook
-      if (isUuid(messageId)) {
+      // Fire opened webhook (signed pixels only, like clicks)
+      if (
+        isUuid(messageId) &&
+        verifyTrackedLink(
+          env.JWT_SECRET,
+          messageId,
+          OPEN_PIXEL_TARGET,
+          request.query.sig,
+        )
+      ) {
         redisPub
           .publish(
             "webhook:fire",

@@ -83,7 +83,14 @@ async function processIncomingEmail(job: Job<IncomingEmailPayload>) {
 
   if (parsed.attachments?.length) {
     for (const att of parsed.attachments) {
-      const attKey = `attachments/${inboxId}/${randomUUID()}/${att.filename ?? "unnamed"}`;
+      // The sender controls the filename: keep it out of the storage path
+      // (it is still shown to users from the metadata below).
+      const safeName =
+        (att.filename ?? "unnamed")
+          .replace(/[^A-Za-z0-9._-]/g, "_")
+          .replace(/^\.+/, "_")
+          .slice(0, 100) || "unnamed";
+      const attKey = `attachments/${inboxId}/${randomUUID()}/${safeName}`;
       await storage.putObject(attKey, att.content, att.size, att.contentType);
       attachmentRefs.push({
         filename: att.filename ?? "unnamed",

@@ -3,6 +3,8 @@ interface User {
   email: string;
   name?: string;
   role?: string;
+  // false until the address is confirmed; undefined for older cached sessions
+  emailVerified?: boolean;
 }
 
 interface AuthProviders {
@@ -236,6 +238,28 @@ export function useAuth() {
     return res;
   }
 
+  async function verifyEmail(token: string) {
+    const res = await $fetch<{ success: boolean }>("/api/auth/verify-email", {
+      method: "POST",
+      body: { token },
+    });
+    if (authState.user) {
+      authState.user = { ...authState.user, emailVerified: true };
+      persist();
+    }
+    return res;
+  }
+
+  async function resendVerification() {
+    return await $fetch<{ success: boolean }>(
+      "/api/auth/resend-verification",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${authState.token}` },
+      },
+    );
+  }
+
   async function forgotPassword(email: string) {
     return await $fetch<{ message: string }>("/api/auth/forgot-password", {
       method: "POST",
@@ -288,6 +312,8 @@ export function useAuth() {
     register,
     forgotPassword,
     resetPassword,
+    verifyEmail,
+    resendVerification,
     logout,
     forceLogout,
     setToken,

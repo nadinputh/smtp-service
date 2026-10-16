@@ -169,7 +169,7 @@ async function exportMbox(
   for (const msg of msgs) {
     try {
       const buffer = await storage.getObjectAsBuffer(msg.rawKey);
-      const from = msg.from || "unknown@unknown";
+      const from = (msg.from || "unknown@unknown").replace(/[\r\n]+/g, " ");
       const date = msg.createdAt
         ? new Date(msg.createdAt).toUTCString()
         : new Date().toUTCString();

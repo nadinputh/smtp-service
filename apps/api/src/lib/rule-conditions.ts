@@ -1,40 +1,42 @@
 import { messages } from "@mailpocket/db";
 import type { RuleCondition } from "@mailpocket/db";
+import { escapeLike } from "./validate.js";
 import { eq, ilike, gt, lt, and, or, sql, type SQL } from "drizzle-orm";
 
 export function buildConditionClause(
   condition: RuleCondition,
 ): SQL | undefined {
   const val = condition.value;
+  const like = escapeLike(val);
 
   switch (condition.field) {
     case "from":
-      if (condition.op === "contains") return ilike(messages.from, `%${val}%`);
+      if (condition.op === "contains") return ilike(messages.from, `%${like}%`);
       if (condition.op === "not_contains")
-        return sql`${messages.from} NOT ILIKE ${"%" + val + "%"}`;
+        return sql`${messages.from} NOT ILIKE ${"%" + like + "%"}`;
       if (condition.op === "equals") return eq(messages.from, val);
       if (condition.op === "starts_with")
-        return ilike(messages.from, `${val}%`);
-      if (condition.op === "ends_with") return ilike(messages.from, `%${val}`);
+        return ilike(messages.from, `${like}%`);
+      if (condition.op === "ends_with") return ilike(messages.from, `%${like}`);
       break;
 
     case "to":
       if (condition.op === "contains")
-        return sql`${messages.to}::text ILIKE ${"%" + val + "%"}`;
+        return sql`${messages.to}::text ILIKE ${"%" + like + "%"}`;
       if (condition.op === "not_contains")
-        return sql`${messages.to}::text NOT ILIKE ${"%" + val + "%"}`;
+        return sql`${messages.to}::text NOT ILIKE ${"%" + like + "%"}`;
       break;
 
     case "subject":
       if (condition.op === "contains")
-        return ilike(messages.subject, `%${val}%`);
+        return ilike(messages.subject, `%${like}%`);
       if (condition.op === "not_contains")
-        return sql`${messages.subject} NOT ILIKE ${"%" + val + "%"}`;
+        return sql`${messages.subject} NOT ILIKE ${"%" + like + "%"}`;
       if (condition.op === "equals") return eq(messages.subject, val);
       if (condition.op === "starts_with")
-        return ilike(messages.subject, `${val}%`);
+        return ilike(messages.subject, `${like}%`);
       if (condition.op === "ends_with")
-        return ilike(messages.subject, `%${val}`);
+        return ilike(messages.subject, `%${like}`);
       break;
 
     case "status":

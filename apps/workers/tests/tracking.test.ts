@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { injectTracking } from "../src/tracking.js";
-import { verifyTrackedLink } from "@mailpocket/queue";
+import { verifyTrackedLink, OPEN_PIXEL_TARGET } from "@mailpocket/queue";
 
 const BASE_URL = "http://localhost:3002";
 const MSG_ID = "test-msg-123";
@@ -90,3 +90,15 @@ describe("injectTracking signing", () => {
     expect(out).not.toContain("sig=");
   });
 });
+
+describe("signed open pixel", () => {
+  it("carries a signature the API can verify", () => {
+    const result = injectTracking("<body></body>", MSG_ID, BASE_URL, "secret");
+    const sig = /\/t\/open\/test-msg-123\?sig=([0-9a-f]+)"/.exec(result)?.[1];
+    expect(sig).toBeDefined();
+    expect(verifyTrackedLink("secret", MSG_ID, OPEN_PIXEL_TARGET, sig)).toBe(true);
+    expect(verifyTrackedLink("other", MSG_ID, OPEN_PIXEL_TARGET, sig)).toBe(false);
+    expect(verifyTrackedLink("secret", "another-id", OPEN_PIXEL_TARGET, sig)).toBe(false);
+  });
+});
+

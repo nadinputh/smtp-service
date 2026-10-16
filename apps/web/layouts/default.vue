@@ -346,6 +346,30 @@
           >MailPocket</span
         >
       </div>
+      <div
+        v-if="user?.emailVerified === false"
+        role="status"
+        class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-sm bg-amber-50 dark:bg-amber-900/20 text-amber-900 dark:text-amber-200 border-b border-amber-200 dark:border-amber-800 shrink-0"
+      >
+        <span
+          >Confirm your email address to accept team invitations. We sent a link
+          to {{ user.email }}.</span
+        >
+        <button
+          type="button"
+          class="font-medium underline underline-offset-2 disabled:opacity-60"
+          :disabled="resendState !== 'idle'"
+          @click="resendVerification"
+        >
+          {{
+            resendState === "sent"
+              ? "Link sent"
+              : resendState === "sending"
+                ? "Sending…"
+                : "Resend link"
+          }}
+        </button>
+      </div>
       <div class="flex-1 overflow-hidden">
         <slot />
       </div>
@@ -489,7 +513,17 @@
 <script setup lang="ts">
 const route = useRoute();
 const api = useApi();
-const { user, logout } = useAuth();
+const { user, logout, resendVerification: requestVerification } = useAuth();
+const resendState = ref<"idle" | "sending" | "sent">("idle");
+async function resendVerification() {
+  resendState.value = "sending";
+  try {
+    await requestVerification();
+    resendState.value = "sent";
+  } catch {
+    resendState.value = "idle";
+  }
+}
 const darkMode = useDarkMode();
 const sidebar = useSidebar();
 const {

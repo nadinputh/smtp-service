@@ -1,3 +1,11 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# Transitive dependencies with published security fixes the parent packages
+# haven't picked up yet.
+overrides:
+  "@fastify/static": ">=10.1.2"
+  "stream-json": ">=3.6.0"
+  "decode-uri-component": ">=0.5.0"
+  "postcss-selector-parser": ">=7.1.6"

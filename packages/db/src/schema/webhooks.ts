@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   uuid,
@@ -14,6 +15,11 @@ export const webhooks = pgTable("webhooks", {
     .references(() => inboxes.id, { onDelete: "cascade" }),
 
   url: varchar("url", { length: 2048 }).notNull(),
+
+  // Signs each delivery (X-MailPocket-Signature) so receivers can authenticate it
+  secret: varchar("secret", { length: 64 })
+    .notNull()
+    .default(sql`replace(gen_random_uuid()::text, '-', '')`),
 
   // Which events to fire on
   onDelivered: boolean("on_delivered").notNull().default(true),

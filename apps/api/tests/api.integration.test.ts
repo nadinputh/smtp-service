@@ -1498,6 +1498,53 @@ describe("API Integration Tests", () => {
       expect(status).toBe(400);
     });
 
+    it("POST /v1/messages rejects file/URL objects in subject, text and html", async () => {
+      const inbox = await api("/api/inboxes", {
+        method: "POST",
+        body: JSON.stringify({ name: "Content guard" }),
+      });
+      const send = (extra: Record<string, unknown>) =>
+        api("/v1/messages", {
+          method: "POST",
+          body: JSON.stringify({
+            inboxId: inbox.body.id,
+            from: "a@example.com",
+            to: ["b@example.com"],
+            subject: "s",
+            ...extra,
+          }),
+        });
+      expect((await send({ html: { path: "/etc/passwd" } })).status).toBe(400);
+      expect((await send({ text: { href: "http://127.0.0.1/" } })).status).toBe(
+        400,
+      );
+      expect(
+        (await send({ subject: { path: "/etc/passwd" }, text: "x" })).status,
+      ).toBe(400);
+      expect(
+        (await send({ text: "x", headers: { "X-A": { value: "x" } } })).status,
+      ).toBe(400);
+      expect((await send({ text: "plain" })).status).toBe(202);
+    });
+
+    it("user search needs 3+ characters", async () => {
+      expect((await api("/api/users/search?q=ab")).status).toBe(400);
+      expect((await api("/api/users/search?q=abc")).status).toBe(200);
+    });
+
+    it("webhooks carry a signing secret for managers", async () => {
+      const inbox = await api("/api/inboxes", {
+        method: "POST",
+        body: JSON.stringify({ name: "Hook secret" }),
+      });
+      await api(`/api/inboxes/${inbox.body.id}/webhooks`, {
+        method: "POST",
+        body: JSON.stringify({ url: "http://127.0.0.1:9/hook" }),
+      });
+      const list = await api(`/api/inboxes/${inbox.body.id}/webhooks`);
+      expect(list.body[0].secret).toMatch(/^[0-9a-f]{32}$/);
+    });
+
     it("POST /v1/messages rejects invalid inbox", async () => {
       const { status } = await api("/v1/messages", {
         method: "POST",

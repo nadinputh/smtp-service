@@ -2,7 +2,13 @@ import type { FastifyInstance } from "fastify";
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
 import { getEnv, systemEmailFrom } from "@mailpocket/env";
-import { getDb, users, passwordResets, apiKeys } from "@mailpocket/db";
+import {
+  getDb,
+  users,
+  passwordResets,
+  emailVerifications,
+  apiKeys,
+} from "@mailpocket/db";
 import { eq, and, isNull, gt } from "drizzle-orm";
 import { createStorage } from "@mailpocket/storage";
 import { createOutboundQueue, createRedisConnection } from "@mailpocket/queue";
@@ -13,13 +19,15 @@ import { sendSystemEmail } from "../lib/send-system-email.js";
 import { isLdapConfigured } from "../lib/ldap-config.js";
 import { normalizeEmail } from "../lib/address.js";
 import { cleanString } from "../lib/validate.js";
+import { resolveSsoUser } from "../lib/sso-user.js";
 
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000; // 1 hour
+const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 // Compared against when the account doesn't exist, so login takes the same
 // time whether or not an email is registered.
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync("not-a-real-password", 12);
 
-/** Reset tokens are stored hashed so a DB leak can't be used to reset accounts. */
+/** Reset/verification tokens are stored hashed so a DB leak can't be used to take over accounts. */
 const hashResetToken = (token: string) =>
   crypto.createHash("sha256").update(token).digest("hex");
 
@@ -80,6 +88,33 @@ export function registerAuthRoutes(app: FastifyInstance) {
     },
   };
 
+  /** Emails a fresh verification link; delivery failures are only logged. */
+  async function sendVerificationEmail(userId: string, email: string) {
+    const token = crypto.randomBytes(32).toString("hex");
+    await db.insert(emailVerifications).values({
+      userId,
+      token: hashResetToken(token),
+      expiresAt: new Date(Date.now() + EMAIL_VERIFICATION_TTL_MS),
+    });
+    const url = `${env.WEB_APP_URL}/verify-email?token=${token}`;
+    try {
+      const systemInbox = await getOrCreateSystemInbox(db);
+      await sendSystemEmail({
+        db,
+        storage,
+        outboundQueue,
+        systemInboxId: systemInbox.id,
+        from: systemEmailFrom(env),
+        to: email,
+        subject: "Verify your MailPocket email address",
+        text: `Confirm your email address to finish setting up your MailPocket account. This link expires in 24 hours:\n\n${url}\n\nIf you didn't create an account, you can ignore this email.`,
+        html: `<p>Confirm your email address to finish setting up your MailPocket account. This link expires in 24 hours:</p><p><a href="${url}">${url}</a></p><p>If you didn't create an account, you can ignore this email.</p>`,
+      });
+    } catch (err) {
+      app.log.error({ err, userId }, "Failed to send verification email");
+    }
+  }
+
   // ─── Register (local) ────────────────────────────────────
   app.post<{
     Body: { email: string; password: string; name?: string };
@@ -136,10 +171,20 @@ export function registerAuthRoutes(app: FastifyInstance) {
 
     const passwordHash = await bcrypt.hash(password, 12);
 
+    // The testing sinkhole sends no real mail, so nobody could ever click the
+    // link: accounts there are verified on creation.
+    const verifyByEmail = env.APP_MODE === "production";
     const [user] = await db
       .insert(users)
-      .values({ email: normalizedEmail, passwordHash, name: cleanName })
+      .values({
+        email: normalizedEmail,
+        passwordHash,
+        name: cleanName,
+        emailVerifiedAt: verifyByEmail ? null : new Date(),
+      })
       .returning({ id: users.id, email: users.email, role: users.role });
+
+    if (verifyByEmail) await sendVerificationEmail(user.id, user.email);
 
     const token = signToken({ userId: user.id, email: user.email });
 
@@ -150,6 +195,7 @@ export function registerAuthRoutes(app: FastifyInstance) {
         email: user.email,
         name: cleanName,
         role: user.role,
+        emailVerified: !verifyByEmail,
       },
     });
   });
@@ -202,6 +248,7 @@ export function registerAuthRoutes(app: FastifyInstance) {
         email: user.email,
         name: user.name,
         role: user.role,
+        emailVerified: !!user.emailVerifiedAt,
       },
     };
   });
@@ -350,24 +397,11 @@ export function registerAuthRoutes(app: FastifyInstance) {
       }
       const name = ldapUser.cn || username;
 
-      const findUser = () =>
-        db
-          .select({ id: users.id, email: users.email, role: users.role })
-          .from(users)
-          .where(eq(users.email, email))
-          .limit(1)
-          .then(([row]) => row);
-
-      // Insert-or-ignore then re-read: two concurrent first logins (or a
-      // double-click) must not surface the unique-email violation as a 500.
-      let user = await findUser();
-      if (!user) {
-        await db
-          .insert(users)
-          .values({ email, name })
-          .onConflictDoNothing({ target: users.email });
-        user = await findUser();
+      const resolved = await resolveSsoUser(db, email, name);
+      if ("error" in resolved) {
+        return reply.status(403).send({ error: resolved.error });
       }
+      const user = resolved.user;
 
       const token = signToken({ userId: user.id, email: user.email });
       return {
@@ -538,29 +572,11 @@ export function registerAuthRoutes(app: FastifyInstance) {
         .send({ error: "Could not determine user email" });
     }
 
-    // Find or create user by email
-    let [user] = await db
-      .select({
-        id: users.id,
-        email: users.email,
-        name: users.name,
-        role: users.role,
-      })
-      .from(users)
-      .where(eq(users.email, email))
-      .limit(1);
-
-    if (!user) {
-      [user] = await db
-        .insert(users)
-        .values({ email, name: name || null })
-        .returning({
-          id: users.id,
-          email: users.email,
-          name: users.name,
-          role: users.role,
-        });
+    const resolved = await resolveSsoUser(db, email, name || null);
+    if ("error" in resolved) {
+      return reply.status(403).send({ error: resolved.error });
     }
+    const user = resolved.user;
 
     const token = signToken({ userId: user.id, email: user.email });
     return {
@@ -586,6 +602,7 @@ export function registerAuthRoutes(app: FastifyInstance) {
           name: users.name,
           role: users.role,
           createdAt: users.createdAt,
+          emailVerifiedAt: users.emailVerifiedAt,
         })
         .from(users)
         .where(eq(users.id, request.user!.userId))
@@ -595,7 +612,8 @@ export function registerAuthRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "User not found" });
       }
 
-      return user;
+      const { emailVerifiedAt, ...rest } = user;
+      return { ...rest, emailVerified: !!emailVerifiedAt };
     },
   );
 
@@ -791,6 +809,65 @@ export function registerAuthRoutes(app: FastifyInstance) {
 
     return { success: true };
   });
+
+  // ─── Verify email ───────────────────────────────────────
+  app.post<{ Body: { token: string } }>(
+    "/api/auth/verify-email",
+    authRateLimit,
+    async (request, reply) => {
+      const token = request.body?.token;
+      if (typeof token !== "string" || !token) {
+        return reply.status(400).send({ error: "Token is required" });
+      }
+
+      // Claim atomically so a link can't be used twice.
+      const [claimed] = await db
+        .update(emailVerifications)
+        .set({ usedAt: new Date() })
+        .where(
+          and(
+            eq(emailVerifications.token, hashResetToken(token)),
+            isNull(emailVerifications.usedAt),
+            gt(emailVerifications.expiresAt, new Date()),
+          ),
+        )
+        .returning({ userId: emailVerifications.userId });
+
+      if (!claimed) {
+        return reply
+          .status(400)
+          .send({ error: "This verification link is invalid or has expired" });
+      }
+
+      await db
+        .update(users)
+        .set({ emailVerifiedAt: new Date(), updatedAt: new Date() })
+        .where(eq(users.id, claimed.userId));
+      return { success: true };
+    },
+  );
+
+  // ─── Resend verification email ──────────────────────────
+  app.post(
+    "/api/auth/resend-verification",
+    { ...authRateLimit, preHandler: [authGuard] },
+    async (request, reply) => {
+      const [user] = await db
+        .select({
+          id: users.id,
+          email: users.email,
+          emailVerifiedAt: users.emailVerifiedAt,
+        })
+        .from(users)
+        .where(eq(users.id, request.user!.userId))
+        .limit(1);
+      if (!user) return reply.status(404).send({ error: "User not found" });
+      if (!user.emailVerifiedAt) {
+        await sendVerificationEmail(user.id, user.email);
+      }
+      return { success: true };
+    },
+  );
 
   // ─── Auth providers info (system config) ─────────────────
   app.get("/api/auth/providers", async () => {

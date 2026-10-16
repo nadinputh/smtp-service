@@ -9,7 +9,7 @@ import {
   inboxes,
   users,
 } from "@mailpocket/db";
-import { eq, and, inArray, or, ilike, desc, gt, sql } from "drizzle-orm";
+import { eq, and, inArray, or, ilike, desc, gt, isNotNull, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { authGuard } from "../middleware/auth.js";
 import {
@@ -270,6 +270,20 @@ export function registerTeamRoutes(app: FastifyInstance) {
         return reply.status(403).send({ error: "Not authorized" });
       }
 
+      const [target] = await db
+        .select({ verified: users.emailVerifiedAt })
+        .from(users)
+        .where(eq(users.id, targetUserId))
+        .limit(1);
+      if (!target) {
+        return reply.status(404).send({ error: "User not found" });
+      }
+      if (!target.verified) {
+        return reply
+          .status(409)
+          .send({ error: "That user hasn't verified their email address yet" });
+      }
+
       try {
         const [member] = await db
           .insert(teamMembers)
@@ -402,13 +416,16 @@ export function registerTeamRoutes(app: FastifyInstance) {
   // ─── Search users (for team member picker) ───────────────
   app.get<{ Querystring: { q?: string } }>(
     "/api/users/search",
-    { preHandler: teamGuard },
+    {
+      preHandler: teamGuard,
+      config: { rateLimit: { max: 30, timeWindow: 60000 } },
+    },
     async (request, reply) => {
       const query =
         typeof request.query.q === "string" ? request.query.q.trim() : "";
-      if (query.length < 2 || query.length > 100) {
+      if (query.length < 3 || query.length > 100) {
         return reply.status(400).send({
-          error: "Search query must be between 2 and 100 characters",
+          error: "Search query must be between 3 and 100 characters",
         });
       }
 
@@ -421,7 +438,12 @@ export function registerTeamRoutes(app: FastifyInstance) {
       const results = await db
         .select({ id: users.id, email: users.email, name: users.name })
         .from(users)
-        .where(or(ilike(users.email, term), ilike(users.name, term)))
+        .where(
+          and(
+            isNotNull(users.emailVerifiedAt),
+            or(ilike(users.email, term), ilike(users.name, term)),
+          ),
+        )
         .limit(10);
 
       return results;
@@ -578,7 +600,8 @@ export function registerTeamRoutes(app: FastifyInstance) {
         meta: { email: email, role: inviteRole },
       });
 
-      return reply.status(201).send(invitation);
+      const { token: _token, ...publicInvitation } = invitation;
+      return reply.status(201).send(publicInvitation);
     },
   );
 
@@ -668,12 +691,13 @@ export function registerTeamRoutes(app: FastifyInstance) {
 
       // Get user email
       const [user] = await db
-        .select({ email: users.email })
+        .select({ email: users.email, verified: users.emailVerifiedAt })
         .from(users)
         .where(eq(users.id, userId))
         .limit(1);
 
-      if (!user) return [];
+      // Invitations are addressed to an email: only its proven owner sees them.
+      if (!user || !user.verified) return [];
 
       return db
         .select({
@@ -709,13 +733,18 @@ export function registerTeamRoutes(app: FastifyInstance) {
 
       // Get user email
       const [user] = await db
-        .select({ email: users.email })
+        .select({ email: users.email, verified: users.emailVerifiedAt })
         .from(users)
         .where(eq(users.id, userId))
         .limit(1);
 
       if (!user) {
         return reply.status(401).send({ error: "User not found" });
+      }
+      if (!user.verified) {
+        return reply.status(403).send({
+          error: "Verify your email address before accepting invitations",
+        });
       }
 
       // Find invitation

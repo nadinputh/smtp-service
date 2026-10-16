@@ -1,5 +1,4 @@
 import type { FastifyInstance } from "fastify";
-import MailComposer from "nodemailer/lib/mail-composer/index.js";
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { getEnv } from "@mailpocket/env";
@@ -9,7 +8,6 @@ import {
   messages,
   templates,
   suppressions,
-  userQuotas,
 } from "@mailpocket/db";
 import { createStorage } from "@mailpocket/storage";
 import {
@@ -17,9 +15,16 @@ import {
   createRedisConnection,
   type OutboundEmailPayload,
 } from "@mailpocket/queue";
-import { eq, and, lte, sql } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { authGuard } from "../middleware/auth.js";
-import { resolveInboxRole, hasMinRole } from "../middleware/access.js";
+import {
+  resolveInboxRole,
+  hasMinRole,
+  isUuid,
+} from "../middleware/access.js";
+import { buildMime } from "../lib/mime.js";
+import { checkAndIncrementQuota } from "../lib/quota.js";
+import { isOptionalString } from "../lib/validate.js";
 import {
   normalizeEmail,
   parseRecipients,
@@ -89,6 +94,24 @@ export function substituteVariables(
   });
 }
 
+const MAX_BODY_CHARS = 1_000_000;
+
+/**
+ * Subject/text/html must be plain strings: the mail composer treats objects
+ * (`{ path }`, `{ href }`) as instructions to read files or fetch URLs.
+ */
+function bodyFieldsError(fields: {
+  subject?: unknown;
+  text?: unknown;
+  html?: unknown;
+}): string | null {
+  return isOptionalString(fields.subject, 1000) &&
+    isOptionalString(fields.text, MAX_BODY_CHARS) &&
+    isOptionalString(fields.html, MAX_BODY_CHARS)
+    ? null
+    : "subject, text and html must be strings";
+}
+
 /** A variables payload must be a plain object. */
 function isVariablesObject(value: unknown): boolean {
   return (
@@ -105,7 +128,13 @@ function extractVariables(content: string): string[] {
 
 /** Validate that custom headers only contain X-* keys */
 function validateCustomHeaders(headers: Record<string, string>): string | null {
-  for (const key of Object.keys(headers)) {
+  if (typeof headers !== "object" || headers === null || Array.isArray(headers)) {
+    return "headers must be an object of strings";
+  }
+  for (const [key, value] of Object.entries(headers)) {
+    if (typeof value !== "string" || value.length > 998) {
+      return `Header "${key}" must be a string of at most 998 characters`;
+    }
     if (!key.startsWith("X-") && !key.startsWith("x-")) {
       return `Custom header "${key}" is not allowed. Only X-* headers are permitted.`;
     }
@@ -169,6 +198,21 @@ export function registerSendRoutes(app: FastifyInstance) {
         return reply
           .status(400)
           .send({ error: "from, to, and inboxId are required" });
+      }
+      // Malformed ids can't match a row (and would be a DB cast error)
+      if (!isUuid(inboxId)) {
+        return reply.status(404).send({ error: "Inbox not found" });
+      }
+      if (templateId !== undefined && !isUuid(templateId)) {
+        return reply.status(404).send({ error: "Template not found" });
+      }
+      const fieldsError = bodyFieldsError({
+        subject: rawSubject,
+        text: rawText,
+        html: rawHtml,
+      });
+      if (fieldsError) {
+        return reply.status(400).send({ error: fieldsError });
       }
 
       if (!isVariablesObject(variables)) {
@@ -305,7 +349,7 @@ export function registerSendRoutes(app: FastifyInstance) {
       }
 
       // Build MIME message
-      const mailOpts: Record<string, unknown> = {
+      const mailOpts: Parameters<typeof buildMime>[0] = {
         from,
         to: activeTo.map((r) => r.raw).join(", "),
         cc: activeCc.map((r) => r.raw).join(", ") || undefined,
@@ -320,14 +364,7 @@ export function registerSendRoutes(app: FastifyInstance) {
         mailOpts.headers = customHeaders;
       }
 
-      const mail = new MailComposer(mailOpts);
-
-      const rawBuffer = await new Promise<Buffer>((resolve, reject) => {
-        mail.compile().build((err: Error | null, message: Buffer) => {
-          if (err) reject(err);
-          else resolve(message);
-        });
-      });
+      const rawBuffer = await buildMime(mailOpts);
 
       // Store raw .eml in MinIO
       const messageId = randomUUID();
@@ -504,7 +541,7 @@ export function registerSendRoutes(app: FastifyInstance) {
       }
 
       // Build MIME with attachments
-      const mail = new MailComposer({
+      const rawBuffer = await buildMime({
         from,
         to: activeTo.map((r) => r.raw).join(", "),
         cc: activeCc.map((r) => r.raw).join(", ") || undefined,
@@ -517,13 +554,6 @@ export function registerSendRoutes(app: FastifyInstance) {
           content: a.content,
           contentType: a.contentType,
         })),
-      });
-
-      const rawBuffer = await new Promise<Buffer>((resolve, reject) => {
-        mail.compile().build((err: Error | null, message: Buffer) => {
-          if (err) reject(err);
-          else resolve(message);
-        });
       });
 
       const messageId = randomUUID();
@@ -608,6 +638,21 @@ export function registerSendRoutes(app: FastifyInstance) {
         return reply
           .status(400)
           .send({ error: "Maximum 1000 recipients per batch" });
+      }
+      // Malformed ids can't match a row (and would be a DB cast error)
+      if (!isUuid(inboxId)) {
+        return reply.status(404).send({ error: "Inbox not found" });
+      }
+      if (templateId !== undefined && !isUuid(templateId)) {
+        return reply.status(404).send({ error: "Template not found" });
+      }
+      const fieldsError = bodyFieldsError({
+        subject: rawSubject,
+        text: rawText,
+        html: rawHtml,
+      });
+      if (fieldsError) {
+        return reply.status(400).send({ error: fieldsError });
       }
 
       const batch: Array<{
@@ -732,19 +777,12 @@ export function registerSendRoutes(app: FastifyInstance) {
             ? substituteVariables(rawText, vars)
             : undefined;
 
-        const mail = new MailComposer({
+        const rawBuffer = await buildMime({
           from,
           to: recipient.raw,
           subject,
           text,
           html,
-        });
-
-        const rawBuffer = await new Promise<Buffer>((resolve, reject) => {
-          mail.compile().build((err: Error | null, msg: Buffer) => {
-            if (err) reject(err);
-            else resolve(msg);
-          });
         });
 
         const messageId = randomUUID();
@@ -795,55 +833,4 @@ export function registerSendRoutes(app: FastifyInstance) {
       });
     },
   );
-}
-
-// ─── Quota Helper ─────────────────────────────────────────
-/**
- * Atomically consume `count` sends from the user's monthly quota. The check
- * and increment are one UPDATE so concurrent requests can't both slip under
- * the limit. Returns an error message when the quota would be exceeded.
- */
-async function checkAndIncrementQuota(
-  db: ReturnType<typeof getDb>,
-  userId: string,
-  count: number,
-): Promise<string | null> {
-  const now = new Date();
-  const nextReset = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1),
-  );
-
-  await db
-    .insert(userQuotas)
-    .values({ userId, quotaResetAt: nextReset })
-    .onConflictDoNothing();
-
-  // New month: start counting again
-  await db
-    .update(userQuotas)
-    .set({ currentMonthlySent: 0, quotaResetAt: nextReset })
-    .where(
-      and(eq(userQuotas.userId, userId), lte(userQuotas.quotaResetAt, now)),
-    );
-
-  const [consumed] = await db
-    .update(userQuotas)
-    .set({
-      currentMonthlySent: sql`${userQuotas.currentMonthlySent} + ${count}`,
-    })
-    .where(
-      and(
-        eq(userQuotas.userId, userId),
-        sql`${userQuotas.currentMonthlySent} + ${count} <= ${userQuotas.monthlySendLimit}`,
-      ),
-    )
-    .returning({ id: userQuotas.id });
-  if (consumed) return null;
-
-  const [quota] = await db
-    .select()
-    .from(userQuotas)
-    .where(eq(userQuotas.userId, userId))
-    .limit(1);
-  return `Monthly send quota exceeded. Used ${quota.currentMonthlySent}/${quota.monthlySendLimit}. Resets at ${quota.quotaResetAt?.toISOString() ?? "next month"}`;
 }

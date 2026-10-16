@@ -15,9 +15,10 @@ import { clampInt } from "../lib/validate.js";
 import { buildMessageConditions } from "../lib/message-filters.js";
 import { attachmentHeaders } from "../lib/attachment.js";
 import { findSuppressed } from "../lib/suppression.js";
+import { buildMime } from "../lib/mime.js";
+import { checkAndIncrementQuota } from "../lib/quota.js";
 import { senderDomainError } from "../lib/sender-domain.js";
 import { simpleParser } from "mailparser";
-import MailComposer from "nodemailer/lib/mail-composer/index.js";
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import Redis from "ioredis";
@@ -55,6 +56,9 @@ function formatHeaderValue(value: unknown): string {
   }
   return JSON.stringify(value);
 }
+
+const escapeHtml = (value: string) =>
+  value.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 /** Most message ids a bulk endpoint accepts in one request. */
 const BULK_MAX = 1000;
@@ -577,6 +581,7 @@ export function registerMessageRoutes(app: FastifyInstance) {
     "/api/messages/:id/forward",
     {
       preHandler: [authGuard, requireUuidParams, requireMessageRole("editor")],
+      config: { rateLimit: { max: 30, timeWindow: 60000 } },
     },
     async (request, reply) => {
       const { id } = request.params;
@@ -609,6 +614,16 @@ export function registerMessageRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Message not found" });
       }
 
+      // Forwards count against the sender's monthly quota like any other send.
+      const quotaError = await checkAndIncrementQuota(
+        db,
+        request.user!.userId,
+        1,
+      );
+      if (quotaError) {
+        return reply.status(429).send({ error: quotaError });
+      }
+
       // Download the raw .eml
       const rawBuffer = await storage.getObjectAsBuffer(message.rawKey);
 
@@ -616,13 +631,13 @@ export function registerMessageRoutes(app: FastifyInstance) {
       const fromAddr = systemEmailFrom(env);
       const fwdSubject = `[Fwd] ${message.subject ?? "(no subject)"}`;
 
-      const mail = new MailComposer({
+      const fwdBuffer = await buildMime({
         from: fromAddr,
-        to: request.body.to.trim(),
+        to: toEmail,
         subject: fwdSubject,
         text: `---------- Forwarded message ----------\nFrom: ${message.from}\nSubject: ${message.subject ?? ""}\nDate: ${message.date?.toISOString() ?? ""}\n\n${message.text ?? ""}`,
         html: message.html
-          ? `<p><strong>---------- Forwarded message ----------</strong><br>From: ${message.from}<br>Subject: ${message.subject ?? ""}<br>Date: ${message.date?.toISOString() ?? ""}</p><hr>${message.html}`
+          ? `<p><strong>---------- Forwarded message ----------</strong><br>From: ${escapeHtml(message.from)}<br>Subject: ${escapeHtml(message.subject ?? "")}<br>Date: ${message.date?.toISOString() ?? ""}</p><hr>${message.html}`
           : undefined,
         attachments: [
           {
@@ -631,13 +646,6 @@ export function registerMessageRoutes(app: FastifyInstance) {
             contentType: "message/rfc822",
           },
         ],
-      });
-
-      const fwdBuffer = await new Promise<Buffer>((resolve, reject) => {
-        mail.compile().build((err: Error | null, msg: Buffer) => {
-          if (err) reject(err);
-          else resolve(msg);
-        });
       });
 
       // Store forwarded message

@@ -8,6 +8,10 @@ export const users = pgTable("users", {
   role: varchar("role", { length: 20 }).notNull().default("user"), // user, admin
   // Sessions issued before this moment are rejected (set on password change/reset)
   passwordChangedAt: timestamp("password_changed_at", { withTimezone: true }),
+  // Set once the address is proven (email link, or a verified OAuth/LDAP
+  // identity). Unverified accounts can't accept team invitations or be signed
+  // into by an SSO login, so registering someone else's address gains nothing.
+  emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

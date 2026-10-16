@@ -9,7 +9,7 @@ const base = baseURL.replace(/\/$/, "");
 
 export default defineNuxtConfig({
   compatibilityDate: "2025-01-01",
-  devtools: { enabled: true },
+  devtools: { enabled: import.meta.dev },
 
   app: {
     baseURL: process.env.NUXT_APP_BASE_URL || "/admin/smtp",
@@ -51,6 +51,20 @@ export default defineNuxtConfig({
   // doesn't account for app.baseURL being prepended by $fetch.
 
   ssr: false,
+
+  // Baseline hardening for the SPA shell. A full script/style CSP is left out
+  // on purpose: the email preview is a srcdoc iframe, which inherits the
+  // parent's CSP and would lose its own remote-content opt-in.
+  routeRules: {
+    "/**": {
+      headers: {
+        "X-Frame-Options": "DENY",
+        "Content-Security-Policy": "frame-ancestors 'none'",
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "same-origin",
+      },
+    },
+  },
 
   tailwindcss: {
     cssPath: "~/assets/css/tailwind.css",

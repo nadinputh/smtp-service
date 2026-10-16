@@ -1,4 +1,4 @@
-import MailComposer from "nodemailer/lib/mail-composer/index.js";
+import { buildMime } from "./mime.js";
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { getDb, messages } from "@mailpocket/db";
@@ -33,13 +33,7 @@ export async function sendSystemEmail(opts: {
     html,
   } = opts;
 
-  const mail = new MailComposer({ from, to, subject, text, html });
-  const rawBuffer = await new Promise<Buffer>((resolve, reject) => {
-    mail.compile().build((err: Error | null, message: Buffer) => {
-      if (err) reject(err);
-      else resolve(message);
-    });
-  });
+  const rawBuffer = await buildMime({ from, to, subject, text, html });
 
   const messageId = randomUUID();
   const rawKey = `outbound/${messageId}.eml`;

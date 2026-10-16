@@ -1,4 +1,4 @@
-import { proxyRequest } from "h3";
+import { getRequestHeader, getRequestIP, proxyRequest } from "h3";
 
 /**
  * Proxy API calls to the backend API server.
@@ -48,5 +48,14 @@ export default defineEventHandler(async (event) => {
 
   if (!shouldProxy) return;
 
-  return proxyRequest(event, `${apiTarget}${path}`);
+  // Append (never trust) the client-supplied chain: the API counts
+  // TRUST_PROXY_HOPS entries from the right, so anything a client put in
+  // X-Forwarded-For stays to the left of the address we add here.
+  const peer = getRequestIP(event);
+  const incoming = getRequestHeader(event, "x-forwarded-for");
+  return proxyRequest(event, `${apiTarget}${path}`, {
+    headers: {
+      "x-forwarded-for": [incoming, peer].filter(Boolean).join(", "),
+    },
+  });
 });

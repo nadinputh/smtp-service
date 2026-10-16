@@ -85,7 +85,7 @@ export function registerInboxMemberRoutes(app: FastifyInstance) {
 
       // Find user by email
       const [targetUser] = await db
-        .select({ id: users.id })
+        .select({ id: users.id, verified: users.emailVerifiedAt })
         .from(users)
         .where(eq(users.email, email))
         .limit(1);
@@ -94,6 +94,12 @@ export function registerInboxMemberRoutes(app: FastifyInstance) {
         return reply
           .status(404)
           .send({ error: "User not found. They must register first." });
+      }
+
+      if (!targetUser.verified) {
+        return reply
+          .status(409)
+          .send({ error: "That user hasn't verified their email address yet" });
       }
 
       const [inbox] = await db

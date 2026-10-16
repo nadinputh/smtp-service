@@ -40,9 +40,14 @@ import { requireAdmin } from "./middleware/access.js";
 
 const env = getEnv();
 
+const trustedHops =
+  env.TRUST_PROXY_HOPS ?? (env.APP_MODE === "production" ? 1 : 0);
+
 const app = Fastify({
   logger: true,
-  trustProxy: env.APP_MODE === "production",
+  // Hop count, not `true`: with `true` the left-most X-Forwarded-For entry
+  // wins, which any client can set to dodge the rate limits.
+  trustProxy: (_address: string, hop: number) => hop < trustedHops,
 });
 
 // ─── Security Headers ─────────────────────────────────────
@@ -75,16 +80,15 @@ await app.register(cors, {
   allowedHeaders: ["Content-Type", "Authorization"],
 });
 
-await app.register(multipart, { limits: { fileSize: 25 * 1024 * 1024 } });
+await app.register(multipart, {
+  limits: { fileSize: 25 * 1024 * 1024, files: 5, parts: 50 },
+});
 
 // ─── Global Rate Limiting ─────────────────────────────────
 await app.register(rateLimit, {
   max: env.RATE_LIMIT_MAX, // requests per window
   timeWindow: 60000, // 1 minute
-  keyGenerator: (request) => {
-    // Rate limit by authenticated user or IP
-    return (request as any).user?.userId ?? request.ip;
-  },
+  // Runs in onRequest, before authentication, so the client IP is the key.
 });
 
 // ─── Routes ───────────────────────────────────────────────
@@ -94,8 +98,9 @@ app.get("/health", { config: { rateLimit: false } }, async () => {
   try {
     await db.execute(sql`SELECT 1`);
     return { status: "ok", db: "connected" };
-  } catch (err: any) {
-    return { status: "degraded", error: err.message };
+  } catch (err) {
+    app.log.error({ err }, "Health check failed");
+    return { status: "degraded", db: "unreachable" };
   }
 });
 
