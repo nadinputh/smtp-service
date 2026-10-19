@@ -241,8 +241,8 @@ export const FEATURES: FeatureEntry[] = [
     description: "CSS background image / gradient",
     detectPatterns: [
       /background-image\s*:/i,
-      /background\s*:.*url\(/i,
-      /background\s*:.*(?:linear|radial)-gradient/i,
+      /background\s*:[^;}]{0,300}url\(/i,
+      /background\s*:[^;}]{0,300}(?:linear|radial)-gradient/i,
     ],
     detectInCSS: true,
     support: s("full", [
@@ -462,7 +462,7 @@ export const FEATURES: FeatureEntry[] = [
     name: "css-variables",
     category: "css",
     description: "CSS custom properties (variables)",
-    detectPatterns: [/--[a-zA-Z][\w-]*\s*:/i, /var\s*\(\s*--/i],
+    detectPatterns: [/--[a-zA-Z][\w-]{0,100}\s*:/i, /var\s*\(\s*--/i],
     detectInCSS: false,
     support: s("none", [
       ["apple-mail", "full"],
@@ -619,7 +619,7 @@ export const FEATURES: FeatureEntry[] = [
     name: "link-stylesheet",
     category: "other",
     description: 'External stylesheet (<link rel="stylesheet">)',
-    detectPatterns: [/<link[^>]*rel=["']stylesheet["']/i],
+    detectPatterns: [/<link[^>]{0,500}rel=["']stylesheet["']/i],
     detectInCSS: false,
     support: s("none"),
   },

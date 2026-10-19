@@ -190,3 +190,46 @@ describe("scoreEmail", () => {
     expect(result.score).toBe(Math.round(result.score * 10) / 10);
   });
 });
+
+describe("scoreEmail on hostile input", () => {
+  it("strips tags to detect image-only HTML", () => {
+    const result = scoreEmail(
+      makeParsed({ text: "t", html: `<img src="a.png"><img src="b.png">` }),
+      rawFrom(),
+    );
+    expect(result.rules.map((r) => r.rule)).toContain("IMAGE_ONLY");
+    const texty = scoreEmail(
+      makeParsed({
+        text: "t",
+        html: `<img src="a.png"><p>${"real words ".repeat(10)}</p>`,
+      }),
+      rawFrom(),
+    );
+    expect(texty.rules.map((r) => r.rule)).not.toContain("IMAGE_ONLY");
+  });
+
+  it("does not stall on a long run of '<' (was ~30s at 300 KB)", () => {
+    const start = Date.now();
+    scoreEmail(makeParsed({ text: "t", html: "<".repeat(300_000) }), rawFrom());
+    expect(Date.now() - start).toBeLessThan(1500);
+  });
+
+  it("only scans the start of huge bodies", () => {
+    const start = Date.now();
+    const result = scoreEmail(
+      makeParsed({ text: "x".repeat(20_000_000) + " viagra" }),
+      rawFrom(),
+    );
+    expect(Date.now() - start).toBeLessThan(1500);
+    expect(result.rules.map((r) => r.rule)).not.toContain("BODY_PHARMA_SPAM");
+  });
+
+  it("truncates attacker-controlled X-Mailer text in rule descriptions", () => {
+    const result = scoreEmail(
+      makeParsed({ headers: { "x-mailer": "PHPMailer " + "A".repeat(5000) } }),
+      rawFrom(),
+    );
+    const rule = result.rules.find((r) => r.rule === "SUSPICIOUS_MAILER");
+    expect(rule?.description.length).toBeLessThan(200);
+  });
+});

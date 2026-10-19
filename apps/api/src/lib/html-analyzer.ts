@@ -31,6 +31,12 @@ export interface CompatibilityResult {
 }
 
 /**
+ * Mail HTML is attacker-controlled and can be up to the SMTP size limit; the
+ * analysis runs in the API process, so it only looks at the start.
+ */
+const MAX_ANALYZED_CHARS = 512 * 1024;
+
+/**
  * Extracts all CSS text from an HTML string:
  * - Contents of <style> blocks
  * - Inline style="..." attribute values
@@ -38,12 +44,28 @@ export interface CompatibilityResult {
 function extractCSS(html: string): string {
   const parts: string[] = [];
 
-  // <style> blocks
-  const styleBlockRe = /<style[^>]*>([\s\S]*?)<\/style>/gi;
-  let m: RegExpExecArray | null;
-  while ((m = styleBlockRe.exec(html)) !== null) {
-    parts.push(m[1]);
+  // <style> blocks. Scanned forward with sticky position instead of one lazy
+  // `<style>[\s\S]*?</style>` regex, which rescans to the end of the input for
+  // every unclosed <style> and goes quadratic.
+  const open = /<style/gi;
+  const openEnd = />/g;
+  const close = /<\/style/gi;
+  let pos = 0;
+  while (pos < html.length) {
+    open.lastIndex = pos;
+    const start = open.exec(html);
+    if (!start) break;
+    openEnd.lastIndex = start.index;
+    const gt = openEnd.exec(html);
+    if (!gt) break;
+    close.lastIndex = gt.index + 1;
+    const end = close.exec(html);
+    if (!end) break;
+    parts.push(html.slice(gt.index + 1, end.index));
+    pos = end.index + 1;
   }
+
+  let m: RegExpExecArray | null;
 
   // inline style attributes
   const inlineRe = /style\s*=\s*["']([^"']*?)["']/gi;
@@ -58,7 +80,8 @@ function extractCSS(html: string): string {
  * Analyzes an email's HTML content and returns compatibility scores
  * for each email client, plus per-feature support details.
  */
-export function analyzeCompatibility(html: string): CompatibilityResult {
+export function analyzeCompatibility(input: string): CompatibilityResult {
+  const html = input.slice(0, MAX_ANALYZED_CHARS);
   const cssText = extractCSS(html);
   const detectedFeatures: FeatureResult[] = [];
 

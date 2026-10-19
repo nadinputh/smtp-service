@@ -14,6 +14,12 @@ export interface SpamResult {
 }
 
 /**
+ * Bodies are attacker-controlled and up to the SMTP size limit; the rules only
+ * need the start of them, and scanning more would block the worker.
+ */
+const MAX_SCAN_CHARS = 1_000_000;
+
+/**
  * Simple heuristic spam scorer inspired by SpamAssassin rules.
  * Each rule contributes a positive score (higher = spammier).
  */
@@ -26,8 +32,8 @@ export function scoreEmail(
   const suggestions: string[] = [];
 
   const subject = parsed.subject ?? "";
-  const textBody = parsed.text ?? "";
-  const htmlBody = parsed.html || "";
+  const textBody = (parsed.text ?? "").slice(0, MAX_SCAN_CHARS);
+  const htmlBody = (parsed.html || "").slice(0, MAX_SCAN_CHARS);
   const from = parsed.from?.text ?? "";
   const headers = parsed.headers;
 
@@ -136,7 +142,8 @@ export function scoreEmail(
   // Image-only HTML
   if (htmlBody) {
     const imgTags = (htmlBody.match(/<img\s/gi) ?? []).length;
-    const textContent = htmlBody.replace(/<[^>]*>/g, "").trim();
+    // [^<>] (not [^>]): a run of "<" with no ">" must not rescan to the end
+    const textContent = htmlBody.replace(/<[^<>]*>/g, "").trim();
     if (imgTags > 0 && textContent.length < 50) {
       rules.push({
         rule: "IMAGE_ONLY",
@@ -239,7 +246,7 @@ export function scoreEmail(
     rules.push({
       rule: "SUSPICIOUS_MAILER",
       score: 1.0,
-      description: `Suspicious X-Mailer: ${xMailer}`,
+      description: `Suspicious X-Mailer: ${xMailer.slice(0, 100)}`,
     });
   }
 
