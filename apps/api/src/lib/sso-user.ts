@@ -4,6 +4,17 @@ import { eq } from "drizzle-orm";
 export const UNVERIFIED_ACCOUNT_ERROR =
   "An unverified account already uses this email address. Verify it from the email we sent, or ask an admin to remove it.";
 
+/**
+ * Whether an OAuth2 `email_verified` claim lets us trust the address. A claim
+ * that is absent only passes when the operator opted in for such providers.
+ */
+export function emailClaimTrusted(
+  claim: unknown,
+  allowUnverified: boolean,
+): boolean {
+  return claim === true || (claim === undefined && allowUnverified);
+}
+
 type SsoUser = { id: string; email: string; name: string | null; role: string };
 
 /**

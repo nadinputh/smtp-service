@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 dotenv.config({ path: "../../.env" });
 import { SMTPServer } from "smtp-server";
 import { getEnv } from "@mailpocket/env";
-import { getDb, inboxes } from "@mailpocket/db";
+import { getDb, inboxes, decryptSecret } from "@mailpocket/db";
 import { createStorage } from "@mailpocket/storage";
 import {
   createIncomingQueue,
@@ -138,7 +138,14 @@ const smtpOptions: ConstructorParameters<typeof SMTPServer>[0] = {
         .where(eq(inboxes.smtpUsername, auth.username ?? ""))
         .limit(1);
 
-      if (!inbox || !safeEqual(inbox.smtpPassword, auth.password ?? "")) {
+      const storedPassword = inbox
+        ? decryptSecret(
+            inbox.smtpPassword,
+            env.DKIM_ENCRYPTION_KEY,
+            env.DKIM_ENCRYPTION_KEY_PREVIOUS,
+          )
+        : null;
+      if (!storedPassword || !safeEqual(storedPassword, auth.password ?? "")) {
         recordFailedAuth(ip);
         // Slow down guessing
         await new Promise((resolve) => setTimeout(resolve, 1000));

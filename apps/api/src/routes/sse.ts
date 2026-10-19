@@ -2,7 +2,9 @@ import type { FastifyInstance } from "fastify";
 import { getEnv } from "@mailpocket/env";
 import { getDb } from "@mailpocket/db";
 import { sql } from "drizzle-orm";
-import { authGuard } from "../middleware/auth.js";
+import { authGuard, isSessionActive } from "../middleware/auth.js";
+import { apiKeys } from "@mailpocket/db";
+import { eq } from "drizzle-orm";
 import Redis from "ioredis";
 
 /** Each stream holds a Redis connection, so one user may only open a few. */
@@ -64,6 +66,23 @@ export function registerSSERoutes(app: FastifyInstance) {
     // Refresh allowed inbox IDs periodically (handles new shares/teams)
     const refreshInterval = setInterval(async () => {
       try {
+        // End the stream once its session or API key stops being valid
+        // (logout, password change, key revoked)
+        const stillValid = request.apiKeyId
+          ? (
+              await db
+                .select({ expiresAt: apiKeys.expiresAt })
+                .from(apiKeys)
+                .where(eq(apiKeys.id, request.apiKeyId))
+                .limit(1)
+            ).some((k) => !k.expiresAt || k.expiresAt > new Date())
+          : request.user!.iat === undefined ||
+            (await isSessionActive(request.user!));
+        if (!stillValid) {
+          reply.raw.end();
+          return;
+        }
+
         const fresh = await db.execute(sql`
             SELECT DISTINCT i.id
             FROM inboxes i

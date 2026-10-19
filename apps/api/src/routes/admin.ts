@@ -27,6 +27,7 @@ import {
   timeseries,
 } from "../lib/analytics.js";
 import { passwordPolicyError } from "../lib/password-policy.js";
+import { revealSmtpPassword } from "../lib/smtp-credentials.js";
 
 export function registerAdminRoutes(app: FastifyInstance) {
   const env = getEnv();
@@ -385,7 +386,8 @@ export function registerAdminRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Inbox not found" });
       }
 
-      return result.rows[0];
+      const row = result.rows[0] as { smtpPassword: string };
+      return { ...row, smtpPassword: revealSmtpPassword(row.smtpPassword, env) };
     },
   );
 
@@ -455,7 +457,7 @@ export function registerAdminRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Inbox not found" });
       }
 
-      return updated;
+      return { ...updated, smtpPassword: revealSmtpPassword(updated.smtpPassword, env) };
     },
   );
 

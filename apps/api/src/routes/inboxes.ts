@@ -11,6 +11,7 @@ import {
   isUuid,
 } from "../middleware/access.js";
 import { cleanString } from "../lib/validate.js";
+import { sealSmtpPassword, revealSmtpPassword } from "../lib/smtp-credentials.js";
 
 function generateSmtpCredentials() {
   const username = randomBytes(8).toString("hex");
@@ -90,7 +91,7 @@ export function registerInboxRoutes(app: FastifyInstance) {
       return {
         ...detail,
         ...(request.inboxRole !== "viewer" && !request.apiKeyScopes
-          ? { smtpPassword }
+          ? { smtpPassword: revealSmtpPassword(smtpPassword as string, env) }
           : {}),
         currentUserRole: request.inboxRole,
       };
@@ -145,7 +146,7 @@ export function registerInboxRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Inbox not found" });
       }
 
-      return updated;
+      return { ...updated, smtpPassword: revealSmtpPassword(updated.smtpPassword, env) };
     },
   );
 
@@ -207,7 +208,7 @@ export function registerInboxRoutes(app: FastifyInstance) {
             teamId,
             name,
             smtpUsername: creds.username,
-            smtpPassword: creds.password,
+            smtpPassword: sealSmtpPassword(creds.password, env),
           })
           .returning();
         return { inbox: created };
@@ -218,9 +219,10 @@ export function registerInboxRoutes(app: FastifyInstance) {
           error: `Inbox limit reached (${result.limit}). Delete an inbox or upgrade your quota.`,
         });
       }
-      const inbox = result.inbox;
-
-      return reply.status(201).send(inbox);
+      // The stored value is encrypted; the creator sees the usable password
+      return reply
+        .status(201)
+        .send({ ...result.inbox, smtpPassword: creds.password });
     },
   );
 

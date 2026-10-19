@@ -1,5 +1,6 @@
 import {
   domains,
+  inboxes,
   decryptSecret,
   encryptSecret,
   isEncrypted,
@@ -17,6 +18,43 @@ function readableWith(key: string, secret: string): boolean {
   }
 }
 
+type Secrets = { current: string; previous?: string };
+
+/** The value re-encrypted under `secrets.current`, or null to leave it alone. */
+function reencrypted(stored: string, secrets: Secrets): string | null {
+  if (isEncrypted(stored) && readableWith(stored, secrets.current)) return null;
+  try {
+    return encryptSecret(decryptSecret(stored, secrets.previous), secrets.current);
+  } catch {
+    return null; // encrypted with an unknown secret; can't migrate it
+  }
+}
+
+/**
+ * Same as `encryptPlaintextDkimKeys`, for inbox SMTP passwords.
+ */
+export async function encryptPlaintextSmtpPasswords(
+  db: ReturnType<typeof getDb>,
+  secrets: Secrets,
+): Promise<number> {
+  const rows = await db
+    .select({ id: inboxes.id, password: inboxes.smtpPassword })
+    .from(inboxes);
+
+  let count = 0;
+  for (const { id, password } of rows) {
+    const next = reencrypted(password, secrets);
+    if (!next) continue;
+    const updated = await db
+      .update(inboxes)
+      .set({ smtpPassword: next })
+      .where(and(eq(inboxes.id, id), eq(inboxes.smtpPassword, password)))
+      .returning({ id: inboxes.id });
+    count += updated.length;
+  }
+  return count;
+}
+
 /**
  * Brings every stored DKIM private key onto `secrets.current`: plaintext keys
  * (from before encryption was enabled) are encrypted, and keys encrypted with
@@ -25,7 +63,7 @@ function readableWith(key: string, secret: string): boolean {
  */
 export async function encryptPlaintextDkimKeys(
   db: ReturnType<typeof getDb>,
-  secrets: { current: string; previous?: string },
+  secrets: Secrets,
 ): Promise<number> {
   const rows = await db
     .select({ id: domains.id, key: domains.dkimPrivateKey })

@@ -19,7 +19,8 @@ import { sendSystemEmail } from "../lib/send-system-email.js";
 import { isLdapConfigured } from "../lib/ldap-config.js";
 import { normalizeEmail } from "../lib/address.js";
 import { cleanString } from "../lib/validate.js";
-import { resolveSsoUser } from "../lib/sso-user.js";
+import { resolveSsoUser, emailClaimTrusted } from "../lib/sso-user.js";
+import { revokeToken } from "../lib/revocation.js";
 
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000; // 1 hour
 const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -543,7 +544,14 @@ export function registerAuthRoutes(app: FastifyInstance) {
           Buffer.from(tokens.id_token.split(".")[1], "base64url").toString(),
         );
         // Only trust an email the provider has verified.
-        if (payload.email_verified !== false) email = payload.email || "";
+        if (
+          emailClaimTrusted(
+            payload.email_verified,
+            env.OAUTH2_ALLOW_UNVERIFIED_EMAIL,
+          )
+        ) {
+          email = payload.email || "";
+        }
         name = payload.name || "";
       } catch {
         // Fall through to userinfo endpoint
@@ -560,7 +568,14 @@ export function registerAuthRoutes(app: FastifyInstance) {
           email_verified?: boolean;
           name?: string;
         };
-        if (info.email_verified !== false) email = info.email || email;
+        if (
+          emailClaimTrusted(
+            info.email_verified,
+            env.OAUTH2_ALLOW_UNVERIFIED_EMAIL,
+          )
+        ) {
+          email = info.email || email;
+        }
         name = info.name || name;
       }
     }
@@ -809,6 +824,19 @@ export function registerAuthRoutes(app: FastifyInstance) {
 
     return { success: true };
   });
+
+  // ─── Logout ─────────────────────────────────────────────
+  // Ends this session token everywhere it is used (tokens are otherwise valid
+  // for 7 days). OAuth2 bearer tokens and API keys have nothing to revoke here.
+  app.post(
+    "/api/auth/logout",
+    { preHandler: [authGuard] },
+    async (request) => {
+      const { jti, exp } = request.user!;
+      if (jti && exp) await revokeToken(jti, exp);
+      return { success: true };
+    },
+  );
 
   // ─── Verify email ───────────────────────────────────────
   app.post<{ Body: { token: string } }>(

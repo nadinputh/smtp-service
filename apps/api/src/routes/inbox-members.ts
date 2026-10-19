@@ -65,7 +65,11 @@ export function registerInboxMemberRoutes(app: FastifyInstance) {
   // ─── Add member (invite by email) ──────────────────────
   app.post<{ Params: { id: string }; Body: { email: string; role?: string } }>(
     "/api/inboxes/:id/members",
-    { preHandler: [authGuard, requireUuidParams, requireInboxRole("owner")] },
+    {
+      preHandler: [authGuard, requireUuidParams, requireInboxRole("owner")],
+      // The 404 for unknown emails doubles as an account lookup: keep it slow
+      config: { rateLimit: { max: 20, timeWindow: 60000 } },
+    },
     async (request, reply) => {
       const { id } = request.params;
       const { role = "viewer" } = request.body ?? {};

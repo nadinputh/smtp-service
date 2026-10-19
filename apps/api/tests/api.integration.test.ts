@@ -892,6 +892,8 @@ describe("API Integration Tests", () => {
           to: ["b@example.com"],
           subject: "Resend guard",
           text: "hi",
+          // scheduled stays put even when workers are running; queued would not
+          sendAt: new Date(Date.now() + 3_600_000).toISOString(),
         }),
       });
       const base = `/api/inboxes/${inbox.body.id}/messages`;
@@ -901,7 +903,7 @@ describe("API Integration Tests", () => {
       const multi = await api(`${base}?status=bounced,failed`);
       expect(multi.status).toBe(200);
       expect(multi.body.total).toBe(0);
-      expect((await api(`${base}?status=queued,bounced`)).body.total).toBe(1);
+      expect((await api(`${base}?status=scheduled,bounced`)).body.total).toBe(1);
 
       const ids = await api(`${base}?idsOnly=1`);
       expect(ids.body.ids).toEqual([sent.body.id]);

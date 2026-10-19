@@ -173,6 +173,14 @@ load();
                 }}</Badge>
               </template>
             </div>
+            <div
+              v-if="wh.secret"
+              class="flex items-center gap-1 mt-1.5 text-xs text-gray-600 dark:text-gray-400"
+            >
+              <span>Signing secret</span>
+              <code class="break-all">{{ wh.secret }}</code>
+              <CopyButton :text="wh.secret" label="signing secret" />
+            </div>
           </div>
           <div class="flex items-center gap-2">
             <UBtn

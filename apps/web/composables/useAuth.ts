@@ -275,6 +275,13 @@ export function useAuth() {
   }
 
   function logout() {
+    // End the session server-side too; the local logout never waits on it.
+    if (authState.token) {
+      $fetch("/api/auth/logout", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${authState.token}` },
+      }).catch(() => {});
+    }
     authState.token = null;
     authState.user = null;
     if (import.meta.client) {

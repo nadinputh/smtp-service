@@ -992,6 +992,8 @@ export interface Webhook {
   id: string;
   inboxId: string;
   url: string;
+  // HMAC key for X-MailPocket-Signature; only sent to people who can edit
+  secret?: string;
   onDelivered: boolean;
   onBounced: boolean;
   onOpened: boolean;

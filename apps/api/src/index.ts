@@ -10,7 +10,10 @@ import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { FastifyAdapter } from "@bull-board/fastify";
 import { getEnv } from "@mailpocket/env";
 import { getDb } from "@mailpocket/db";
-import { encryptPlaintextDkimKeys } from "./lib/dkim-encryption.js";
+import {
+  encryptPlaintextDkimKeys,
+  encryptPlaintextSmtpPasswords,
+} from "./lib/dkim-encryption.js";
 import {
   createIncomingQueue,
   createOutboundQueue,
@@ -116,8 +119,13 @@ if (env.DKIM_ENCRYPTION_KEY) {
     });
     if (n)
       app.log.info(`Encrypted ${n} DKIM private key(s) with the current key`);
+    const m = await encryptPlaintextSmtpPasswords(getDb(env.DATABASE_URL), {
+      current: env.DKIM_ENCRYPTION_KEY,
+      previous: env.DKIM_ENCRYPTION_KEY_PREVIOUS,
+    });
+    if (m) app.log.info(`Encrypted ${m} inbox SMTP password(s)`);
   } catch (err) {
-    app.log.warn({ err }, "Could not encrypt existing DKIM private keys");
+    app.log.warn({ err }, "Could not encrypt existing DKIM keys/SMTP passwords");
   }
 }
 

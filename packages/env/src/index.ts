@@ -74,6 +74,13 @@ const envSchema = z
     OAUTH2_CLIENT_ID: z.string().optional(),
     OAUTH2_REDIRECT_URI: z.string().url().optional(),
     OAUTH2_SCOPES: z.string().default("openid profile email"),
+    // By default an email is only trusted when the provider says it is
+    // verified (email_verified: true). Providers that never send the claim
+    // (e.g. Azure AD) need this set, trusting that the provider controls emails.
+    OAUTH2_ALLOW_UNVERIFIED_EMAIL: z
+      .string()
+      .default("false")
+      .transform((v) => v === "true"),
 
     // LDAP
     LDAP_ENABLED: z

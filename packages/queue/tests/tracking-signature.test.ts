@@ -42,3 +42,16 @@ describe("tracked link signatures", () => {
     );
   });
 });
+
+describe("key separation", () => {
+  it("does not sign with the raw secret, but still accepts legacy signatures", async () => {
+    const { createHmac } = await import("node:crypto");
+    const url = "https://example.com/a";
+    const legacy = createHmac("sha256", secret)
+      .update(`${id}\n${url}`)
+      .digest("hex")
+      .slice(0, 32);
+    expect(signTrackedLink(secret, id, url)).not.toBe(legacy);
+    expect(verifyTrackedLink(secret, id, url, legacy)).toBe(true);
+  });
+});

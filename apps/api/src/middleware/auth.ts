@@ -1,11 +1,12 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { getEnv } from "@mailpocket/env";
 import { getDb, apiKeys, users } from "@mailpocket/db";
 import { eq, and, like } from "drizzle-orm";
-import { resolveSsoUser } from "../lib/sso-user.js";
+import { resolveSsoUser, emailClaimTrusted } from "../lib/sso-user.js";
+import { isTokenRevoked } from "../lib/revocation.js";
 
 export const API_KEY_SCOPES = ["send", "read", "delete"] as const;
 
@@ -46,18 +47,47 @@ export interface JwtPayload {
   userId: string;
   email: string;
   iat?: number;
+  exp?: number;
+  /** Unique id of a locally issued token, used to revoke it on logout. */
+  jti?: string;
 }
 
 declare module "fastify" {
   interface FastifyRequest {
     user?: JwtPayload;
     apiKeyScopes?: string[];
+    apiKeyId?: string;
   }
 }
 
-export function signToken(payload: JwtPayload): string {
+export function signToken(payload: Pick<JwtPayload, "userId" | "email">): string {
   const env = getEnv();
-  return jwt.sign(payload, env.JWT_SECRET, { expiresIn: "7d" });
+  return jwt.sign(payload, env.JWT_SECRET, {
+    expiresIn: "7d",
+    jwtid: randomUUID(),
+  });
+}
+
+/**
+ * Whether a verified session token is still honoured: its user exists, no
+ * password change happened after it was issued, and it wasn't logged out.
+ */
+export async function isSessionActive(payload: JwtPayload): Promise<boolean> {
+  const env = getEnv();
+  const db = getDb(env.DATABASE_URL);
+  const [u] = await db
+    .select({ id: users.id, passwordChangedAt: users.passwordChangedAt })
+    .from(users)
+    .where(eq(users.id, payload.userId))
+    .limit(1);
+  if (!u) return false;
+  if (
+    u.passwordChangedAt &&
+    (payload.iat ?? 0) < Math.floor(u.passwordChangedAt.getTime() / 1000)
+  ) {
+    return false;
+  }
+  return !payload.jti || !(await isTokenRevoked(payload.jti));
 }
 
 export function verifyToken(token: string): JwtPayload {
@@ -131,7 +161,15 @@ async function verifyOAuth2Token(token: string): Promise<JwtPayload | null> {
         ? decoded.email.trim().toLowerCase()
         : "";
     // An unverified address must not be able to claim an existing account.
-    if (!email || decoded.email_verified === false) return null;
+    if (
+      !email ||
+      !emailClaimTrusted(
+        decoded.email_verified,
+        env.OAUTH2_ALLOW_UNVERIFIED_EMAIL,
+      )
+    ) {
+      return null;
+    }
 
     const db = getDb(env.DATABASE_URL);
     const resolved = await resolveSsoUser(
@@ -225,6 +263,7 @@ export async function authGuard(request: FastifyRequest, reply: FastifyReply) {
 
     request.user = { userId: key.userId, email: "" };
     request.apiKeyScopes = key.scopes;
+    request.apiKeyId = key.id;
     // Once a minute is precise enough for "last used" and spares a write on
     // every request.
     if (!key.lastUsedAt || Date.now() - key.lastUsedAt.getTime() > 60_000) {
@@ -239,25 +278,9 @@ export async function authGuard(request: FastifyRequest, reply: FastifyReply) {
   // JWT authentication (local tokens)
   try {
     const payload = verifyToken(token);
-    // Ensure the user referenced by the JWT still exists. A valid signature
-    // is not enough — the user row may have been deleted (or the DB reset)
-    // while the client still holds the token. Without this check, downstream
-    // inserts referencing user_id would fail with FK violations.
-    const env = getEnv();
-    const db = getDb(env.DATABASE_URL);
-    const [u] = await db
-      .select({ id: users.id, passwordChangedAt: users.passwordChangedAt })
-      .from(users)
-      .where(eq(users.id, payload.userId))
-      .limit(1);
-    if (!u) {
-      return reply.status(401).send({ error: "Invalid or expired token" });
-    }
-    // A password change/reset ends every session issued before it.
-    if (
-      u.passwordChangedAt &&
-      (payload.iat ?? 0) < Math.floor(u.passwordChangedAt.getTime() / 1000)
-    ) {
+    // A valid signature is not enough: the user may be gone, have changed
+    // their password, or have logged this token out.
+    if (!(await isSessionActive(payload))) {
       return reply.status(401).send({ error: "Invalid or expired token" });
     }
     request.user = payload;

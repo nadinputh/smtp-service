@@ -9,3 +9,5 @@ overrides:
   "stream-json": ">=3.6.0"
   "decode-uri-component": ">=0.5.0"
   "postcss-selector-parser": ">=7.1.6"
+  "@nuxt/devtools": "^3.4.3"
+  "@esbuild-kit/core-utils>esbuild": ">=0.25.0"
